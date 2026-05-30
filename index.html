@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connection Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --paper:#FAF6EE;
+    --paper-2:#F3ECDF;
+    --ink:#1B1813;
+    --ink-soft:#5A5347;
+    --line:#E2D8C6;
+    --clay:#B4502E;
+    --clay-dark:#8F3C20;
+    --green:#3E6E4B;
+    --green-bg:#E3EDE2;
+    --amber:#A8782A;
+    --amber-bg:#F4E9D2;
+    --grey:#8A8273;
+    --grey-bg:#ECE6DA;
+    --shadow:0 1px 2px rgba(27,24,19,.06),0 8px 24px rgba(27,24,19,.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Hanken Grotesk',sans-serif;
+    font-size:14px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(circle at 12% 8%, rgba(180,80,46,.05), transparent 40%),radial-gradient(circle at 90% 0%, rgba(62,110,75,.05), transparent 35%);
+    min-height:100vh;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 26px 80px}
+  header.top{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:26px}
+  .brand h1{font-family:'Fraunces',serif;font-weight:600;font-size:30px;letter-spacing:-.01em;line-height:1.05}
+  .brand .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--clay);font-weight:600;margin-bottom:7px}
+  .brand p{color:var(--ink-soft);font-size:13.5px;margin-top:6px;max-width:520px}
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px}
+  .stat{background:var(--paper-2);border:1px solid var(--line);border-radius:12px;padding:14px 18px;min-width:120px;flex:1}
+  .stat .n{font-family:'Fraunces',serif;font-size:28px;font-weight:600;line-height:1}
+  .stat .l{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin-top:7px}
+  .stat.pending .n{color:var(--amber)}
+  .stat.connected .n{color:var(--green)}
+  .stat.cold .n{color:var(--clay)}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+  .btn{font-family:inherit;font-size:13px;font-weight:600;border-radius:9px;padding:9px 15px;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);transition:.15s;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{border-color:var(--ink);transform:translateY(-1px)}
+  .btn.primary{background:var(--clay);color:#fff;border-color:var(--clay)}
+  .btn.primary:hover{background:var(--clay-dark);border-color:var(--clay-dark)}
+  .btn.ghost{background:transparent}
+  .search{flex:1;min-width:180px;position:relative}
+  .search input{width:100%;font-family:inherit;font-size:13.5px;padding:9px 13px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+  .search input:focus{outline:none;border-color:var(--clay)}
+  select.filter{font-family:inherit;font-size:13px;padding:9px 12px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
+  .thresh{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft)}
+  .thresh input{width:48px;font-family:inherit;padding:6px 7px;border-radius:7px;border:1px solid var(--line);text-align:center}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+  thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-soft);font-weight:700;padding:13px 14px;background:var(--paper-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr{cursor:pointer;transition:background .12s}
+  tbody tr:hover{background:var(--paper-2)}
+  tr.stale{background:rgba(180,80,46,.045)}
+  tr.stale:hover{background:rgba(180,80,46,.09)}
+  .name{font-weight:600;font-size:14px}
+  .sub{color:var(--ink-soft);font-size:12.5px;margin-top:2px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;letter-spacing:.02em;white-space:nowrap}
+  .pill.connected{background:var(--green-bg);color:var(--green)}
+  .pill.pending{background:var(--amber-bg);color:var(--amber)}
+  .pill.no_response{background:#F4DED6;color:var(--clay-dark)}
+  .stagetag{font-size:11.5px;color:var(--ink-soft)}
+  .inst{font-size:12.5px}
+  .empty{text-align:center;padding:64px 20px;color:var(--ink-soft)}
+  .empty .big{font-family:'Fraunces',serif;font-size:20px;color:var(--ink);margin-bottom:8px}
+  /* modal */
+  .scrim{position:fixed;inset:0;background:rgba(27,24,19,.4);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:40px 18px;z-index:50;overflow:auto}
+  .scrim.show{display:flex}
+  .modal{background:var(--paper);border:1px solid var(--line);border-radius:16px;max-width:520px;width:100%;padding:26px;box-shadow:0 20px 60px rgba(27,24,19,.3)}
+  .modal h2{font-family:'Fraunces',serif;font-size:22px;font-weight:600;margin-bottom:3px}
+  .modal .murl{font-size:12.5px;color:var(--clay);word-break:break-all;margin-bottom:18px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-soft);font-weight:700;margin-bottom:5px}
+  .field input,.field select,.field textarea{width:100%;font-family:inherit;font-size:13.5px;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+  .field textarea{resize:vertical;min-height:70px}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--clay)}
+  .row2{display:flex;gap:12px}
+  .row2>div{flex:1}
+  .modal-actions{display:flex;justify-content:space-between;gap:10px;margin-top:20px}
+  .meta{font-size:12px;color:var(--ink-soft);background:var(--paper-2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:16px;line-height:1.6}
+  .danger{color:var(--clay);background:transparent;border-color:transparent;font-weight:600}
+  .danger:hover{color:var(--clay-dark);border-color:transparent;transform:none;text-decoration:underline}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:var(--paper);padding:11px 20px;border-radius:10px;font-size:13px;font-weight:500;opacity:0;transition:.3s;z-index:80}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  .hint{font-size:12px;color:var(--ink-soft);margin-bottom:18px;line-height:1.6;background:var(--paper-2);border:1px solid var(--line);border-left:3px solid var(--clay);border-radius:0 10px 10px 0;padding:11px 14px}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="eyebrow">Latimer.AI · Relationship Intelligence</div>
+      <h1>Connection Ledger</h1>
+      <p>A permanent record of everyone you reach out to on LinkedIn — so withdrawing a pending request never erases your memory of the relationship again.</p>
+    </div>
+    <div>
+      <button class="btn primary" id="addBtn">+ Log a contact</button>
+    </div>
+  </header>
+
+  <div class="hint" id="hint">
+    <strong>First time?</strong> Two ways to fill this: (1) Click <em>Log a contact</em> right before you withdraw any pending request — that's the instant habit fix. (2) Import your LinkedIn data export (Settings → Data Privacy → Get a copy of your data) using the buttons below. Your contacts are stored privately and never leave this tool.
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n" id="s-total">0</div><div class="l">Tracked</div></div>
+    <div class="stat pending"><div class="n" id="s-pending">0</div><div class="l">Awaiting reply</div></div>
+    <div class="stat connected"><div class="n" id="s-connected">0</div><div class="l">Connected</div></div>
+    <div class="stat cold"><div class="n" id="s-cold">0</div><div class="l">No response</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search"><input id="search" placeholder="Search name, company, institution…"></div>
+    <select class="filter" id="filter">
+      <option value="all">All statuses</option>
+      <option value="pending">Awaiting reply</option>
+      <option value="no_response">No response</option>
+      <option value="connected">Connected</option>
+    </select>
+    <div class="thresh">Stale after <input type="number" id="thresh" value="21" min="1"> days</div>
+    <button class="btn" id="impInv">↑ Invitations CSV</button>
+    <button class="btn" id="impConn">↑ Connections CSV</button>
+    <button class="btn ghost" id="expBtn">↓ Export for CRM</button>
+    <button class="btn ghost" id="backupBtn" title="Download a full backup of your ledger">⛁ Backup</button>
+    <button class="btn ghost" id="restoreBtn" title="Restore from a backup file">⟲ Restore</button>
+    <input type="file" id="fileInv" accept=".csv" class="hidden">
+    <input type="file" id="fileConn" accept=".csv" class="hidden">
+    <input type="file" id="fileBackup" accept=".json" class="hidden">
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>Contact</th><th>Company / Title</th><th>Invited</th><th>Status</th><th>Institution</th><th>Stage</th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div class="empty hidden" id="empty">
+    <div class="big">Nothing tracked yet</div>
+    <div>Log a contact or import your LinkedIn export to begin building your permanent record.</div>
+  </div>
+</div>
+
+<!-- edit / add modal -->
+<div class="scrim" id="scrim">
+  <div class="modal">
+    <h2 id="m-title">Log a contact</h2>
+    <div class="murl hidden" id="m-url"></div>
+    <div class="meta hidden" id="m-meta"></div>
+    <div class="field"><label>Name</label><input id="f-name" placeholder="Full name"></div>
+    <div class="row2">
+      <div class="field"><label>LinkedIn URL</label><input id="f-prof" placeholder="optional"></div>
+      <div class="field"><label>Institution</label><input id="f-inst" placeholder="e.g. Spelman College"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Company</label><input id="f-company" placeholder="optional"></div>
+      <div class="field"><label>Title / Role</label><input id="f-position" placeholder="optional"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Status</label>
+        <select id="f-status">
+          <option value="pending">Awaiting reply</option>
+          <option value="no_response">No response</option>
+          <option value="connected">Connected</option>
+        </select>
+      </div>
+      <div class="field"><label>Sales stage</label>
+        <select id="f-stage">
+          <option>New</option><option>Researching</option><option>Outreach sent</option>
+          <option>In conversation</option><option>Meeting booked</option><option>Opportunity</option>
+          <option>Closed won</option><option>Not a fit</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>Notes</label><textarea id="f-notes" placeholder="Context, where you met, why you reached out, last touch…"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn danger hidden" id="delBtn">Delete</button>
+      <div style="display:flex;gap:10px;margin-left:auto">
+        <button class="btn ghost" id="cancelBtn">Cancel</button>
+        <button class="btn primary" id="saveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const KEY='ledger:contacts';
+let contacts=[];
+let editingId=null;
+let threshold=21;
+/* ---------- storage (browser localStorage — runs anywhere) ---------- */
+async function load(){
+  try{ const v=localStorage.getItem(KEY); if(v) return JSON.parse(v); }
+  catch(e){}
+  return [];
+}
+async function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(contacts)); }
+  catch(e){ toast('Could not save — storage may be full or blocked'); }
+}
+
+/* ---------- helpers ---------- */
+function uid(){ return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function norm(s){ return (s||'').toString().trim().toLowerCase(); }
+function keyOf(c){ return c.profileUrl ? norm(c.profileUrl).replace(/\/$/,'') : norm(c.name); }
+function daysSince(d){ if(!d) return null; const t=new Date(d); if(isNaN(t)) return null; return Math.floor((Date.now()-t)/86400000); }
+function fmt(d){ if(!d) return '—'; const t=new Date(d); if(isNaN(t)) return d; return t.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'2-digit'}); }
+function status(c){
+  if(c.connected) return 'connected';
+  if(c.manualStatus==='no_response') return 'no_response';
+  if(c.manualStatus==='connected') return 'connected';
+  const ds=daysSince(c.lastInvitedDate||c.invitedDate);
+  if(ds!==null && ds>threshold) return 'no_response';
+  return 'pending';
+}
+const STATUS_LABEL={connected:'Connected',pending:'Awaiting reply',no_response:'No response'};
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+/* ---------- merge ---------- */
+function upsert(rec){
+  const k=keyOf(rec);
+  let ex=contacts.find(c=>keyOf(c)===k && k);
+  if(ex){
+    // additive: never drop, fill blanks, keep earliest invite, latest activity
+    if(rec.invitedDate){ if(!ex.invitedDate||new Date(rec.invitedDate)<new Date(ex.invitedDate)) ex.invitedDate=rec.invitedDate; }
+    if(rec.invitedDate){ if(!ex.lastInvitedDate||new Date(rec.invitedDate)>new Date(ex.lastInvitedDate)) ex.lastInvitedDate=rec.invitedDate; }
+    ['profileUrl','company','position','invitationMessage'].forEach(f=>{ if(rec[f]&&!ex[f]) ex[f]=rec[f]; });
+    if(rec.connected){ ex.connected=true; ex.connectedOn=rec.connectedOn||ex.connectedOn; }
+    return false;
+  }
+  contacts.push(Object.assign({
+    id:uid(), name:'', profileUrl:'', company:'', position:'', institution:'',
+    invitedDate:'', lastInvitedDate:'', invitationMessage:'', connected:false, connectedOn:'',
+    manualStatus:'', stage:'New', notes:'', firstAdded:new Date().toISOString()
+  }, rec));
+  return true;
+}
+
+/* ---------- CSV parsing (robust to LinkedIn's preamble + header variants) ---------- */
+function findHeaderAndParse(text, mustHave){
+  const lines=text.split(/\r?\n/);
+  let start=0;
+  for(let i=0;i<Math.min(lines.length,12);i++){
+    const low=lines[i].toLowerCase();
+    if(mustHave.some(h=>low.includes(h))){ start=i; break; }
+  }
+  const sliced=lines.slice(start).join('\n');
+  return Papa.parse(sliced,{header:true,skipEmptyLines:true}).data;
+}
+function pick(row, candidates){
+  const keys=Object.keys(row);
+  for(const cand of candidates){
+    const hit=keys.find(k=>k.trim().toLowerCase()===cand);
+    if(hit && row[hit]!=null && row[hit]!=='') return row[hit].toString().trim();
+  }
+  // loose contains match
+  for(const cand of candidates){
+    const hit=keys.find(k=>k.trim().toLowerCase().includes(cand));
+    if(hit && row[hit]!=null && row[hit]!=='') return row[hit].toString().trim();
+  }
+  return '';
+}
+
+function importInvitations(text){
+  const rows=findHeaderAndParse(text,['from','to','sent','direction']);
+  let added=0, seen=0;
+  rows.forEach(row=>{
+    const dir=pick(row,['direction']).toUpperCase();
+    // only the people I invited
+    if(dir && dir.indexOf('OUT')===-1) return;
+    const name=pick(row,['to','invitee','recipient']) || pick(row,['from']);
+    if(!name) return;
+    const url=pick(row,['inviteeprofileurl','profile url','url','recipient profile url']);
+    const sent=pick(row,['sent at','sentat','sent','date']);
+    const msg=pick(row,['message']);
+    seen++;
+    const isNew=upsert({name, profileUrl:url, invitedDate:sent, lastInvitedDate:sent, invitationMessage:msg});
+    if(isNew) added++;
+  });
+  return {added, seen};
+}
+
+function importConnections(text){
+  const rows=findHeaderAndParse(text,['first name','last name','connected on','url']);
+  let matched=0;
+  rows.forEach(row=>{
+    const fn=pick(row,['first name','firstname']);
+    const ln=pick(row,['last name','lastname']);
+    const name=(fn+' '+ln).trim();
+    const url=pick(row,['url','profile url']);
+    const company=pick(row,['company']);
+    const position=pick(row,['position','title']);
+    const on=pick(row,['connected on','connectedon','date']);
+    if(!name && !url) return;
+    // reconcile: only mark people already in the ledger as connected
+    const probe={name, profileUrl:url};
+    const k=keyOf(probe);
+    const ex=contacts.find(c=>keyOf(c)===k && k) ||
+             contacts.find(c=>url && norm(c.profileUrl).replace(/\/$/,'')===norm(url).replace(/\/$/,'')) ||
+             contacts.find(c=>name && norm(c.name)===norm(name));
+    if(ex){
+      ex.connected=true; ex.connectedOn=on||ex.connectedOn;
+      if(company&&!ex.company) ex.company=company;
+      if(position&&!ex.position) ex.position=position;
+      if(url&&!ex.profileUrl) ex.profileUrl=url;
+      matched++;
+    }
+  });
+  return {matched};
+}
+
+/* ---------- render ---------- */
+function render(){
+  const q=norm(document.getElementById('search').value);
+  const f=document.getElementById('filter').value;
+  const tbody=document.getElementById('tbody');
+  const rows=contacts
+    .map(c=>({c,st:status(c)}))
+    .filter(({c,st})=>{
+      if(f!=='all' && st!==f) return false;
+      if(q){ const hay=norm(c.name+' '+c.company+' '+c.position+' '+c.institution+' '+c.notes); if(!hay.includes(q)) return false; }
+      return true;
+    })
+    .sort((a,b)=>{
+      const order={no_response:0,pending:1,connected:2};
+      if(order[a.st]!==order[b.st]) return order[a.st]-order[b.st];
+      return (b.c.lastInvitedDate||'').localeCompare(a.c.lastInvitedDate||'');
+    });
+
+  tbody.innerHTML='';
+  rows.forEach(({c,st})=>{
+    const tr=document.createElement('tr');
+    if(st==='no_response') tr.className='stale';
+    const ds=daysSince(c.lastInvitedDate||c.invitedDate);
+    const ago = ds!==null ? ` · ${ds}d ago` : '';
+    tr.innerHTML=`
+      <td><div class="name">${esc(c.name)||'—'}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
+      <td>${c.company?`<div>${esc(c.company)}</div>`:''}${c.position?`<div class="sub">${esc(c.position)}</div>`:(c.company?'':'<span class="sub">—</span>')}</td>
+      <td>${fmt(c.invitedDate)}<div class="sub">${st==='connected'&&c.connectedOn?'joined '+fmt(c.connectedOn):(ds!==null?ds+'d ago':'')}</div></td>
+      <td><span class="pill ${st}">${STATUS_LABEL[st]}</span></td>
+      <td class="inst">${esc(c.institution)||'<span class="sub">—</span>'}</td>
+      <td><span class="stagetag">${esc(c.stage||'New')}</span></td>`;
+    tr.onclick=()=>openEdit(c.id);
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('empty').classList.toggle('hidden', contacts.length>0);
+  document.getElementById('hint').classList.toggle('hidden', contacts.length>0);
+
+  const all=contacts.map(status);
+  setNum('s-total',contacts.length);
+  setNum('s-pending',all.filter(s=>s==='pending').length);
+  setNum('s-connected',all.filter(s=>s==='connected').length);
+  setNum('s-cold',all.filter(s=>s==='no_response').length);
+}
+function setNum(id,n){ document.getElementById(id).textContent=n; }
+function esc(s){ return (s||'').toString().replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+function shortUrl(u){ return u.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//,'in/').replace(/\/$/,''); }
+
+/* ---------- modal ---------- */
+function openEdit(id){
+  const c=contacts.find(x=>x.id===id);
+  editingId=id;
+  document.getElementById('m-title').textContent=c.name||'Contact';
+  const mu=document.getElementById('m-url');
+  if(c.profileUrl){ mu.textContent=c.profileUrl; mu.classList.remove('hidden'); } else mu.classList.add('hidden');
+  const meta=document.getElementById('m-meta');
+  const bits=[];
+  if(c.invitationMessage) bits.push('Your invite note: “'+c.invitationMessage+'”');
+  if(c.firstAdded) bits.push('Added to ledger '+fmt(c.firstAdded));
+  if(bits.length){ meta.innerHTML=bits.map(esc).join('<br>'); meta.classList.remove('hidden'); } else meta.classList.add('hidden');
+  document.getElementById('f-name').value=c.name||'';
+  document.getElementById('f-prof').value=c.profileUrl||'';
+  document.getElementById('f-inst').value=c.institution||'';
+  document.getElementById('f-company').value=c.company||'';
+  document.getElementById('f-position').value=c.position||'';
+  document.getElementById('f-status').value=status(c);
+  document.getElementById('f-stage').value=c.stage||'New';
+  document.getElementById('f-notes').value=c.notes||'';
+  document.getElementById('delBtn').classList.remove('hidden');
+  document.getElementById('scrim').classList.add('show');
+}
+function openAdd(){
+  editingId=null;
+  document.getElementById('m-title').textContent='Log a contact';
+  document.getElementById('m-url').classList.add('hidden');
+  document.getElementById('m-meta').classList.add('hidden');
+  ['f-name','f-prof','f-inst','f-company','f-position','f-notes'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('f-status').value='pending';
+  document.getElementById('f-stage').value='New';
+  document.getElementById('delBtn').classList.add('hidden');
+  document.getElementById('scrim').classList.add('show');
+}
+function closeModal(){ document.getElementById('scrim').classList.remove('show'); }
+
+async function saveModal(){
+  const name=document.getElementById('f-name').value.trim();
+  if(!name){ toast('Name is required'); return; }
+  const st=document.getElementById('f-status').value;
+  const data={
+    name,
+    profileUrl:document.getElementById('f-prof').value.trim(),
+    institution:document.getElementById('f-inst').value.trim(),
+    company:document.getElementById('f-company').value.trim(),
+    position:document.getElementById('f-position').value.trim(),
+    stage:document.getElementById('f-stage').value,
+    notes:document.getElementById('f-notes').value.trim(),
+    connected: st==='connected',
+    manualStatus: st
+  };
+  if(editingId){
+    const c=contacts.find(x=>x.id===editingId);
+    Object.assign(c,data);
+  }else{
+    contacts.push(Object.assign({
+      id:uid(), invitedDate:new Date().toISOString(), lastInvitedDate:new Date().toISOString(),
+      invitationMessage:'', connectedOn: data.connected?new Date().toISOString():'',
+      firstAdded:new Date().toISOString()
+    }, data));
+  }
+  await save(); closeModal(); render(); toast('Saved');
+}
+async function delContact(){
+  if(!editingId) return;
+  contacts=contacts.filter(c=>c.id!==editingId);
+  await save(); closeModal(); render(); toast('Removed');
+}
+
+/* ---------- export ---------- */
+function exportCsv(){
+  if(!contacts.length){ toast('Nothing to export'); return; }
+  const cols=['Name','LinkedIn URL','Company','Title','Institution','Status','Invited Date','Connected On','Stage','Notes'];
+  const rows=contacts.map(c=>[
+    c.name, c.profileUrl, c.company, c.position, c.institution,
+    STATUS_LABEL[status(c)], c.invitedDate?fmt(c.invitedDate):'', c.connectedOn?fmt(c.connectedOn):'',
+    c.stage||'', (c.notes||'').replace(/\n/g,' ')
+  ]);
+  const csv=Papa.unparse({fields:cols,data:rows});
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+  toast('Exported '+contacts.length+' contacts');
+}
+
+/* ---------- backup / restore (protects against cleared browser data) ---------- */
+function backup(){
+  const blob=new Blob([JSON.stringify(contacts,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='ledger-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+  toast('Backed up '+contacts.length+' contacts');
+}
+async function restore(text){
+  try{
+    const data=JSON.parse(text);
+    if(!Array.isArray(data)) throw new Error('bad');
+    let added=0;
+    data.forEach(rec=>{ if(upsert(rec)) added++; });
+    await save(); render();
+    toast(`Restored — ${added} added, ${data.length-added} merged`);
+  }catch(e){ toast('That file is not a valid backup'); }
+}
+
+/* ---------- file handlers ---------- */
+function readFile(input, handler){
+  const f=input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=async()=>{ await handler(r.result); input.value=''; };
+  r.readAsText(f);
+}
+
+/* ---------- wire up ---------- */
+document.getElementById('addBtn').onclick=openAdd;
+document.getElementById('saveBtn').onclick=saveModal;
+document.getElementById('cancelBtn').onclick=closeModal;
+document.getElementById('delBtn').onclick=delContact;
+document.getElementById('scrim').onclick=e=>{ if(e.target.id==='scrim') closeModal(); };
+document.getElementById('search').oninput=render;
+document.getElementById('filter').onchange=render;
+document.getElementById('thresh').onchange=e=>{ threshold=parseInt(e.target.value)||21; render(); };
+document.getElementById('expBtn').onclick=exportCsv;
+document.getElementById('backupBtn').onclick=backup;
+document.getElementById('restoreBtn').onclick=()=>document.getElementById('fileBackup').click();
+document.getElementById('fileBackup').onchange=e=>readFile(e.target,restore);
+document.getElementById('impInv').onclick=()=>document.getElementById('fileInv').click();
+document.getElementById('impConn').onclick=()=>document.getElementById('fileConn').click();
+document.getElementById('fileInv').onchange=e=>readFile(e.target,async t=>{
+  const {added,seen}=importInvitations(t); await save(); render();
+  toast(seen?`Imported ${seen} sent invites (${added} new)`:'No outgoing invitations found — check the file');
+});
+document.getElementById('fileConn').onchange=e=>readFile(e.target,async t=>{
+  const {matched}=importConnections(t); await save(); render();
+  toast(`Reconciled — ${matched} marked connected`);
+});
+
+(async()=>{ contacts=await load(); render(); })();
+</script>
+</body>
+</html>
