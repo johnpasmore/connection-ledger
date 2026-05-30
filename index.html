@@ -129,6 +129,7 @@
     <div class="toolbar">
       <div class="search"><input id="search" placeholder="Search name, company, institution…"></div>
       <select class="filter" id="filter"><option value="all">All statuses</option><option value="pending">Awaiting reply</option><option value="no_response">No response</option><option value="connected">Connected</option></select>
+      <select class="filter" id="sortby"><option value="status">Sort: Status</option><option value="date_desc">Date ↓ newest</option><option value="date_asc">Date ↑ oldest</option></select>
       <div class="thresh">Stale after <input type="number" id="thresh" value="21" min="1"> days</div>
       <button class="btn" id="impInv">↑ Invitations CSV</button>
       <button class="btn" id="impConn">↑ Connections CSV</button>
@@ -139,7 +140,7 @@
       <input type="file" id="fileConn" accept=".csv" class="hidden">
       <input type="file" id="fileBackup" accept=".json" class="hidden">
     </div>
-    <table><thead><tr><th>Contact</th><th>Company / Title</th><th>Invited</th><th>Status</th><th>Institution</th><th>Stage</th></tr></thead><tbody id="tbody"></tbody></table>
+    <table><thead><tr><th>Contact</th><th>Company / Title</th><th>Date</th><th>Status</th><th>Institution</th><th>Stage</th></tr></thead><tbody id="tbody"></tbody></table>
     <div class="empty hidden" id="empty"><div class="big">Nothing tracked yet</div><div>Log a contact or import your LinkedIn export to begin.</div></div>
   </section>
 
@@ -195,6 +196,7 @@
         <div class="item"><label class="fld">Record action</label><select id="f-action"><option>create_new</option><option>update_existing</option><option>needs_review</option></select></div>
         <div class="item"><label class="fld">Activity type</label><select id="f-atype"><option>Email</option><option>Meeting request</option><option>Call follow-up</option><option>Intro</option><option>Other</option></select></div>
         <div class="item"><label class="fld">Stage signal</label><input id="lr-stage"></div>
+        <div class="item"><label class="fld">Email date (sent)</label><input id="f-emaildate" type="date"></div>
         <div class="item"><label class="fld" id="lbl-key">Key detail</label><input id="f-key"></div>
         <div class="item full"><label class="fld">Activity subject</label><input id="f-subj"></div>
         <div class="item full"><label class="fld">Summary (CRM-ready)</label><textarea id="f-summary"></textarea></div>
@@ -220,6 +222,7 @@
   <div class="row2"><div class="field"><label class="fld">LinkedIn URL</label><input id="f-prof" placeholder="optional"></div><div class="field"><label class="fld">Institution</label><input id="f-inst" placeholder="e.g. Spelman College"></div></div>
   <div class="row2"><div class="field"><label class="fld">Company</label><input id="f-company" placeholder="optional"></div><div class="field"><label class="fld">Title / Role</label><input id="f-position" placeholder="optional"></div></div>
   <div class="row2"><div class="field"><label class="fld">Status</label><select id="f-status"><option value="pending">Awaiting reply</option><option value="no_response">No response</option><option value="connected">Connected</option></select></div><div class="field"><label class="fld">Sales stage</label><select id="f-salesstage"><option>New</option><option>Researching</option><option>Outreach sent</option><option>In conversation</option><option>Meeting booked</option><option>Opportunity</option><option>Closed won</option><option>Not a fit</option></select></div></div>
+  <div class="field"><label class="fld">Date of action (invitation, message, or connection)</label><input id="f-date" type="date"></div>
   <div class="field"><label class="fld">Notes</label><textarea id="f-notes" placeholder="Context, where you met, why you reached out, last touch…"></textarea></div>
   <div class="modal-actions"><button class="btn danger hidden" id="delBtn">Delete</button><div style="display:flex;gap:10px;margin-left:auto"><button class="btn ghost" id="cancelBtn">Cancel</button><button class="btn primary" id="saveBtn">Save</button></div></div>
 </div></div>
@@ -231,6 +234,8 @@
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
 function esc(s){return (s||'').toString().replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
 function csvCell(v){v=(v==null?'':String(v));return '"'+v.replace(/"/g,'""')+'"';}
+function toISODate(s){if(!s)return '';const d=new Date(s);if(isNaN(d))return '';return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);}
+function todayISO(){return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);}
 /* tabs */
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
@@ -243,14 +248,16 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
 (function(){
   const KEY='ledger:contacts';
   let contacts=[]; let editingId=null; let threshold=21;
-  function load(){try{const v=localStorage.getItem(KEY);if(v)return JSON.parse(v);}catch(e){}return [];}
+  function load(){try{const v=localStorage.getItem(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
   function save(){try{localStorage.setItem(KEY,JSON.stringify(contacts));}catch(e){toast('Could not save');}}
   function uid(){return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
   function norm(s){return (s||'').toString().trim().toLowerCase();}
   function keyOf(c){return c.profileUrl?norm(c.profileUrl).replace(/\/$/,''):norm(c.name);}
   function daysSince(d){if(!d)return null;const t=new Date(d);if(isNaN(t))return null;return Math.floor((Date.now()-t)/86400000);}
   function fmt(d){if(!d)return '—';const t=new Date(d);if(isNaN(t))return d;return t.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'2-digit'});}
-  function status(c){if(c.connected)return 'connected';if(c.manualStatus==='no_response')return 'no_response';if(c.manualStatus==='connected')return 'connected';const ds=daysSince(c.lastInvitedDate||c.invitedDate);if(ds!==null&&ds>threshold)return 'no_response';return 'pending';}
+  function dateOf(c){return c.actionDate||c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';}
+  function dateNum(c){const d=new Date(dateOf(c));return isNaN(d)?0:d.getTime();}
+  function status(c){if(c.connected)return 'connected';if(c.manualStatus==='no_response')return 'no_response';if(c.manualStatus==='connected')return 'connected';const ds=daysSince(dateOf(c));if(ds!==null&&ds>threshold)return 'no_response';return 'pending';}
   const SL={connected:'Connected',pending:'Awaiting reply',no_response:'No response'};
   function shortUrl(u){return u.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//,'in/').replace(/\/$/,'');}
 
@@ -259,27 +266,28 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     if(ex){
       if(rec.invitedDate){if(!ex.invitedDate||new Date(rec.invitedDate)<new Date(ex.invitedDate))ex.invitedDate=rec.invitedDate;}
       if(rec.invitedDate){if(!ex.lastInvitedDate||new Date(rec.invitedDate)>new Date(ex.lastInvitedDate))ex.lastInvitedDate=rec.invitedDate;}
+      if(rec.actionDate){if(!ex.actionDate||new Date(rec.actionDate)>new Date(ex.actionDate))ex.actionDate=rec.actionDate;}
       ['profileUrl','company','position','invitationMessage','institution','stage','notes'].forEach(f=>{if(rec[f]&&!ex[f])ex[f]=rec[f];});
-      if(rec.connected){ex.connected=true;ex.connectedOn=rec.connectedOn||ex.connectedOn;}
+      if(rec.connected){ex.connected=true;ex.connectedOn=rec.connectedOn||ex.connectedOn;if(rec.connectedOn)ex.actionDate=rec.connectedOn;}
       return false;
     }
-    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',invitationMessage:'',connected:false,connectedOn:'',manualStatus:'',stage:'New',notes:'',firstAdded:new Date().toISOString()},rec));
+    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',manualStatus:'',stage:'New',notes:'',firstAdded:new Date().toISOString()},rec));
     return true;
   }
   function findHeaderAndParse(text,mustHave){const lines=text.split(/\r?\n/);let start=0;for(let i=0;i<Math.min(lines.length,12);i++){const low=lines[i].toLowerCase();if(mustHave.some(h=>low.includes(h))){start=i;break;}}return Papa.parse(lines.slice(start).join('\n'),{header:true,skipEmptyLines:true}).data;}
   function pick(row,cands){const keys=Object.keys(row);for(const c of cands){const h=keys.find(k=>k.trim().toLowerCase()===c);if(h&&row[h]!=null&&row[h]!=='')return row[h].toString().trim();}for(const c of cands){const h=keys.find(k=>k.trim().toLowerCase().includes(c));if(h&&row[h]!=null&&row[h]!=='')return row[h].toString().trim();}return '';}
-  function importInvitations(text){const rows=findHeaderAndParse(text,['from','to','sent','direction']);let added=0,seen=0;rows.forEach(row=>{const dir=pick(row,['direction']).toUpperCase();if(dir&&dir.indexOf('OUT')===-1)return;const name=pick(row,['to','invitee','recipient'])||pick(row,['from']);if(!name)return;const url=pick(row,['inviteeprofileurl','profile url','url']);const sent=pick(row,['sent at','sentat','sent','date']);const msg=pick(row,['message']);seen++;if(upsert({name,profileUrl:url,invitedDate:sent,lastInvitedDate:sent,invitationMessage:msg}))added++;});return {added,seen};}
-  function importConnections(text){const rows=findHeaderAndParse(text,['first name','last name','connected on','url']);let matched=0;rows.forEach(row=>{const fn=pick(row,['first name','firstname']);const ln=pick(row,['last name','lastname']);const name=(fn+' '+ln).trim();const url=pick(row,['url','profile url']);const company=pick(row,['company']);const position=pick(row,['position','title']);const on=pick(row,['connected on','connectedon','date']);if(!name&&!url)return;const k=keyOf({name,profileUrl:url});const ex=contacts.find(c=>keyOf(c)===k&&k)||contacts.find(c=>url&&norm(c.profileUrl).replace(/\/$/,'')===norm(url).replace(/\/$/,''))||contacts.find(c=>name&&norm(c.name)===norm(name));if(ex){ex.connected=true;ex.connectedOn=on||ex.connectedOn;if(company&&!ex.company)ex.company=company;if(position&&!ex.position)ex.position=position;if(url&&!ex.profileUrl)ex.profileUrl=url;matched++;}});return {matched};}
+  function importInvitations(text){const rows=findHeaderAndParse(text,['from','to','sent','direction']);let added=0,seen=0;rows.forEach(row=>{const dir=pick(row,['direction']).toUpperCase();if(dir&&dir.indexOf('OUT')===-1)return;const name=pick(row,['to','invitee','recipient'])||pick(row,['from']);if(!name)return;const url=pick(row,['inviteeprofileurl','profile url','url']);const sent=pick(row,['sent at','sentat','sent','date']);const msg=pick(row,['message']);seen++;if(upsert({name,profileUrl:url,invitedDate:sent,lastInvitedDate:sent,actionDate:sent,invitationMessage:msg}))added++;});return {added,seen};}
+  function importConnections(text){const rows=findHeaderAndParse(text,['first name','last name','connected on','url']);let matched=0;rows.forEach(row=>{const fn=pick(row,['first name','firstname']);const ln=pick(row,['last name','lastname']);const name=(fn+' '+ln).trim();const url=pick(row,['url','profile url']);const company=pick(row,['company']);const position=pick(row,['position','title']);const on=pick(row,['connected on','connectedon','date']);if(!name&&!url)return;const k=keyOf({name,profileUrl:url});const ex=contacts.find(c=>keyOf(c)===k&&k)||contacts.find(c=>url&&norm(c.profileUrl).replace(/\/$/,'')===norm(url).replace(/\/$/,''))||contacts.find(c=>name&&norm(c.name)===norm(name));if(ex){ex.connected=true;ex.connectedOn=on||ex.connectedOn;if(on)ex.actionDate=on;if(company&&!ex.company)ex.company=company;if(position&&!ex.position)ex.position=position;if(url&&!ex.profileUrl)ex.profileUrl=url;matched++;}});return {matched};}
 
   function render(){
-    const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const tbody=document.getElementById('tbody');
+    const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const tbody=document.getElementById('tbody');
     const rows=contacts.map(c=>({c,st:status(c)})).filter(({c,st})=>{if(f!=='all'&&st!==f)return false;if(q){const hay=norm(c.name+' '+c.company+' '+c.position+' '+c.institution+' '+c.notes);if(!hay.includes(q))return false;}return true;})
-      .sort((a,b)=>{const o={no_response:0,pending:1,connected:2};if(o[a.st]!==o[b.st])return o[a.st]-o[b.st];return (b.c.lastInvitedDate||'').localeCompare(a.c.lastInvitedDate||'');});
+      .sort((a,b)=>{if(sortby==='date_desc')return dateNum(b.c)-dateNum(a.c);if(sortby==='date_asc')return dateNum(a.c)-dateNum(b.c);const o={no_response:0,pending:1,connected:2};if(o[a.st]!==o[b.st])return o[a.st]-o[b.st];return dateNum(b.c)-dateNum(a.c);});
     tbody.innerHTML='';
-    rows.forEach(({c,st})=>{const tr=document.createElement('tr');if(st==='no_response')tr.className='stale';const ds=daysSince(c.lastInvitedDate||c.invitedDate);
+    rows.forEach(({c,st})=>{const tr=document.createElement('tr');if(st==='no_response')tr.className='stale';const ds=daysSince(dateOf(c));
       tr.innerHTML=`<td><div class="name">${esc(c.name)||'—'}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
         <td>${c.company?`<div>${esc(c.company)}</div>`:''}${c.position?`<div class="sub">${esc(c.position)}</div>`:(c.company?'':'<span class="sub">—</span>')}</td>
-        <td>${fmt(c.invitedDate)}<div class="sub">${st==='connected'&&c.connectedOn?'joined '+fmt(c.connectedOn):(ds!==null?ds+'d ago':'')}</div></td>
+        <td>${fmt(dateOf(c))}<div class="sub">${st==='connected'?'connected':(ds!==null?ds+'d ago':'')}</div></td>
         <td><span class="pill ${st}">${SL[st]}</span></td>
         <td class="inst">${esc(c.institution)||'<span class="sub">—</span>'}</td>
         <td><span class="stagetag">${esc(c.stage||'New')}</span></td>`;
@@ -299,18 +307,18 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     if(bits.length){meta.innerHTML=bits.map(esc).join('<br>');meta.classList.remove('hidden');}else meta.classList.add('hidden');
     document.getElementById('f-name').value=c.name||'';document.getElementById('f-prof').value=c.profileUrl||'';document.getElementById('f-inst').value=c.institution||'';
     document.getElementById('f-company').value=c.company||'';document.getElementById('f-position').value=c.position||'';document.getElementById('f-status').value=status(c);
-    document.getElementById('f-salesstage').value=c.stage||'New';document.getElementById('f-notes').value=c.notes||'';
+    document.getElementById('f-salesstage').value=c.stage||'New';document.getElementById('f-notes').value=c.notes||'';document.getElementById('f-date').value=toISODate(dateOf(c));
     document.getElementById('delBtn').classList.remove('hidden');document.getElementById('scrim').classList.add('show');}
   function openAdd(){editingId=null;document.getElementById('m-title').textContent='Log a contact';document.getElementById('m-url').classList.add('hidden');document.getElementById('m-meta').classList.add('hidden');
-    ['f-name','f-prof','f-inst','f-company','f-position','f-notes'].forEach(i=>document.getElementById(i).value='');document.getElementById('f-status').value='pending';document.getElementById('f-salesstage').value='New';
+    ['f-name','f-prof','f-inst','f-company','f-position','f-notes'].forEach(i=>document.getElementById(i).value='');document.getElementById('f-status').value='pending';document.getElementById('f-salesstage').value='New';document.getElementById('f-date').value=todayISO();
     document.getElementById('delBtn').classList.add('hidden');document.getElementById('scrim').classList.add('show');}
   function closeModal(){document.getElementById('scrim').classList.remove('show');}
   function saveModal(){const name=document.getElementById('f-name').value.trim();if(!name){toast('Name is required');return;}const st=document.getElementById('f-status').value;
-    const data={name,profileUrl:document.getElementById('f-prof').value.trim(),institution:document.getElementById('f-inst').value.trim(),company:document.getElementById('f-company').value.trim(),position:document.getElementById('f-position').value.trim(),stage:document.getElementById('f-salesstage').value,notes:document.getElementById('f-notes').value.trim(),connected:st==='connected',manualStatus:st};
+    const data={name,profileUrl:document.getElementById('f-prof').value.trim(),institution:document.getElementById('f-inst').value.trim(),company:document.getElementById('f-company').value.trim(),position:document.getElementById('f-position').value.trim(),stage:document.getElementById('f-salesstage').value,notes:document.getElementById('f-notes').value.trim(),actionDate:document.getElementById('f-date').value||todayISO(),connected:st==='connected',manualStatus:st};
     if(editingId){Object.assign(contacts.find(x=>x.id===editingId),data);}else{contacts.push(Object.assign({id:uid(),invitedDate:new Date().toISOString(),lastInvitedDate:new Date().toISOString(),invitationMessage:'',connectedOn:data.connected?new Date().toISOString():'',firstAdded:new Date().toISOString()},data));}
     save();closeModal();render();toast('Saved');}
   function delContact(){if(!editingId)return;contacts=contacts.filter(c=>c.id!==editingId);save();closeModal();render();toast('Removed');}
-  function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Company','Title','Institution','Status','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{rows.push([c.name,c.profileUrl,c.company,c.position,c.institution,SL[status(c)],c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
+  function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Company','Title','Date','Institution','Status','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{rows.push([c.name,c.profileUrl,c.company,c.position,toISODate(dateOf(c)),c.institution,SL[status(c)],c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
   function dl(content,name,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 
   /* combined backup / restore (both tabs) */
@@ -328,6 +336,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('scrim').onclick=e=>{if(e.target.id==='scrim')closeModal();};
   document.getElementById('search').oninput=render;
   document.getElementById('filter').onchange=render;
+  document.getElementById('sortby').onchange=render;
   document.getElementById('thresh').onchange=e=>{threshold=parseInt(e.target.value)||21;render();};
   document.getElementById('expBtn').onclick=exportCsv;
   document.getElementById('backupBtn').onclick=backup;
@@ -363,9 +372,10 @@ CONTACTS — extract EVERY distinct person in the thread as a separate entry. Ma
 
 key_detail is type-specific: Institution -> enrollment / pilot scope; Commercial -> seat count / procurement; Investor -> round stage & check size; Partner -> partnership type.
 routing: suggested Salesforce destination. Keep summary to 2-3 sentences and reasoning to ONE sentence.
+email_date: the date the email was sent, taken from the email's Date/Sent header or body; format as YYYY-MM-DD if determinable, otherwise "".
 
 Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
-{"lead_type":"","lead_type_reasoning":"","entity":"","entity_confidence":"high|medium|low","contacts":[{"name":"","title":"","email":"","alt_emails":[],"role":"","organization":"","primary":false}],"record_action":"create_new|update_existing|needs_review","activity_type":"","subject":"","summary":"","stage_signal":"","key_detail":"","next_step":"","routing":"","flags":[]}`;
+{"lead_type":"","lead_type_reasoning":"","entity":"","entity_confidence":"high|medium|low","contacts":[{"name":"","title":"","email":"","alt_emails":[],"role":"","organization":"","primary":false}],"record_action":"create_new|update_existing|needs_review","activity_type":"","subject":"","summary":"","stage_signal":"","key_detail":"","next_step":"","routing":"","email_date":"","flags":[]}`;
   const KEY_LABELS={Institution:"Enrollment / pilot scope",Commercial:"Seat count / procurement",Investor:"Round stage & check size",Partner:"Partnership type",Unclear:"Key detail"};
   const ENTITY_LABELS={Institution:"Institution (Account)",Commercial:"Company (Account)",Investor:"Firm",Partner:"Partner company",Unclear:"Entity / Account"};
   const ROLES=["Decision maker","Champion","Influencer","Gatekeeper","Intermediary/Consultant","Unknown"];
@@ -376,20 +386,22 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function setStatus(h){g('status').innerHTML=h;}
 
   /* api key persistence */
-  g('lr-apikey').value=localStorage.getItem(AKEY)||'';
-  g('lr-model').value=localStorage.getItem(MKEY)||'claude-sonnet-4-5';
-  g('lr-sfaddr').value=localStorage.getItem(SFKEY)||DEFAULT_SF;
+  function lsGet(k,d){try{const v=localStorage.getItem(k);return (v==null||v==='')?d:v;}catch(e){return d;}}
+  function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+  g('lr-apikey').value=lsGet(AKEY,'');
+  g('lr-model').value=lsGet(MKEY,'claude-sonnet-4-5');
+  g('lr-sfaddr').value=lsGet(SFKEY,DEFAULT_SF);
   function refreshConn(){
-    const has=!!(localStorage.getItem(AKEY)||'').trim();
+    const has=!!lsGet(AKEY,'').trim();
     g('lr-connstatus').textContent=has?'Anthropic API connected ✓':'No API key yet — add one to enable Classify & route.';
     g('lr-toggle').textContent=has?'Edit API':'Add API';
     g('lr-keybar').style.display=has?'none':'flex';
   }
   g('lr-toggle').onclick=()=>{const kb=g('lr-keybar');kb.style.display=(kb.style.display==='none')?'flex':'none';};
   g('lr-savekey').onclick=()=>{
-    localStorage.setItem(AKEY,g('lr-apikey').value.trim());
-    localStorage.setItem(MKEY,g('lr-model').value.trim()||'claude-sonnet-4-5');
-    localStorage.setItem(SFKEY,g('lr-sfaddr').value.trim());
+    lsSet(AKEY,g('lr-apikey').value.trim());
+    lsSet(MKEY,g('lr-model').value.trim()||'claude-sonnet-4-5');
+    lsSet(SFKEY,g('lr-sfaddr').value.trim());
     toast('Settings saved in this browser');refreshConn();
   };
   refreshConn();
@@ -436,7 +448,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     const conf=(o.entity_confidence||'low').toLowerCase();const cf=g('r-conf');cf.className='pill '+conf;cf.textContent=conf+' confidence';
     g('r-reason').textContent=o.lead_type_reasoning||'';g('r-routing').innerHTML='<b>Route to:</b> '+esc(o.routing||'—');
     g('f-type').value=type;g('f-entity').value=o.entity||'';g('f-action').value=o.record_action||'needs_review';g('f-atype').value=o.activity_type||'Email';
-    g('lr-stage').value=o.stage_signal||'';g('f-key').value=o.key_detail||'';g('f-subj').value=o.subject||'';g('f-summary').value=o.summary||'';g('f-next').value=o.next_step||'';
+    g('lr-stage').value=o.stage_signal||'';g('f-key').value=o.key_detail||'';g('f-subj').value=o.subject||'';g('f-summary').value=o.summary||'';g('f-next').value=o.next_step||'';g('f-emaildate').value=toISODate(o.email_date)||todayISO();
     updateLabels(type);
     const box=g('contacts');box.innerHTML='';let cs=Array.isArray(o.contacts)&&o.contacts.length?o.contacts:[{name:'',title:'',email:'',alt_emails:[],role:'Unknown',organization:'',primary:true}];if(!cs.some(c=>c.primary))cs[0].primary=true;cs.forEach(c=>box.appendChild(contactCard(c)));
     const fb=g('r-flags'),fl=g('r-flaglist');if(o.flags&&o.flags.length){fl.innerHTML=o.flags.map(f=>'<li>'+esc(f)+'</li>').join('');fb.style.display='block';}else fb.style.display='none';
@@ -446,12 +458,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   g('addContact').onclick=()=>g('contacts').appendChild(contactCard({name:'',title:'',email:'',alt_emails:[],role:'Unknown',organization:'',primary:false}));
 
   function collectContacts(){const primId=(document.querySelector('input[name="primaryContact"]:checked')||{}).value;return [...document.querySelectorAll('#contacts .cc')].map(div=>({name:div.querySelector('.c-name').value,title:div.querySelector('.c-title').value,email:div.querySelector('.c-email').value,alt_emails:div.querySelector('.c-alt').value.split(',').map(s=>s.trim()).filter(Boolean),role:div.querySelector('.c-role').value,organization:div.querySelector('.c-org').value,primary:div.dataset.id===primId}));}
-  function collect(){return{lead_type:g('f-type').value,entity:g('f-entity').value,contacts:collectContacts(),record_action:g('f-action').value,activity_type:g('f-atype').value,stage_signal:g('lr-stage').value,key_detail:g('f-key').value,subject:g('f-subj').value,summary:g('f-summary').value,next_step:g('f-next').value};}
+  function collect(){return{lead_type:g('f-type').value,entity:g('f-entity').value,contacts:collectContacts(),record_action:g('f-action').value,activity_type:g('f-atype').value,stage_signal:g('lr-stage').value,key_detail:g('f-key').value,subject:g('f-subj').value,summary:g('f-summary').value,next_step:g('f-next').value,email_date:g('f-emaildate').value};}
 
   g('copyJson').onclick=()=>{navigator.clipboard.writeText(JSON.stringify(collect(),null,2));toast('JSON copied');};
   g('copySummary').onclick=()=>{const c=collect();const who=c.contacts.map(p=>`${p.name}${p.title?' ('+p.title+')':''}${p.primary?' [primary]':''}`).join('; ');navigator.clipboard.writeText(`${c.entity} — ${c.lead_type}\nContacts: ${who}\n\n${c.subject}\n${c.summary}\n\nNext: ${c.next_step}`);toast('Summary copied');};
   g('logSF').onclick=()=>{
-    const sf=(g('lr-sfaddr').value||localStorage.getItem(SFKEY)||DEFAULT_SF).trim();
+    const sf=(g('lr-sfaddr').value||lsGet(SFKEY,DEFAULT_SF)).trim();
     if(!sf){toast('Set your Salesforce logging address in settings first');return;}
     persistCurrent();
     const c=collect();
@@ -467,7 +479,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function dbSave(){try{localStorage.setItem(DBKEY,JSON.stringify(saved));}catch(e){toast('Could not save');}}
   function renderVault(){g('vault-count').textContent=saved.length;const list=g('savedList');
     if(!saved.length){list.innerHTML='<div style="font-size:12.5px;color:var(--ink-soft);padding:6px 2px">No saved leads yet.</div>';}
-    else{list.innerHTML=saved.slice().reverse().map(r=>{const d=new Date(r.saved_at);const n=r.contacts?r.contacts.length:0;return `<div class="cc" style="padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="pill type-${esc(r.lead_type)}">${esc(r.lead_type)}</span><span style="font-weight:600">${esc(r.entity)||'—'}</span><span style="font-size:12px;color:var(--ink-soft)">${n} contact${n===1?'':'s'} · ${isNaN(d)?'':d.toLocaleDateString()}</span><button class="rm" data-id="${r.id}" title="Delete" style="margin-left:auto">&times;</button></div>`;}).join('');
+    else{const sorted=saved.slice().sort((a,b)=>{const da=new Date(a.email_date||a.saved_at||0),db=new Date(b.email_date||b.saved_at||0);return (isNaN(db)?0:db.getTime())-(isNaN(da)?0:da.getTime());});list.innerHTML=sorted.map(r=>{const d=new Date(r.email_date||r.saved_at);const n=r.contacts?r.contacts.length:0;return `<div class="cc" style="padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="pill type-${esc(r.lead_type)}">${esc(r.lead_type)}</span><span style="font-weight:600">${esc(r.entity)||'—'}</span><span style="font-size:12px;color:var(--ink-soft)">${n} contact${n===1?'':'s'} · ${isNaN(d)?'':d.toLocaleDateString()}</span><button class="rm" data-id="${r.id}" title="Delete" style="margin-left:auto">&times;</button></div>`;}).join('');
       list.querySelectorAll('.rm').forEach(b=>b.onclick=()=>{saved=saved.filter(x=>x.id!==b.dataset.id);dbSave();renderVault();toast('Deleted');});}}
   function persistCurrent(){
     const c=collect();
@@ -478,8 +490,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   g('saveDb').onclick=()=>{if(persistCurrent())toast('Saved — '+saved.length+' in your database');else toast('Nothing to save yet');};
   g('viewSaved').onclick=()=>{const l=g('savedList');l.style.display=(l.style.display==='none'||!l.style.display)?'flex':'none';};
-  g('exportAll').onclick=()=>{if(!saved.length){toast('No saved leads to export');return;}const cols=['saved_at','lead_id','lead_type','entity','contact_name','contact_title','contact_email','contact_alt_emails','contact_role','contact_organization','is_primary','record_action','activity_type','stage_signal','key_detail','subject','summary','next_step'];const rows=[cols.map(csvCell).join(',')];
-    saved.forEach(r=>{const cs=(r.contacts&&r.contacts.length)?r.contacts:[{}];cs.forEach(p=>{rows.push([r.saved_at,r.id,r.lead_type,r.entity,p.name,p.title,p.email,(p.alt_emails||[]).join('; '),p.role,p.organization,p.primary?'yes':'no',r.record_action,r.activity_type,r.stage_signal,r.key_detail,r.subject,r.summary,r.next_step].map(csvCell).join(','));});});
+  g('exportAll').onclick=()=>{if(!saved.length){toast('No saved leads to export');return;}const cols=['email_date','saved_at','lead_id','lead_type','entity','contact_name','contact_title','contact_email','contact_alt_emails','contact_role','contact_organization','is_primary','record_action','activity_type','stage_signal','key_detail','subject','summary','next_step'];const rows=[cols.map(csvCell).join(',')];
+    saved.forEach(r=>{const cs=(r.contacts&&r.contacts.length)?r.contacts:[{}];cs.forEach(p=>{rows.push([r.email_date||'',r.saved_at,r.id,r.lead_type,r.entity,p.name,p.title,p.email,(p.alt_emails||[]).join('; '),p.role,p.organization,p.primary?'yes':'no',r.record_action,r.activity_type,r.stage_signal,r.key_detail,r.subject,r.summary,r.next_step].map(csvCell).join(','));});});
     const b=new Blob([rows.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='lead-router-export-'+new Date().toISOString().slice(0,10)+'.csv';a.click();toast('Exported '+saved.length+' leads');};
 
   saved=dbLoad();renderVault();
