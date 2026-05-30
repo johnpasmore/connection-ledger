@@ -267,11 +267,11 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       if(rec.invitedDate){if(!ex.invitedDate||new Date(rec.invitedDate)<new Date(ex.invitedDate))ex.invitedDate=rec.invitedDate;}
       if(rec.invitedDate){if(!ex.lastInvitedDate||new Date(rec.invitedDate)>new Date(ex.lastInvitedDate))ex.lastInvitedDate=rec.invitedDate;}
       if(rec.actionDate){if(!ex.actionDate||new Date(rec.actionDate)>new Date(ex.actionDate))ex.actionDate=rec.actionDate;}
-      ['profileUrl','company','position','invitationMessage','institution','stage','notes'].forEach(f=>{if(rec[f]&&!ex[f])ex[f]=rec[f];});
+      ['profileUrl','company','position','invitationMessage','institution','stage','notes','email'].forEach(f=>{if(rec[f]&&!ex[f])ex[f]=rec[f];});
       if(rec.connected){ex.connected=true;ex.connectedOn=rec.connectedOn||ex.connectedOn;if(rec.connectedOn)ex.actionDate=rec.connectedOn;}
       return false;
     }
-    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',manualStatus:'',stage:'New',notes:'',firstAdded:new Date().toISOString()},rec));
+    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',manualStatus:'',stage:'New',notes:'',source:'',firstAdded:new Date().toISOString()},rec));
     return true;
   }
   function findHeaderAndParse(text,mustHave){const lines=text.split(/\r?\n/);let start=0;for(let i=0;i<Math.min(lines.length,12);i++){const low=lines[i].toLowerCase();if(mustHave.some(h=>low.includes(h))){start=i;break;}}return Papa.parse(lines.slice(start).join('\n'),{header:true,skipEmptyLines:true}).data;}
@@ -318,7 +318,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     if(editingId){Object.assign(contacts.find(x=>x.id===editingId),data);}else{contacts.push(Object.assign({id:uid(),invitedDate:new Date().toISOString(),lastInvitedDate:new Date().toISOString(),invitationMessage:'',connectedOn:data.connected?new Date().toISOString():'',firstAdded:new Date().toISOString()},data));}
     save();closeModal();render();toast('Saved');}
   function delContact(){if(!editingId)return;contacts=contacts.filter(c=>c.id!==editingId);save();closeModal();render();toast('Removed');}
-  function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Company','Title','Date','Institution','Status','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{rows.push([c.name,c.profileUrl,c.company,c.position,toISODate(dateOf(c)),c.institution,SL[status(c)],c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
+  function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Email','Company','Title','Date','Institution','Status','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{rows.push([c.name,c.profileUrl,c.email||'',c.company,c.position,toISODate(dateOf(c)),c.institution,SL[status(c)],c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
   function dl(content,name,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 
   /* combined backup / restore (both tabs) */
@@ -346,6 +346,27 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('impConn').onclick=()=>document.getElementById('fileConn').click();
   document.getElementById('fileInv').onchange=e=>readFile(e.target,t=>{const{added,seen}=importInvitations(t);save();render();toast(seen?`Imported ${seen} sent invites (${added} new)`:'No outgoing invitations found');});
   document.getElementById('fileConn').onchange=e=>readFile(e.target,t=>{const{matched}=importConnections(t);save();render();toast(`Reconciled — ${matched} marked connected`);});
+  window.ledgerAddFromLead=function(lead){
+    if(!lead||!Array.isArray(lead.contacts))return;
+    const isInst=lead.lead_type==='Institution';
+    let any=false;
+    lead.contacts.forEach(p=>{
+      if(!p||!p.name)return;
+      any=true;
+      upsert({
+        name:p.name,
+        email:p.email||'',
+        company:isInst?'':(p.organization||lead.entity||''),
+        institution:isInst?(p.organization||lead.entity||''):'',
+        position:p.title||'',
+        actionDate:toISODate(lead.email_date)||todayISO(),
+        stage:'In conversation',
+        notes:'['+(lead.lead_type||'Lead')+'] '+(lead.summary||''),
+        source:'inbound'
+      });
+    });
+    if(any){save();render();}
+  };
   contacts=load();render();
 })();
 
@@ -381,7 +402,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   const ROLES=["Decision maker","Champion","Influencer","Gatekeeper","Intermediary/Consultant","Unknown"];
   const DBKEY='router:records'; const AKEY='router:apikey'; const MKEY='router:model'; const SFKEY='router:sfaddr';
   const DEFAULT_SF='emailtosalesforce@17jn6v0nk6g98p69k9imbiijfetba7n5ueu8dp3jks62dlumf3.am-1chl01eag.usa788.le.salesforce.com';
-  let saved=[]; let ccSeq=0; let currentId=null;
+  let saved=[]; let ccSeq=0; let currentId=null; let annot={};
   const g=id=>document.getElementById(id);
   function setStatus(h){g('status').innerHTML=h;}
 
@@ -442,10 +463,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function render(o){
     currentId=null;
+    annot={lead_type_reasoning:o.lead_type_reasoning||'',entity_confidence:o.entity_confidence||'',routing:o.routing||'',flags:o.flags||[]};
     const type=o.lead_type||'Unclear';g('card').className='card show t-'+type;
     const tp=g('r-type');tp.className='pill type-'+type;tp.textContent=type;
     g('r-entity').textContent=o.entity||'Unknown entity';
-    const conf=(o.entity_confidence||'low').toLowerCase();const cf=g('r-conf');cf.className='pill '+conf;cf.textContent=conf+' confidence';
+    const conf=(o.entity_confidence||'').toLowerCase();const cf=g('r-conf');if(conf){cf.className='pill '+conf;cf.textContent=conf+' confidence';cf.style.display='';}else{cf.style.display='none';}
     g('r-reason').textContent=o.lead_type_reasoning||'';g('r-routing').innerHTML='<b>Route to:</b> '+esc(o.routing||'—');
     g('f-type').value=type;g('f-entity').value=o.entity||'';g('f-action').value=o.record_action||'needs_review';g('f-atype').value=o.activity_type||'Email';
     g('lr-stage').value=o.stage_signal||'';g('f-key').value=o.key_detail||'';g('f-subj').value=o.subject||'';g('f-summary').value=o.summary||'';g('f-next').value=o.next_step||'';g('f-emaildate').value=toISODate(o.email_date)||todayISO();
@@ -479,14 +501,18 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function dbSave(){try{localStorage.setItem(DBKEY,JSON.stringify(saved));}catch(e){toast('Could not save');}}
   function renderVault(){g('vault-count').textContent=saved.length;const list=g('savedList');
     if(!saved.length){list.innerHTML='<div style="font-size:12.5px;color:var(--ink-soft);padding:6px 2px">No saved leads yet.</div>';}
-    else{const sorted=saved.slice().sort((a,b)=>{const da=new Date(a.email_date||a.saved_at||0),db=new Date(b.email_date||b.saved_at||0);return (isNaN(db)?0:db.getTime())-(isNaN(da)?0:da.getTime());});list.innerHTML=sorted.map(r=>{const d=new Date(r.email_date||r.saved_at);const n=r.contacts?r.contacts.length:0;return `<div class="cc" style="padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="pill type-${esc(r.lead_type)}">${esc(r.lead_type)}</span><span style="font-weight:600">${esc(r.entity)||'—'}</span><span style="font-size:12px;color:var(--ink-soft)">${n} contact${n===1?'':'s'} · ${isNaN(d)?'':d.toLocaleDateString()}</span><button class="rm" data-id="${r.id}" title="Delete" style="margin-left:auto">&times;</button></div>`;}).join('');
-      list.querySelectorAll('.rm').forEach(b=>b.onclick=()=>{saved=saved.filter(x=>x.id!==b.dataset.id);dbSave();renderVault();toast('Deleted');});}}
+    else{const sorted=saved.slice().sort((a,b)=>{const da=new Date(a.email_date||a.saved_at||0),db=new Date(b.email_date||b.saved_at||0);return (isNaN(db)?0:db.getTime())-(isNaN(da)?0:da.getTime());});list.innerHTML=sorted.map(r=>{const d=new Date(r.email_date||r.saved_at);const n=r.contacts?r.contacts.length:0;return `<div class="cc savedrow" data-id="${r.id}" style="padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer"><span class="pill type-${esc(r.lead_type)}">${esc(r.lead_type)}</span><span style="font-weight:600">${esc(r.entity)||'—'}</span><span style="font-size:12px;color:var(--ink-soft)">${n} contact${n===1?'':'s'} · ${isNaN(d)?'':d.toLocaleDateString()}</span><span style="font-size:11px;color:var(--clay);margin-left:auto">open ›</span><button class="rm" data-id="${r.id}" title="Delete" style="margin-left:4px">&times;</button></div>`;}).join('');
+      list.querySelectorAll('.savedrow').forEach(row=>row.onclick=e=>{if(e.target.closest('.rm'))return;openSaved(row.dataset.id);});
+      list.querySelectorAll('.rm').forEach(b=>b.onclick=e=>{e.stopPropagation();saved=saved.filter(x=>x.id!==b.dataset.id);dbSave();renderVault();toast('Deleted');});}}
+  function openSaved(id){const rec=saved.find(x=>x.id===id);if(!rec)return;render(rec);currentId=rec.id;g('card').scrollIntoView({behavior:'smooth',block:'start'});}
   function persistCurrent(){
-    const c=collect();
+    const c=Object.assign(collect(),annot);
     if(!c.entity&&!c.contacts.some(p=>p.name))return false;
     if(currentId){const ex=saved.find(x=>x.id===currentId);if(ex){Object.assign(ex,c);}else{c.id=currentId;c.saved_at=new Date().toISOString();saved.push(c);}}
     else{c.id='r_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);c.saved_at=new Date().toISOString();saved.push(c);currentId=c.id;}
-    dbSave();renderVault();return true;
+    dbSave();renderVault();
+    if(window.ledgerAddFromLead)window.ledgerAddFromLead(c);
+    return true;
   }
   g('saveDb').onclick=()=>{if(persistCurrent())toast('Saved — '+saved.length+' in your database');else toast('Nothing to save yet');};
   g('viewSaved').onclick=()=>{const l=g('savedList');l.style.display=(l.style.display==='none'||!l.style.display)?'flex':'none';};
