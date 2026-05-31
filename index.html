@@ -137,6 +137,7 @@
       <select class="filter" id="filter"><option value="all">All statuses</option><option value="pending">Awaiting reply</option><option value="no_response">No response</option><option value="connected">Connected</option></select>
       <select class="filter" id="sortby"><option value="status">Sort: Status</option><option value="date_desc">Date ↓ newest</option><option value="date_asc">Date ↑ oldest</option></select>
       <select class="filter" id="chan"><option value="all">All channels</option><option value="email">Has email</option><option value="li_only">LinkedIn only</option><option value="email_only">Email only</option><option value="both">Both channels</option><option value="msg_noreply">Messaged, no reply</option></select>
+      <input class="filter" id="stateFilter" placeholder="State…" style="width:110px">
       <div class="thresh">Stale after <input type="number" id="thresh" value="21" min="1"> days</div>
       <button class="btn" id="impInv">↑ Invitations CSV</button>
       <button class="btn" id="impConn">↑ Connections CSV</button>
@@ -150,6 +151,7 @@
       <input type="file" id="fileBackup" accept=".json" class="hidden">
     </div>
     <table><thead><tr><th>Contact</th><th>Company / Title</th><th>Date</th><th>Status</th><th>Institution</th><th>Stage</th></tr></thead><tbody id="tbody"></tbody></table>
+    <div id="pager" style="display:flex;align-items:center;justify-content:center;gap:14px;padding:14px;font-family:'Hanken Grotesk',sans-serif;font-size:13px;color:var(--ink-soft)"></div>
     <div class="empty hidden" id="empty"><div class="big">Nothing tracked yet</div><div>Log a contact or import your LinkedIn export to begin.</div></div>
   </section>
 
@@ -230,6 +232,7 @@
   <div class="field"><label class="fld">Name</label><input id="f-name" placeholder="Full name"></div>
   <div class="row2"><div class="field"><label class="fld">LinkedIn URL</label><input id="f-prof" placeholder="optional"></div><div class="field"><label class="fld">Institution</label><input id="f-inst" placeholder="e.g. Spelman College"></div></div>
   <div class="row2"><div class="field"><label class="fld">Company</label><input id="f-company" placeholder="optional"></div><div class="field"><label class="fld">Title / Role</label><input id="f-position" placeholder="optional"></div></div>
+  <div class="row2"><div class="field"><label class="fld">State / Region</label><div style="display:flex;gap:7px"><input id="f-state" placeholder="e.g. New York" style="flex:1"><button class="btn ghost" id="guessStateBtn" title="Infer from their institution/company" style="white-space:nowrap;padding:6px 10px">✦ Guess</button></div></div><div class="field"><label class="fld">&nbsp;</label><div style="font-size:11.5px;color:var(--ink-soft);line-height:1.3">Used by the State filter when you travel.</div></div></div>
   <div class="row2"><div class="field"><label class="fld">Status</label><select id="f-status"><option value="pending">Awaiting reply</option><option value="no_response">No response</option><option value="connected">Connected</option></select></div><div class="field"><label class="fld">Sales stage</label><select id="f-salesstage"><option>New</option><option>Researching</option><option>Outreach sent</option><option>In conversation</option><option>Meeting booked</option><option>Opportunity</option><option>Closed won</option><option>Not a fit</option></select></div></div>
   <div class="field"><label class="fld">Date of action (invitation, message, or connection)</label><input id="f-date" type="date"></div>
   <div class="field"><label class="fld">Notes</label><textarea id="f-notes" placeholder="Context, where you met, why you reached out, last touch…"></textarea></div>
@@ -260,7 +263,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
 /* =================== CONNECTION LEDGER =================== */
 (function(){
   const KEY='ledger:contacts';
-  let contacts=[]; let editingId=null; let threshold=21;
+  let contacts=[]; let editingId=null; let threshold=21; let page=0;
   function load(){try{const v=localStorage.getItem(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
   function save(){try{localStorage.setItem(KEY,JSON.stringify(contacts));}catch(e){toast('Could not save');}}
   function uid(){return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -284,7 +287,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       if(rec.invitedDate){if(!ex.invitedDate||new Date(rec.invitedDate)<new Date(ex.invitedDate))ex.invitedDate=rec.invitedDate;}
       if(rec.invitedDate){if(!ex.lastInvitedDate||new Date(rec.invitedDate)>new Date(ex.lastInvitedDate))ex.lastInvitedDate=rec.invitedDate;}
       if(rec.actionDate){if(!ex.actionDate||new Date(rec.actionDate)>new Date(ex.actionDate))ex.actionDate=rec.actionDate;}
-      ['profileUrl','company','position','invitationMessage','institution','stage','notes','email'].forEach(f=>{if(rec[f]&&!ex[f])ex[f]=rec[f];});
+      ['profileUrl','company','position','invitationMessage','institution','stage','notes','email','state'].forEach(f=>{if(rec[f]&&!ex[f])ex[f]=rec[f];});
       if(rec.connected){ex.connected=true;ex.connectedOn=rec.connectedOn||ex.connectedOn;if(rec.connectedOn)ex.actionDate=rec.connectedOn;}
       if(rec.messaged)ex.messaged=true;
       if(rec.replied)ex.replied=true;
@@ -292,7 +295,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       if(rec.lastMessageDate){if(!ex.lastMessageDate||new Date(rec.lastMessageDate)>new Date(ex.lastMessageDate))ex.lastMessageDate=rec.lastMessageDate;}
       return false;
     }
-    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',messaged:false,replied:false,hasEmail:false,lastMessageDate:'',manualStatus:'',stage:'New',notes:'',source:'',firstAdded:new Date().toISOString()},rec));
+    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',messaged:false,replied:false,hasEmail:false,lastMessageDate:'',state:'',manualStatus:'',stage:'New',notes:'',source:'',firstAdded:new Date().toISOString()},rec));
     return true;
   }
   function findHeaderAndParse(text,mustHave){const lines=text.split(/\r?\n/);let start=0;for(let i=0;i<Math.min(lines.length,12);i++){const low=lines[i].toLowerCase();if(mustHave.some(h=>low.includes(h))){start=i;break;}}return Papa.parse(lines.slice(start).join('\n'),{header:true,skipEmptyLines:true}).data;}
@@ -327,7 +330,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     return {people,noreply};
   }
   function render(){
-    const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const chan=document.getElementById('chan').value;const tbody=document.getElementById('tbody');
+    const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const chan=document.getElementById('chan').value;const stateQ=norm((document.getElementById('stateFilter').value||''));const tbody=document.getElementById('tbody');
     const rows=contacts.map(c=>({c,st:status(c)})).filter(({c,st})=>{
         if(f!=='all'&&st!==f)return false;
         if(chan!=='all'){const li=hasLI(c),em=hasEm(c);
@@ -336,10 +339,12 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
           if(chan==='email_only'&&!(em&&!li))return false;
           if(chan==='both'&&!(li&&em))return false;
           if(chan==='msg_noreply'&&!(c.messaged&&!c.replied&&!c.connected))return false;}
-        if(q){const hay=norm(c.name+' '+c.company+' '+c.position+' '+c.institution+' '+c.notes);if(!hay.includes(q))return false;}
+        if(q){const hay=norm(c.name+' '+c.company+' '+c.position+' '+c.institution+' '+c.notes+' '+(c.state||''));if(!hay.includes(q))return false;}
+        if(stateQ){if(!norm(c.state||'').includes(stateQ))return false;}
         return true;})
       .sort((a,b)=>{if(sortby==='date_desc')return dateNum(b.c)-dateNum(a.c);if(sortby==='date_asc')return dateNum(a.c)-dateNum(b.c);const o={no_response:0,pending:1,connected:2};if(o[a.st]!==o[b.st])return o[a.st]-o[b.st];return dateNum(b.c)-dateNum(a.c);});
-    const CAP=400;const shown=rows.slice(0,CAP);
+    const PAGE=400;const totalPages=Math.max(1,Math.ceil(rows.length/PAGE));if(page>=totalPages)page=totalPages-1;if(page<0)page=0;
+    const shown=rows.slice(page*PAGE,page*PAGE+PAGE);
     tbody.innerHTML='';
     shown.forEach(({c,st})=>{const tr=document.createElement('tr');if(st==='no_response')tr.className='stale';const ds=daysSince(dateOf(c));
       tr.innerHTML=`<td><div class="name">${esc(c.name)||'—'} ${channelBadges(c)}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
@@ -349,7 +354,13 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
         <td class="inst">${esc(c.institution)||'<span class="sub">—</span>'}</td>
         <td><span class="stagetag">${esc(c.stage||'New')}</span></td>`;
       tr.onclick=()=>openEdit(c.id);tbody.appendChild(tr);});
-    if(rows.length>CAP){const tr=document.createElement('tr');tr.innerHTML=`<td colspan="6" style="text-align:center;color:var(--ink-soft);font-size:12.5px;padding:14px">Showing ${CAP} of ${rows.length} — narrow with search or the filters above.</td>`;tbody.appendChild(tr);}
+    const pg=document.getElementById('pager');
+    if(rows.length>PAGE){const from=page*PAGE+1,to=Math.min(rows.length,page*PAGE+PAGE);
+      pg.innerHTML=`<button class="btn ghost" id="pgPrev" ${page===0?'disabled':''} style="padding:5px 12px">‹ Prev</button><span>${from.toLocaleString()}–${to.toLocaleString()} of ${rows.length.toLocaleString()} · page ${page+1}/${totalPages}</span><button class="btn ghost" id="pgNext" ${page>=totalPages-1?'disabled':''} style="padding:5px 12px">Next ›</button>`;
+      const pv=document.getElementById('pgPrev'),nx=document.getElementById('pgNext');
+      if(pv)pv.onclick=()=>{if(page>0){page--;render();window.scrollTo(0,0);}};
+      if(nx)nx.onclick=()=>{if(page<totalPages-1){page++;render();window.scrollTo(0,0);}};
+    }else{pg.innerHTML=rows.length?`${rows.length.toLocaleString()} shown`:'';}
     document.getElementById('empty').classList.toggle('hidden',contacts.length>0);
     document.getElementById('hint').classList.toggle('hidden',contacts.length>0);
     const all=contacts.map(status);
@@ -365,16 +376,16 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     if(bits.length){meta.innerHTML=bits.map(esc).join('<br>');meta.classList.remove('hidden');}else meta.classList.add('hidden');
     document.getElementById('f-name').value=c.name||'';document.getElementById('f-prof').value=c.profileUrl||'';document.getElementById('f-inst').value=c.institution||'';
     document.getElementById('f-company').value=c.company||'';document.getElementById('f-position').value=c.position||'';document.getElementById('f-status').value=status(c);
-    document.getElementById('f-salesstage').value=c.stage||'New';document.getElementById('f-notes').value=c.notes||'';document.getElementById('f-date').value=toISODate(dateOf(c));
+    document.getElementById('f-salesstage').value=c.stage||'New';document.getElementById('f-notes').value=c.notes||'';document.getElementById('f-date').value=toISODate(dateOf(c));document.getElementById('f-state').value=c.state||'';
     document.getElementById('delBtn').classList.remove('hidden');
     const aw=document.getElementById('aiReengageWrap');aw.classList.remove('hidden');const ao=document.getElementById('aiReengageOut');ao.classList.add('hidden');ao.textContent='';
     document.getElementById('scrim').classList.add('show');}
   function openAdd(){editingId=null;document.getElementById('m-title').textContent='Log a contact';document.getElementById('m-url').classList.add('hidden');document.getElementById('m-meta').classList.add('hidden');
-    ['f-name','f-prof','f-inst','f-company','f-position','f-notes'].forEach(i=>document.getElementById(i).value='');document.getElementById('f-status').value='pending';document.getElementById('f-salesstage').value='New';document.getElementById('f-date').value=todayISO();
+    ['f-name','f-prof','f-inst','f-company','f-position','f-notes','f-state'].forEach(i=>document.getElementById(i).value='');document.getElementById('f-status').value='pending';document.getElementById('f-salesstage').value='New';document.getElementById('f-date').value=todayISO();
     document.getElementById('delBtn').classList.add('hidden');document.getElementById('aiReengageWrap').classList.add('hidden');document.getElementById('scrim').classList.add('show');}
   function closeModal(){document.getElementById('scrim').classList.remove('show');}
   function saveModal(){const name=document.getElementById('f-name').value.trim();if(!name){toast('Name is required');return;}const st=document.getElementById('f-status').value;
-    const data={name,profileUrl:document.getElementById('f-prof').value.trim(),institution:document.getElementById('f-inst').value.trim(),company:document.getElementById('f-company').value.trim(),position:document.getElementById('f-position').value.trim(),stage:document.getElementById('f-salesstage').value,notes:document.getElementById('f-notes').value.trim(),actionDate:document.getElementById('f-date').value||todayISO(),connected:st==='connected',manualStatus:st};
+    const data={name,profileUrl:document.getElementById('f-prof').value.trim(),institution:document.getElementById('f-inst').value.trim(),company:document.getElementById('f-company').value.trim(),position:document.getElementById('f-position').value.trim(),state:document.getElementById('f-state').value.trim(),stage:document.getElementById('f-salesstage').value,notes:document.getElementById('f-notes').value.trim(),actionDate:document.getElementById('f-date').value||todayISO(),connected:st==='connected',manualStatus:st};
     if(editingId){Object.assign(contacts.find(x=>x.id===editingId),data);}else{contacts.push(Object.assign({id:uid(),invitedDate:new Date().toISOString(),lastInvitedDate:new Date().toISOString(),invitationMessage:'',connectedOn:data.connected?new Date().toISOString():'',firstAdded:new Date().toISOString()},data));}
     save();closeModal();render();toast('Saved');}
   function delContact(){if(!editingId)return;contacts=contacts.filter(c=>c.id!==editingId);save();closeModal();render();toast('Removed');}
@@ -394,7 +405,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       out.textContent=text||'(no response)';
     }catch(e){out.textContent='Could not reach the API: '+(e&&e.message?e.message:e);}
   }
-  function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Email','Company','Title','Date','Institution','Status','Channels','Messaged','Replied','Has Email','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{const ch=[hasLI(c)?'LinkedIn':'',hasEm(c)?'Email':''].filter(Boolean).join('+');rows.push([c.name,c.profileUrl,c.email||'',c.company,c.position,toISODate(dateOf(c)),c.institution,SL[status(c)],ch,c.messaged?'yes':'',c.replied?'yes':'',c.hasEmail?'yes':'',c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
+  function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Email','Company','Title','Date','Institution','State','Status','Channels','Messaged','Replied','Has Email','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{const ch=[hasLI(c)?'LinkedIn':'',hasEm(c)?'Email':''].filter(Boolean).join('+');rows.push([c.name,c.profileUrl,c.email||'',c.company,c.position,toISODate(dateOf(c)),c.institution,c.state||'',SL[status(c)],ch,c.messaged?'yes':'',c.replied?'yes':'',c.hasEmail?'yes':'',c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
   function dl(content,name,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 
   /* combined backup / restore (both tabs) */
@@ -410,12 +421,27 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('cancelBtn').onclick=closeModal;
   document.getElementById('delBtn').onclick=delContact;
   document.getElementById('aiReengageBtn').onclick=aiReengage;
+  document.getElementById('guessStateBtn').onclick=async function(){
+    const inst=document.getElementById('f-inst').value.trim();const comp=document.getElementById('f-company').value.trim();const org=inst||comp;
+    const fld=document.getElementById('f-state');
+    if(!org){fld.placeholder='add an institution or company first';return;}
+    let key='',model='';try{key=localStorage.getItem('router:apikey')||'';model=localStorage.getItem('router:model')||'claude-sonnet-4-5';}catch(e){}
+    if(!key){fld.value='';fld.placeholder='set API key on Lead Router tab';return;}
+    const old=fld.value;fld.value='…';
+    try{
+      const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:model||'claude-sonnet-4-5',max_tokens:20,messages:[{role:'user',content:'What U.S. state is this organization primarily located in: "'+org+'"? Reply with ONLY the state name (e.g. "California"), or "Unknown" if you are not reasonably sure.'}]})});
+      if(!r.ok){fld.value=old;fld.placeholder='guess failed';return;}
+      const data=await r.json();const t=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join(' ').trim().replace(/[."]/g,'');
+      fld.value=(/unknown/i.test(t)||!t)?old:t;
+    }catch(e){fld.value=old;fld.placeholder='guess failed';}
+  };
   document.getElementById('scrim').onclick=e=>{if(e.target.id==='scrim')closeModal();};
-  document.getElementById('search').oninput=render;
-  document.getElementById('filter').onchange=render;
-  document.getElementById('sortby').onchange=render;
-  document.getElementById('chan').onchange=render;
-  document.getElementById('thresh').onchange=e=>{threshold=parseInt(e.target.value)||21;render();};
+  document.getElementById('search').oninput=()=>{page=0;render();};
+  document.getElementById('filter').onchange=()=>{page=0;render();};
+  document.getElementById('sortby').onchange=()=>{page=0;render();};
+  document.getElementById('chan').onchange=()=>{page=0;render();};
+  document.getElementById('stateFilter').oninput=()=>{page=0;render();};
+  document.getElementById('thresh').onchange=e=>{threshold=parseInt(e.target.value)||21;page=0;render();};
   document.getElementById('expBtn').onclick=exportCsv;
   document.getElementById('backupBtn').onclick=backup;
   document.getElementById('restoreBtn').onclick=()=>document.getElementById('fileBackup').click();
