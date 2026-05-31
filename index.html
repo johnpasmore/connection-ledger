@@ -107,7 +107,13 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="brand"><div><div class="eyebrow">Latimer.AI · Sales Console</div><h1>Pipeline Workspace</h1></div></div>
+  <div class="brand" style="justify-content:space-between"><div><div class="eyebrow">Latimer.AI · Sales Console</div><h1>Pipeline Workspace</h1></div>
+    <div style="text-align:right;font-family:'Hanken Grotesk',sans-serif">
+      <div id="cloudStatus" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:5px">Cloud: starting…</div>
+      <button class="btn ghost" id="cloudSaveBtn" style="font-size:12px;padding:5px 10px">☁ Save to cloud</button>
+      <button class="btn ghost" id="cloudLoadBtn" style="font-size:12px;padding:5px 10px">⤓ Load from cloud</button>
+    </div>
+  </div>
   <div class="tabs">
     <button class="tab active" data-tab="ledger">Connection Ledger</button>
     <button class="tab" data-tab="router">Lead Router</button>
@@ -578,6 +584,23 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(window.ledgerAddFromLead){saved.forEach(r=>window.ledgerAddFromLead(r));}
     try{localStorage.setItem('router:backfilled_v1','1');}catch(e){}
   })();
+})();
+
+/* ===== Cloudflare D1 cloud sync (localStorage-first, graceful fallback) ===== */
+(function(){
+  var cloudOn=true,lastSig=null;
+  function sig(){try{return (localStorage.getItem('ledger:contacts')||'')+'\u0001'+(localStorage.getItem('router:records')||'');}catch(e){return '';}}
+  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}return {ledger:p('ledger:contacts'),router:p('router:records')};}
+  function setStatus(t){var el=document.getElementById('cloudStatus');if(el)el.textContent='Cloud: '+t;}
+  function applyCloud(d){try{if(d&&d.ledger)localStorage.setItem('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));}catch(e){}}
+  async function cloudGet(){var r=await fetch('/api/state',{headers:{'Accept':'application/json'}});if(!r.ok)throw new Error('get '+r.status);return r.json();}
+  async function cloudPut(){var r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:payload()})});if(!r.ok)throw new Error('put '+r.status);lastSig=sig();return r.json();}
+  function parseData(r){if(!r||r.data==null)return null;return typeof r.data==='string'?JSON.parse(r.data):r.data;}
+  var sb=document.getElementById('cloudSaveBtn'),lb=document.getElementById('cloudLoadBtn');
+  if(sb)sb.onclick=async function(){setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — saved locally');}};
+  if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var d=parseData(await cloudGet());if(!d){setStatus('nothing saved in cloud yet');return;}applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
+  (async function boot(){setStatus('checking…');try{var d=parseData(await cloudGet());var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));if(d&&empty){applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);return;}lastSig=sig();setStatus('connected ✓');}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
+  setInterval(async function(){if(!cloudOn)return;var s=sig();if(s===lastSig)return;setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — will retry');}},20000);
 })();
 </script>
 </body>
