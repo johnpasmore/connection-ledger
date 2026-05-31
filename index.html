@@ -233,6 +233,10 @@
   <div class="row2"><div class="field"><label class="fld">Status</label><select id="f-status"><option value="pending">Awaiting reply</option><option value="no_response">No response</option><option value="connected">Connected</option></select></div><div class="field"><label class="fld">Sales stage</label><select id="f-salesstage"><option>New</option><option>Researching</option><option>Outreach sent</option><option>In conversation</option><option>Meeting booked</option><option>Opportunity</option><option>Closed won</option><option>Not a fit</option></select></div></div>
   <div class="field"><label class="fld">Date of action (invitation, message, or connection)</label><input id="f-date" type="date"></div>
   <div class="field"><label class="fld">Notes</label><textarea id="f-notes" placeholder="Context, where you met, why you reached out, last touch…"></textarea></div>
+  <div class="field hidden" id="aiReengageWrap" style="border-top:1px solid var(--line);padding-top:13px;margin-top:3px">
+    <button class="btn" id="aiReengageBtn" style="width:100%">✦ Should I re-engage? — ask Claude</button>
+    <div id="aiReengageOut" class="hidden" style="margin-top:11px;font-size:13.5px;line-height:1.55;background:var(--clay-bg);border-radius:10px;padding:13px 15px;white-space:pre-wrap"></div>
+  </div>
   <div class="modal-actions"><button class="btn danger hidden" id="delBtn">Delete</button><div style="display:flex;gap:10px;margin-left:auto"><button class="btn ghost" id="cancelBtn">Cancel</button><button class="btn primary" id="saveBtn">Save</button></div></div>
 </div></div>
 
@@ -362,16 +366,34 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     document.getElementById('f-name').value=c.name||'';document.getElementById('f-prof').value=c.profileUrl||'';document.getElementById('f-inst').value=c.institution||'';
     document.getElementById('f-company').value=c.company||'';document.getElementById('f-position').value=c.position||'';document.getElementById('f-status').value=status(c);
     document.getElementById('f-salesstage').value=c.stage||'New';document.getElementById('f-notes').value=c.notes||'';document.getElementById('f-date').value=toISODate(dateOf(c));
-    document.getElementById('delBtn').classList.remove('hidden');document.getElementById('scrim').classList.add('show');}
+    document.getElementById('delBtn').classList.remove('hidden');
+    const aw=document.getElementById('aiReengageWrap');aw.classList.remove('hidden');const ao=document.getElementById('aiReengageOut');ao.classList.add('hidden');ao.textContent='';
+    document.getElementById('scrim').classList.add('show');}
   function openAdd(){editingId=null;document.getElementById('m-title').textContent='Log a contact';document.getElementById('m-url').classList.add('hidden');document.getElementById('m-meta').classList.add('hidden');
     ['f-name','f-prof','f-inst','f-company','f-position','f-notes'].forEach(i=>document.getElementById(i).value='');document.getElementById('f-status').value='pending';document.getElementById('f-salesstage').value='New';document.getElementById('f-date').value=todayISO();
-    document.getElementById('delBtn').classList.add('hidden');document.getElementById('scrim').classList.add('show');}
+    document.getElementById('delBtn').classList.add('hidden');document.getElementById('aiReengageWrap').classList.add('hidden');document.getElementById('scrim').classList.add('show');}
   function closeModal(){document.getElementById('scrim').classList.remove('show');}
   function saveModal(){const name=document.getElementById('f-name').value.trim();if(!name){toast('Name is required');return;}const st=document.getElementById('f-status').value;
     const data={name,profileUrl:document.getElementById('f-prof').value.trim(),institution:document.getElementById('f-inst').value.trim(),company:document.getElementById('f-company').value.trim(),position:document.getElementById('f-position').value.trim(),stage:document.getElementById('f-salesstage').value,notes:document.getElementById('f-notes').value.trim(),actionDate:document.getElementById('f-date').value||todayISO(),connected:st==='connected',manualStatus:st};
     if(editingId){Object.assign(contacts.find(x=>x.id===editingId),data);}else{contacts.push(Object.assign({id:uid(),invitedDate:new Date().toISOString(),lastInvitedDate:new Date().toISOString(),invitationMessage:'',connectedOn:data.connected?new Date().toISOString():'',firstAdded:new Date().toISOString()},data));}
     save();closeModal();render();toast('Saved');}
   function delContact(){if(!editingId)return;contacts=contacts.filter(c=>c.id!==editingId);save();closeModal();render();toast('Removed');}
+  async function aiReengage(){
+    const c=contacts.find(x=>x.id===editingId);if(!c)return;
+    let key='',model='';try{key=localStorage.getItem('router:apikey')||'';model=localStorage.getItem('router:model')||'claude-sonnet-4-5';}catch(e){}
+    const out=document.getElementById('aiReengageOut');out.classList.remove('hidden');
+    if(!key){out.textContent='No Anthropic API key found. Add it once on the Lead Router tab ("Add API") — the suggester reuses that key.';return;}
+    out.textContent='Thinking…';
+    const dv=dateOf(c);const ds=dv?daysSince(dv):null;
+    const profile=['Name: '+(c.name||'—'),'Title: '+(c.position||'unknown'),'Company/Org: '+(c.company||'—'),'Institution (if higher-ed): '+(c.institution||'—'),'Channels: '+([hasLI(c)?'LinkedIn':'',hasEm(c)?'email':''].filter(Boolean).join(' + ')||'unknown'),'Ever replied: '+(c.replied?'yes':(c.connected?'connected, no message reply':'no')),'Status: '+SL[status(c)],'Last interaction: '+(toISODate(dv)||'unknown')+((ds!=null&&!isNaN(ds))?(' ('+ds+' days ago)'):''),'John\u2019s notes: '+(c.notes||'none')].join('\n');
+    const prompt='You are advising John Pasmore, CEO of Latimer.AI \u2014 an inclusive AI platform sold to higher-education institutions (universities and colleges). His goal is growing sales. Below is one contact from his outreach list. Decide whether he should re-engage this person now to advance a sale.\n\nContact:\n'+profile+'\n\nRespond in exactly this short format:\nVerdict: <Re-engage now / Maybe later / Skip>\nWhy: <one or two sentences tied to their role, the kind of organization, and how stale the contact is>\nAngle: <if worth it, one specific non-generic opening line he could send; otherwise \u201c\u2014\u201d>\nUnder 90 words total. Be candid \u2014 if this person is not a plausible higher-ed buyer or champion, say Skip.';
+    try{
+      const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:model||'claude-sonnet-4-5',max_tokens:400,messages:[{role:'user',content:prompt}]})});
+      if(!r.ok){const t=await r.text();out.textContent='API error '+r.status+': '+t.slice(0,180);return;}
+      const data=await r.json();const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
+      out.textContent=text||'(no response)';
+    }catch(e){out.textContent='Could not reach the API: '+(e&&e.message?e.message:e);}
+  }
   function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Email','Company','Title','Date','Institution','Status','Channels','Messaged','Replied','Has Email','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{const ch=[hasLI(c)?'LinkedIn':'',hasEm(c)?'Email':''].filter(Boolean).join('+');rows.push([c.name,c.profileUrl,c.email||'',c.company,c.position,toISODate(dateOf(c)),c.institution,SL[status(c)],ch,c.messaged?'yes':'',c.replied?'yes':'',c.hasEmail?'yes':'',c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
   function dl(content,name,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 
@@ -387,6 +409,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('saveBtn').onclick=saveModal;
   document.getElementById('cancelBtn').onclick=closeModal;
   document.getElementById('delBtn').onclick=delContact;
+  document.getElementById('aiReengageBtn').onclick=aiReengage;
   document.getElementById('scrim').onclick=e=>{if(e.target.id==='scrim')closeModal();};
   document.getElementById('search').oninput=render;
   document.getElementById('filter').onchange=render;
