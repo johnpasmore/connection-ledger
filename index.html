@@ -130,14 +130,17 @@
       <div class="search"><input id="search" placeholder="Search name, company, institution…"></div>
       <select class="filter" id="filter"><option value="all">All statuses</option><option value="pending">Awaiting reply</option><option value="no_response">No response</option><option value="connected">Connected</option></select>
       <select class="filter" id="sortby"><option value="status">Sort: Status</option><option value="date_desc">Date ↓ newest</option><option value="date_asc">Date ↑ oldest</option></select>
+      <select class="filter" id="chan"><option value="all">All channels</option><option value="email">Has email</option><option value="li_only">LinkedIn only</option><option value="email_only">Email only</option><option value="both">Both channels</option><option value="msg_noreply">Messaged, no reply</option></select>
       <div class="thresh">Stale after <input type="number" id="thresh" value="21" min="1"> days</div>
       <button class="btn" id="impInv">↑ Invitations CSV</button>
       <button class="btn" id="impConn">↑ Connections CSV</button>
+      <button class="btn" id="impMsg">↑ Messages CSV</button>
       <button class="btn ghost" id="expBtn">↓ Export for CRM</button>
       <button class="btn ghost" id="backupBtn" title="Download a full backup of both tabs">⛁ Backup</button>
       <button class="btn ghost" id="restoreBtn" title="Restore from a backup file">⟲ Restore</button>
       <input type="file" id="fileInv" accept=".csv" class="hidden">
       <input type="file" id="fileConn" accept=".csv" class="hidden">
+      <input type="file" id="fileMsg" accept=".csv" class="hidden">
       <input type="file" id="fileBackup" accept=".json" class="hidden">
     </div>
     <table><thead><tr><th>Contact</th><th>Company / Title</th><th>Date</th><th>Status</th><th>Institution</th><th>Stage</th></tr></thead><tbody id="tbody"></tbody></table>
@@ -260,6 +263,10 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   function status(c){if(c.connected)return 'connected';if(c.manualStatus==='no_response')return 'no_response';if(c.manualStatus==='connected')return 'connected';const ds=daysSince(dateOf(c));if(ds!==null&&ds>threshold)return 'no_response';return 'pending';}
   const SL={connected:'Connected',pending:'Awaiting reply',no_response:'No response'};
   function shortUrl(u){return u.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//,'in/').replace(/\/$/,'');}
+  function hasLI(c){return !!(c.invitedDate||c.connected||c.messaged||c.replied||c.invitationMessage);}
+  function hasEm(c){return !!c.hasEmail;}
+  function channelDetail(c){const b=[];if(c.connected)b.push('Connected');else if(c.invitedDate||c.invitationMessage)b.push('Invited');if(c.messaged)b.push(c.replied?'Messaged · replied':'Messaged · no reply');if(c.hasEmail)b.push('Email');return b.join(' · ');}
+  function channelBadges(c){let h='';if(hasLI(c)){const dim=(c.messaged&&!c.replied&&!c.connected)?';opacity:.55':'';h+=`<span title="${esc(channelDetail(c))}" style="display:inline-block;font-size:9px;font-weight:800;background:#2F5E8F;color:#fff;border-radius:4px;padding:1px 4px;margin-right:4px${dim}">in</span>`;}if(hasEm(c)){h+=`<span title="Email conversation" style="display:inline-block;font-size:10px;background:var(--clay-bg);color:var(--clay-dark);border-radius:4px;padding:1px 5px">✉</span>`;}return h;}
 
   function upsert(rec){
     const k=keyOf(rec);let ex=contacts.find(c=>keyOf(c)===k&&k);
@@ -269,9 +276,13 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       if(rec.actionDate){if(!ex.actionDate||new Date(rec.actionDate)>new Date(ex.actionDate))ex.actionDate=rec.actionDate;}
       ['profileUrl','company','position','invitationMessage','institution','stage','notes','email'].forEach(f=>{if(rec[f]&&!ex[f])ex[f]=rec[f];});
       if(rec.connected){ex.connected=true;ex.connectedOn=rec.connectedOn||ex.connectedOn;if(rec.connectedOn)ex.actionDate=rec.connectedOn;}
+      if(rec.messaged)ex.messaged=true;
+      if(rec.replied)ex.replied=true;
+      if(rec.hasEmail)ex.hasEmail=true;
+      if(rec.lastMessageDate){if(!ex.lastMessageDate||new Date(rec.lastMessageDate)>new Date(ex.lastMessageDate))ex.lastMessageDate=rec.lastMessageDate;}
       return false;
     }
-    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',manualStatus:'',stage:'New',notes:'',source:'',firstAdded:new Date().toISOString()},rec));
+    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',messaged:false,replied:false,hasEmail:false,lastMessageDate:'',manualStatus:'',stage:'New',notes:'',source:'',firstAdded:new Date().toISOString()},rec));
     return true;
   }
   function findHeaderAndParse(text,mustHave){const lines=text.split(/\r?\n/);let start=0;for(let i=0;i<Math.min(lines.length,12);i++){const low=lines[i].toLowerCase();if(mustHave.some(h=>low.includes(h))){start=i;break;}}return Papa.parse(lines.slice(start).join('\n'),{header:true,skipEmptyLines:true}).data;}
@@ -279,19 +290,56 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   function importInvitations(text){const rows=findHeaderAndParse(text,['from','to','sent','direction']);let added=0,seen=0;rows.forEach(row=>{const dir=pick(row,['direction']).toUpperCase();if(dir&&dir.indexOf('OUT')===-1)return;const name=pick(row,['to','invitee','recipient'])||pick(row,['from']);if(!name)return;const url=pick(row,['inviteeprofileurl','profile url','url']);const sent=pick(row,['sent at','sentat','sent','date']);const msg=pick(row,['message']);seen++;if(upsert({name,profileUrl:url,invitedDate:sent,lastInvitedDate:sent,actionDate:sent,invitationMessage:msg}))added++;});return {added,seen};}
   function importConnections(text){const rows=findHeaderAndParse(text,['first name','last name','connected on','url']);let matched=0;rows.forEach(row=>{const fn=pick(row,['first name','firstname']);const ln=pick(row,['last name','lastname']);const name=(fn+' '+ln).trim();const url=pick(row,['url','profile url']);const company=pick(row,['company']);const position=pick(row,['position','title']);const on=pick(row,['connected on','connectedon','date']);if(!name&&!url)return;const k=keyOf({name,profileUrl:url});const ex=contacts.find(c=>keyOf(c)===k&&k)||contacts.find(c=>url&&norm(c.profileUrl).replace(/\/$/,'')===norm(url).replace(/\/$/,''))||contacts.find(c=>name&&norm(c.name)===norm(name));if(ex){ex.connected=true;ex.connectedOn=on||ex.connectedOn;if(on)ex.actionDate=on;if(company&&!ex.company)ex.company=company;if(position&&!ex.position)ex.position=position;if(url&&!ex.profileUrl)ex.profileUrl=url;matched++;}});return {matched};}
 
+  function importMessages(text){
+    const rows=findHeaderAndParse(text,['conversation id','from','to']);
+    const freq={};rows.forEach(r=>{const fr=pick(r,['from']);if(fr)freq[fr]=(freq[fr]||0)+1;});
+    let self='',mx=-1;for(const k in freq){if(freq[k]>mx){mx=freq[k];self=k;}}
+    const conv={};
+    rows.forEach(r=>{
+      const cid=pick(r,['conversation id'])||pick(r,['conversation title'])||'_';
+      const fr=pick(r,['from']);const frUrl=pick(r,['sender profile url']);
+      const to=pick(r,['to']);const toUrl=pick(r,['recipient profile urls']);
+      const date=pick(r,['date']);
+      const c=conv[cid]||(conv[cid]={others:{},inbound:false,outbound:false,last:''});
+      if(date&&(!c.last||new Date(date)>new Date(c.last)))c.last=date;
+      if(fr&&fr!==self){c.others[fr]=c.others[fr]||frUrl;c.inbound=true;}
+      if(fr===self){c.outbound=true;if(to&&to!==self){to.split(',').forEach((t,i)=>{t=t.trim();if(t&&t!==self){const u=(toUrl||'').split(/[ ,]+/).filter(Boolean)[i]||'';c.others[t]=c.others[t]||u;}});}}
+    });
+    let people=0,noreply=0;
+    Object.values(conv).forEach(c=>{
+      const names=Object.keys(c.others);
+      if(names.length!==1)return;
+      const name=names[0];const url=c.others[name];
+      const replied=c.inbound;
+      if(!replied)noreply++;people++;
+      upsert({name,profileUrl:url,messaged:true,replied,actionDate:c.last,lastMessageDate:c.last});
+    });
+    return {people,noreply};
+  }
   function render(){
-    const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const tbody=document.getElementById('tbody');
-    const rows=contacts.map(c=>({c,st:status(c)})).filter(({c,st})=>{if(f!=='all'&&st!==f)return false;if(q){const hay=norm(c.name+' '+c.company+' '+c.position+' '+c.institution+' '+c.notes);if(!hay.includes(q))return false;}return true;})
+    const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const chan=document.getElementById('chan').value;const tbody=document.getElementById('tbody');
+    const rows=contacts.map(c=>({c,st:status(c)})).filter(({c,st})=>{
+        if(f!=='all'&&st!==f)return false;
+        if(chan!=='all'){const li=hasLI(c),em=hasEm(c);
+          if(chan==='email'&&!em)return false;
+          if(chan==='li_only'&&!(li&&!em))return false;
+          if(chan==='email_only'&&!(em&&!li))return false;
+          if(chan==='both'&&!(li&&em))return false;
+          if(chan==='msg_noreply'&&!(c.messaged&&!c.replied&&!c.connected))return false;}
+        if(q){const hay=norm(c.name+' '+c.company+' '+c.position+' '+c.institution+' '+c.notes);if(!hay.includes(q))return false;}
+        return true;})
       .sort((a,b)=>{if(sortby==='date_desc')return dateNum(b.c)-dateNum(a.c);if(sortby==='date_asc')return dateNum(a.c)-dateNum(b.c);const o={no_response:0,pending:1,connected:2};if(o[a.st]!==o[b.st])return o[a.st]-o[b.st];return dateNum(b.c)-dateNum(a.c);});
+    const CAP=400;const shown=rows.slice(0,CAP);
     tbody.innerHTML='';
-    rows.forEach(({c,st})=>{const tr=document.createElement('tr');if(st==='no_response')tr.className='stale';const ds=daysSince(dateOf(c));
-      tr.innerHTML=`<td><div class="name">${esc(c.name)||'—'}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
+    shown.forEach(({c,st})=>{const tr=document.createElement('tr');if(st==='no_response')tr.className='stale';const ds=daysSince(dateOf(c));
+      tr.innerHTML=`<td><div class="name">${esc(c.name)||'—'} ${channelBadges(c)}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
         <td>${c.company?`<div>${esc(c.company)}</div>`:''}${c.position?`<div class="sub">${esc(c.position)}</div>`:(c.company?'':'<span class="sub">—</span>')}</td>
         <td>${fmt(dateOf(c))}<div class="sub">${st==='connected'?'connected':(ds!==null?ds+'d ago':'')}</div></td>
         <td><span class="pill ${st}">${SL[st]}</span></td>
         <td class="inst">${esc(c.institution)||'<span class="sub">—</span>'}</td>
         <td><span class="stagetag">${esc(c.stage||'New')}</span></td>`;
       tr.onclick=()=>openEdit(c.id);tbody.appendChild(tr);});
+    if(rows.length>CAP){const tr=document.createElement('tr');tr.innerHTML=`<td colspan="6" style="text-align:center;color:var(--ink-soft);font-size:12.5px;padding:14px">Showing ${CAP} of ${rows.length} — narrow with search or the filters above.</td>`;tbody.appendChild(tr);}
     document.getElementById('empty').classList.toggle('hidden',contacts.length>0);
     document.getElementById('hint').classList.toggle('hidden',contacts.length>0);
     const all=contacts.map(status);
@@ -318,7 +366,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     if(editingId){Object.assign(contacts.find(x=>x.id===editingId),data);}else{contacts.push(Object.assign({id:uid(),invitedDate:new Date().toISOString(),lastInvitedDate:new Date().toISOString(),invitationMessage:'',connectedOn:data.connected?new Date().toISOString():'',firstAdded:new Date().toISOString()},data));}
     save();closeModal();render();toast('Saved');}
   function delContact(){if(!editingId)return;contacts=contacts.filter(c=>c.id!==editingId);save();closeModal();render();toast('Removed');}
-  function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Email','Company','Title','Date','Institution','Status','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{rows.push([c.name,c.profileUrl,c.email||'',c.company,c.position,toISODate(dateOf(c)),c.institution,SL[status(c)],c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
+  function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Email','Company','Title','Date','Institution','Status','Channels','Messaged','Replied','Has Email','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{const ch=[hasLI(c)?'LinkedIn':'',hasEm(c)?'Email':''].filter(Boolean).join('+');rows.push([c.name,c.profileUrl,c.email||'',c.company,c.position,toISODate(dateOf(c)),c.institution,SL[status(c)],ch,c.messaged?'yes':'',c.replied?'yes':'',c.hasEmail?'yes':'',c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
   function dl(content,name,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 
   /* combined backup / restore (both tabs) */
@@ -337,6 +385,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('search').oninput=render;
   document.getElementById('filter').onchange=render;
   document.getElementById('sortby').onchange=render;
+  document.getElementById('chan').onchange=render;
   document.getElementById('thresh').onchange=e=>{threshold=parseInt(e.target.value)||21;render();};
   document.getElementById('expBtn').onclick=exportCsv;
   document.getElementById('backupBtn').onclick=backup;
@@ -344,6 +393,8 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('fileBackup').onchange=e=>readFile(e.target,restore);
   document.getElementById('impInv').onclick=()=>document.getElementById('fileInv').click();
   document.getElementById('impConn').onclick=()=>document.getElementById('fileConn').click();
+  document.getElementById('impMsg').onclick=()=>document.getElementById('fileMsg').click();
+  document.getElementById('fileMsg').onchange=e=>readFile(e.target,t=>{toast('Reading messages…');setTimeout(()=>{const{people,noreply}=importMessages(t);save();render();toast(`Added ${people} messaged (${noreply} never replied)`);},30);});
   document.getElementById('fileInv').onchange=e=>readFile(e.target,t=>{const{added,seen}=importInvitations(t);save();render();toast(seen?`Imported ${seen} sent invites (${added} new)`:'No outgoing invitations found');});
   document.getElementById('fileConn').onchange=e=>readFile(e.target,t=>{const{matched}=importConnections(t);save();render();toast(`Reconciled — ${matched} marked connected`);});
   window.ledgerAddFromLead=function(lead){
@@ -361,6 +412,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
         position:p.title||'',
         actionDate:toISODate(lead.email_date)||todayISO(),
         stage:'In conversation',
+        hasEmail:true,
         notes:'['+(lead.lead_type||'Lead')+'] '+(lead.summary||''),
         source:'inbound'
       });
