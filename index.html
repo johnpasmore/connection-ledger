@@ -573,6 +573,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     const b=new Blob([rows.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='lead-router-export-'+new Date().toISOString().slice(0,10)+'.csv';a.click();toast('Exported '+saved.length+' leads');};
 
   saved=dbLoad();renderVault();
+  (function backfill(){
+    try{if(localStorage.getItem('router:backfilled_v1'))return;}catch(e){return;}
+    if(window.ledgerAddFromLead){saved.forEach(r=>window.ledgerAddFromLead(r));}
+    try{localStorage.setItem('router:backfilled_v1','1');}catch(e){}
+  })();
 })();
 </script>
 </body>
