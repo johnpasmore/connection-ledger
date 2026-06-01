@@ -269,6 +269,7 @@
   <div class="murl hidden" id="m-url"></div>
   <div class="meta hidden" id="m-meta"></div>
   <div class="field"><label class="fld">Name</label><input id="f-name" placeholder="Full name"></div>
+  <div class="field"><label class="fld">Email</label><input id="f-email" placeholder="name@org.com"></div>
   <div class="row2"><div class="field"><label class="fld">LinkedIn URL</label><input id="f-prof" placeholder="optional"></div><div class="field"><label class="fld">Institution</label><input id="f-inst" placeholder="e.g. Spelman College"></div></div>
   <div class="row2"><div class="field"><label class="fld">Company</label><input id="f-company" placeholder="optional"></div><div class="field"><label class="fld">Title / Role</label><input id="f-position" placeholder="optional"></div></div>
   <div class="row2"><div class="field"><label class="fld">State / Region</label><div style="display:flex;gap:7px"><input id="f-state" placeholder="e.g. New York" style="flex:1"><button class="btn ghost" id="guessStateBtn" title="Infer from their institution/company" style="white-space:nowrap;padding:6px 10px">✦ Guess</button></div></div><div class="field"><label class="fld">&nbsp;</label><div style="font-size:11.5px;color:var(--ink-soft);line-height:1.3">Used by the State filter when you travel.</div></div></div>
@@ -489,6 +490,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     const meta=document.getElementById('m-meta');const bits=[];if(c.invitationMessage)bits.push('Your invite note: “'+c.invitationMessage+'”');if(c.firstAdded)bits.push('Added '+fmt(c.firstAdded));
     if(bits.length){meta.innerHTML=bits.map(esc).join('<br>');meta.classList.remove('hidden');}else meta.classList.add('hidden');
     document.getElementById('f-name').value=c.name||'';document.getElementById('f-prof').value=c.profileUrl||'';document.getElementById('f-inst').value=c.institution||'';
+    document.getElementById('f-email').value=c.email||'';
     document.getElementById('f-company').value=c.company||'';document.getElementById('f-position').value=c.position||'';document.getElementById('f-status').value=status(c);
     document.getElementById('f-salesstage').value=c.stage||'New';document.getElementById('f-notes').value=c.notes||'';document.getElementById('f-date').value=toISODate(dateOf(c));document.getElementById('f-state').value=c.state||'';
     document.getElementById('f-category').value=deriveCat(c)||'';
@@ -496,11 +498,12 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     const aw=document.getElementById('aiReengageWrap');aw.classList.remove('hidden');const ao=document.getElementById('aiReengageOut');ao.classList.add('hidden');ao.textContent='';
     document.getElementById('scrim').classList.add('show');}
   function openAdd(){editingId=null;document.getElementById('m-title').textContent='Log a contact';document.getElementById('m-url').classList.add('hidden');document.getElementById('m-meta').classList.add('hidden');
-    ['f-name','f-prof','f-inst','f-company','f-position','f-notes','f-state'].forEach(i=>document.getElementById(i).value='');document.getElementById('f-status').value='pending';document.getElementById('f-salesstage').value='New';document.getElementById('f-date').value=todayISO();document.getElementById('f-category').value='';
+    ['f-name','f-email','f-prof','f-inst','f-company','f-position','f-notes','f-state'].forEach(i=>document.getElementById(i).value='');document.getElementById('f-status').value='pending';document.getElementById('f-salesstage').value='New';document.getElementById('f-date').value=todayISO();document.getElementById('f-category').value='';
     document.getElementById('delBtn').classList.add('hidden');document.getElementById('aiReengageWrap').classList.add('hidden');document.getElementById('scrim').classList.add('show');}
   function closeModal(){document.getElementById('scrim').classList.remove('show');}
   function saveModal(){const name=document.getElementById('f-name').value.trim();if(!name){toast('Name is required');return;}const st=document.getElementById('f-status').value;
-    const data={name,profileUrl:document.getElementById('f-prof').value.trim(),institution:document.getElementById('f-inst').value.trim(),company:document.getElementById('f-company').value.trim(),position:document.getElementById('f-position').value.trim(),state:document.getElementById('f-state').value.trim(),stage:document.getElementById('f-salesstage').value,category:document.getElementById('f-category').value,notes:document.getElementById('f-notes').value.trim(),actionDate:document.getElementById('f-date').value||todayISO(),connected:st==='connected',manualStatus:st};
+    const data={name,email:document.getElementById('f-email').value.trim(),profileUrl:document.getElementById('f-prof').value.trim(),institution:document.getElementById('f-inst').value.trim(),company:document.getElementById('f-company').value.trim(),position:document.getElementById('f-position').value.trim(),state:document.getElementById('f-state').value.trim(),stage:document.getElementById('f-salesstage').value,category:document.getElementById('f-category').value,notes:document.getElementById('f-notes').value.trim(),actionDate:document.getElementById('f-date').value||todayISO(),connected:st==='connected',manualStatus:st};
+    if(data.email)data.hasEmail=true;
     if(editingId){Object.assign(contacts.find(x=>x.id===editingId),data);}else{contacts.push(Object.assign({id:uid(),invitedDate:new Date().toISOString(),lastInvitedDate:new Date().toISOString(),invitationMessage:'',connectedOn:data.connected?new Date().toISOString():'',firstAdded:new Date().toISOString()},data));}
     save();closeModal();render();toast('Saved');}
   function delContact(){if(!editingId)return;contacts=contacts.filter(c=>c.id!==editingId);save();closeModal();render();toast('Removed');}
