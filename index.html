@@ -724,6 +724,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(window.ledgerAddFromLead){saved.forEach(r=>window.ledgerAddFromLead(r));}
     try{localStorage.setItem('router:backfilled_v1','1');}catch(e){}
   })();
+  window.routerAddPerson=function(p){
+    if(!p||!p.name)return false;
+    var rec={id:'r_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),saved_at:new Date().toISOString(),email_date:p.date||'',lead_type:p.lead_type||'Partner',entity:p.organization||'',contacts:[{name:p.name,email:p.email||'',title:p.title||'',organization:p.organization||'',primary:true}],summary:p.summary||'Added from calendar follow-up',source:'calendar'};
+    saved.push(rec);dbSave();renderVault();
+    if(window.ledgerAddFromLead)window.ledgerAddFromLead(rec);
+    return true;
+  };
 })();
 
 /* ===== Cloudflare D1 cloud sync (localStorage-first, graceful fallback) ===== */
@@ -743,13 +750,6 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var d=await unpack(await cloudGet());if(!d){setStatus('nothing saved in cloud yet');return;}applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
   (async function boot(){setStatus('checking…');try{var d=await unpack(await cloudGet());var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));if(d&&empty){applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);return;}lastSig=sig();setStatus('connected ✓');}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
   setInterval(async function(){if(!cloudOn)return;var s=sig();if(s===lastSig)return;setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — will retry');}},20000);
-  window.routerAddPerson=function(p){
-    if(!p||!p.name)return false;
-    var rec={id:'r_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),saved_at:new Date().toISOString(),email_date:p.date||'',lead_type:p.lead_type||'Partner',entity:p.organization||'',contacts:[{name:p.name,email:p.email||'',title:p.title||'',organization:p.organization||'',primary:true}],summary:p.summary||'Added from calendar follow-up',source:'calendar'};
-    saved.push(rec);dbSave();renderVault();
-    if(window.ledgerAddFromLead)window.ledgerAddFromLead(rec);
-    return true;
-  };
 })();
 
 /* ===== Follow-ups tab — Google Calendar + Gmail (read-only, in-browser) ===== */
