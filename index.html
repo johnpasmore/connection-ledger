@@ -733,7 +733,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function connect(){if(ensureClient()){status('Opening Google sign-in…');tokenClient.requestAccessToken();}}
   if($('fu-connect'))$('fu-connect').onclick=connect;
-  function authFetch(url){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();});}
+  function authFetch(url){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){if(!r.ok){return r.text().then(function(t){throw new Error(r.status+': '+t.replace(/\s+/g,' ').slice(0,300));});}return r.json();});}
   async function onConnected(){status('Connected ✓');try{var info=await authFetch('https://www.googleapis.com/oauth2/v3/userinfo');myEmail=(info.email||'').toLowerCase();myDomain=myEmail.split('@')[1]||'';}catch(e){}refresh();}
   if($('fu-refresh'))$('fu-refresh').onclick=function(){if(!token){connect();return;}refresh();};
   function fmtYMD(d){var m=d.getMonth()+1,day=d.getDate();return d.getFullYear()+'/'+(m<10?'0'+m:m)+'/'+(day<10?'0'+day:day);}
