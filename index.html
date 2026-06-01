@@ -466,6 +466,18 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     box.querySelectorAll('.pr-item').forEach(function(it){it.onclick=function(){openEdit(it.getAttribute('data-id'));};});
   }
   window.renderPriority=renderPriority;
+  window.ledgerMarkPriority=function(p){
+    if(!p||!p.name)return false;
+    var ex=findMatch({name:p.name,email:p.email||'',profileUrl:''});
+    if(!ex){
+      upsert({name:p.name,email:p.email||'',hasEmail:!!p.email,stage:'In conversation',actionDate:toISODate(p.date)||todayISO(),notes:'['+(p.lead_type||'Lead')+'] from calendar follow-up',source:'inbound'});
+      ex=findMatch({name:p.name,email:p.email||'',profileUrl:''});
+    }
+    if(ex)ex.priority=true;
+    save();render();updatePriorityBadge();
+    if(document.getElementById('panel-priority').classList.contains('active'))renderPriority();
+    return true;
+  };
   function openEdit(id){const c=contacts.find(x=>x.id===id);editingId=id;
     document.getElementById('m-title').textContent=c.name||'Contact';
     const mu=document.getElementById('m-url');if(c.profileUrl){mu.textContent=c.profileUrl;mu.classList.remove('hidden');}else mu.classList.add('hidden');
@@ -868,6 +880,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     $('fu-results').querySelectorAll('[data-fublk]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=rowf(b,'data-fublk');if(!r)return;var d=loadBlock();d[r.email]=1;saveBlock(d);render(allRows);};});
     $('fu-results').querySelectorAll('[data-fuadd]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=rowf(b,'data-fuadd');if(!r)return;if(window.ledgerAddFromLead){window.ledgerAddFromLead({lead_type:typeOf(r),entity:'',email_date:fmtYMD(r.date),summary:'Met '+fmtYMD(r.date)+' via calendar',contacts:[{name:r.name,email:r.email}]});b.textContent='✓ In Connections';b.style.color='var(--green)';b.disabled=true;}else{(window.toast||function(){})('Connections not ready');}};});
     $('fu-results').querySelectorAll('[data-fusch]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=rowf(b,'data-fusch');if(r)openScheduler(r);};});
+    $('fu-results').querySelectorAll('[data-fupri]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=rowf(b,'data-fupri');if(!r)return;if(window.ledgerMarkPriority&&window.ledgerMarkPriority({name:r.name,email:r.email,lead_type:typeOf(r),date:fmtYMD(r.date)})){b.textContent='★ Prioritized';b.disabled=true;}else{(window.toast||function(){})('Could not set priority');}};});
     var rd=$('fu-resetdis');if(rd)rd.onclick=function(e){e.preventDefault();saveDismissed({});render(allRows);};
     var rb=$('fu-resetblk');if(rb)rb.onclick=function(e){e.preventDefault();saveBlock({});render(allRows);};
   }
@@ -875,13 +888,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var border=urgent?'var(--clay)':'var(--green)';
     var when=r.date.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
     var ago=r.daysAgo<=0?'today':(r.daysAgo+' day'+(r.daysAgo>1?'s':'')+' ago');
-    var h='<div style="position:relative;border:1px solid var(--line);border-left:3px solid '+border+';padding:7px '+(urgent?'30px':'11px')+' 7px 11px;margin-bottom:8px;background:#fff;border-radius:8px">';
-    if(urgent)h+='<button data-fudis="'+idx+'" title="No follow-up needed — dismiss" aria-label="Dismiss" style="position:absolute;top:5px;right:7px;border:none;background:none;color:var(--ink-soft);font-size:17px;line-height:1;cursor:pointer;padding:0">×</button>';
+    var h='<div style="position:relative;border:1px solid var(--line);border-left:3px solid '+border+';padding:7px 30px 7px 11px;margin-bottom:8px;background:#fff;border-radius:8px">';
+    h+='<button data-fudis="'+idx+'" title="Remove from the list" aria-label="Dismiss" style="position:absolute;top:5px;right:7px;border:none;background:none;color:var(--ink-soft);font-size:17px;line-height:1;cursor:pointer;padding:0">×</button>';
     h+='<div style="font-size:14px"><b>'+esc(r.name)+'</b> <span style="font-size:11px;color:var(--ink-soft)">· '+esc(typeOf(r))+'</span></div>';
     h+='<div style="font-size:12px;color:var(--ink-soft)">'+esc(r.title)+' — '+when+' ('+ago+')</div>';
     h+='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">';
     h+='<a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a>';
     h+='<button data-fuadd="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">+ Add to Connections</button>';
+    h+='<button data-fupri="'+idx+'" title="Add (if needed) and mark as a priority" style="border:none;background:none;color:#C8881F;cursor:pointer;padding:0;font-size:12px">★ Priority</button>';
     if(urgent){
       h+='<button data-fusch="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">📅 Schedule</button>';
       h+='<button data-fublk="'+idx+'" title="Never show this person again" style="border:none;background:none;color:var(--ink-soft);cursor:pointer;padding:0;font-size:12px">⊘ Never</button>';
