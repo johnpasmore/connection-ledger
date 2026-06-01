@@ -119,6 +119,7 @@
     <button class="tab active" data-tab="ledger">Connection Ledger</button>
     <button class="tab" data-tab="router">Lead Router</button>
     <button class="tab" data-tab="followup">Follow-ups <span id="fu-badge" style="display:none;background:#8F3C20;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
+    <button class="tab" data-tab="priority">★ Priority <span id="pr-badge" style="display:none;background:#C8881F;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
   </div>
 
   <!-- ============ LEDGER TAB ============ -->
@@ -253,6 +254,12 @@
     </div>
     <div id="fu-results"></div>
   </section>
+
+  <!-- ============ PRIORITY TAB ============ -->
+  <section class="panel" id="panel-priority">
+    <p class="lede">Everyone you've starred as a priority, in one place — your short list of who to act on next. Star or unstar anyone from the ★ in the Connection Ledger.</p>
+    <div id="pr-list" style="margin-top:14px"></div>
+  </section>
 </div>
 
 <!-- ledger edit modal -->
@@ -289,6 +296,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   document.getElementById('panel-'+b.dataset.tab).classList.add('active');
+  if(b.dataset.tab==='priority'&&window.renderPriority)window.renderPriority();
 });
 
 /* =================== CONNECTION LEDGER =================== */
@@ -357,7 +365,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       if(rec.lastMessageDate){if(!ex.lastMessageDate||new Date(rec.lastMessageDate)>new Date(ex.lastMessageDate))ex.lastMessageDate=rec.lastMessageDate;}
       return false;
     }
-    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',messaged:false,replied:false,hasEmail:false,lastMessageDate:'',state:'',manualStatus:'',stage:'New',notes:'',source:'',firstAdded:new Date().toISOString()},rec));
+    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',messaged:false,replied:false,hasEmail:false,lastMessageDate:'',state:'',manualStatus:'',stage:'New',notes:'',priority:false,source:'',firstAdded:new Date().toISOString()},rec));
     return true;
   }
   function findHeaderAndParse(text,mustHave){const lines=text.split(/\r?\n/);let start=0;for(let i=0;i<Math.min(lines.length,12);i++){const low=lines[i].toLowerCase();if(mustHave.some(h=>low.includes(h))){start=i;break;}}return Papa.parse(lines.slice(start).join('\n'),{header:true,skipEmptyLines:true}).data;}
@@ -409,13 +417,13 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     const shown=rows.slice(page*PAGE,page*PAGE+PAGE);
     tbody.innerHTML='';
     shown.forEach(({c,st})=>{const tr=document.createElement('tr');if(st==='no_response')tr.className='stale';const ds=daysSince(dateOf(c));
-      tr.innerHTML=`<td><div class="name">${esc(c.name)||'—'} ${channelBadges(c)}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
+      tr.innerHTML=`<td><div class="name"><button class="prio" data-star="${c.id}" title="${c.priority?'Priority — click to unstar':'Mark as priority'}" style="border:none;background:none;cursor:pointer;font-size:15px;padding:0 5px 0 0;color:${c.priority?'#C8881F':'#C9C2B4'}">${c.priority?'★':'☆'}</button>${esc(c.name)||'—'} ${channelBadges(c)}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
         <td>${c.company?`<div>${esc(c.company)}</div>`:''}${c.position?`<div class="sub">${esc(c.position)}</div>`:(c.company?'':'<span class="sub">—</span>')}</td>
         <td>${fmt(dateOf(c))}<div class="sub">${st==='connected'?'connected':(ds!==null?ds+'d ago':'')}</div></td>
         <td><span class="pill ${st}">${SL[st]}</span></td>
         <td class="inst">${esc(c.institution)||'<span class="sub">—</span>'}</td>
         <td><span class="stagetag">${esc(c.stage||'New')}</span></td>`;
-      tr.onclick=()=>openEdit(c.id);tbody.appendChild(tr);});
+      tr.onclick=(e)=>{if(e.target.closest('.prio')){e.stopPropagation();togglePriority(c.id);return;}openEdit(c.id);};tbody.appendChild(tr);});
     const pg=document.getElementById('pager');
     if(rows.length>PAGE){const from=page*PAGE+1,to=Math.min(rows.length,page*PAGE+PAGE);
       pg.innerHTML=`<button class="btn ghost" id="pgPrev" ${page===0?'disabled':''} style="padding:5px 12px">‹ Prev</button><span>${from.toLocaleString()}–${to.toLocaleString()} of ${rows.length.toLocaleString()} · page ${page+1}/${totalPages}</span><button class="btn ghost" id="pgNext" ${page>=totalPages-1?'disabled':''} style="padding:5px 12px">Next ›</button>`;
@@ -430,7 +438,33 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     document.getElementById('s-pending').textContent=all.filter(s=>s==='pending').length;
     document.getElementById('s-connected').textContent=all.filter(s=>s==='connected').length;
     document.getElementById('s-cold').textContent=all.filter(s=>s==='no_response').length;
+    updatePriorityBadge();
   }
+  function updatePriorityBadge(){var n=contacts.filter(function(c){return c.priority;}).length;var b=document.getElementById('pr-badge');if(b){if(n){b.textContent=n;b.style.display='inline-block';}else b.style.display='none';}}
+  function togglePriority(id){var c=contacts.find(function(x){return x.id===id;});if(!c)return;c.priority=!c.priority;save();render();if(document.getElementById('panel-priority').classList.contains('active'))renderPriority();}
+  function renderPriority(){
+    var box=document.getElementById('pr-list');if(!box)return;
+    var list=contacts.filter(function(c){return c.priority;});
+    var order={no_response:0,pending:1,connected:2};
+    list.sort(function(a,b){var sa=status(a),sb=status(b);if(order[sa]!==order[sb])return order[sa]-order[sb];return dateNum(b)-dateNum(a);});
+    if(!list.length){box.innerHTML='<div style="color:var(--ink-soft);font-size:13px;padding:10px 0">Nothing starred yet. Tap the ☆ next to anyone in the Connection Ledger to add them here.</div>';return;}
+    box.innerHTML=list.map(function(c){
+      var st=status(c);
+      return '<div class="pr-item" data-id="'+c.id+'" style="border:1px solid var(--line);border-left:3px solid #C8881F;border-radius:9px;padding:10px 12px;margin-bottom:8px;cursor:pointer">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +'<button class="pr-star" data-id="'+c.id+'" title="Remove from priority" style="border:none;background:none;cursor:pointer;font-size:15px;color:#C8881F;padding:0">★</button>'
+        +'<span style="font-weight:700;font-size:14px">'+(esc(c.name)||'—')+'</span> '+channelBadges(c)
+        +'<span class="pill '+st+'" style="margin-left:auto">'+SL[st]+'</span></div>'
+        +'<div style="font-size:12px;color:var(--ink-soft);margin-top:3px">'
+        +[esc(c.position),esc(c.company||c.institution)].filter(Boolean).join(' · ')
+        +(c.stage?(' · <span class="stagetag">'+esc(c.stage)+'</span>'):'')+'</div>'
+        +(c.email?('<div style="font-size:12px;margin-top:4px"><a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(c.email)+'" onclick="event.stopPropagation()">Email '+esc(c.email)+' →</a></div>'):'')
+        +'</div>';
+    }).join('');
+    box.querySelectorAll('.pr-star').forEach(function(b){b.onclick=function(e){e.stopPropagation();togglePriority(b.getAttribute('data-id'));};});
+    box.querySelectorAll('.pr-item').forEach(function(it){it.onclick=function(){openEdit(it.getAttribute('data-id'));};});
+  }
+  window.renderPriority=renderPriority;
   function openEdit(id){const c=contacts.find(x=>x.id===id);editingId=id;
     document.getElementById('m-title').textContent=c.name||'Contact';
     const mu=document.getElementById('m-url');if(c.profileUrl){mu.textContent=c.profileUrl;mu.classList.remove('hidden');}else mu.classList.add('hidden');
