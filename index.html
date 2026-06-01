@@ -754,7 +754,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 
 /* ===== Follow-ups tab — Google Calendar + Gmail (read-only, in-browser) ===== */
 (function(){
-  var SCOPES='https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email';
+  var SCOPES='https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email';
   var LOOKBACK=14;
   var token=null,myEmail='',myDomain='',tokenClient=null,allRows=[];
   function $(id){return document.getElementById(id);}
@@ -829,6 +829,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     $('fu-results').querySelectorAll('[data-fudis]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fudis')];if(!r)return;var d=loadDismissed();d[r.key]=1;saveDismissed(d);render(allRows);};});
     $('fu-results').querySelectorAll('[data-fublk]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fublk')];if(!r)return;var d=loadBlock();d[r.email]=1;saveBlock(d);render(allRows);};});
     $('fu-results').querySelectorAll('[data-fuadd]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fuadd')];if(!r)return;if(window.routerAddPerson&&window.routerAddPerson({name:r.name,email:r.email,lead_type:typeOf(r),date:fmtYMD(r.date)})){b.textContent='✓ Added';b.style.color='var(--green)';b.disabled=true;}else{(window.toast||function(){})('Could not add');}};});
+    $('fu-results').querySelectorAll('[data-fusch]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fusch')];if(r)openScheduler(r);};});
     var rd=$('fu-resetdis');if(rd)rd.onclick=function(e){e.preventDefault();saveDismissed({});render(allRows);};
     var rb=$('fu-resetblk');if(rb)rb.onclick=function(e){e.preventDefault();saveBlock({});render(allRows);};
   }
@@ -843,12 +844,111 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(urgent){
       h+='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">';
       h+='<a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a>';
+      h+='<button data-fusch="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">📅 Schedule</button>';
       h+='<button data-fuadd="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">+ Add to lists</button>';
       h+='<button data-fublk="'+idx+'" title="Never show this person again" style="border:none;background:none;color:var(--ink-soft);cursor:pointer;padding:0;font-size:12px">⊘ Never</button>';
       h+='</div>';
     }
     return h+'</div>';
   }
+
+  /* ----- Scheduling: NL request -> free/busy -> 3 slots -> calendar invite ----- */
+  function gPost(url,body){return fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){if(!r.ok){return r.text().then(function(t){throw new Error(r.status+': '+t.replace(/\s+/g,' ').slice(0,200));});}return r.json();});}
+  var schEl=null,schPerson=null,schSlots=[];
+  function tz(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';}catch(e){return 'America/New_York';}}
+  function buildScheduler(){
+    if(schEl)return;
+    schEl=document.createElement('div');
+    schEl.style.cssText='position:fixed;inset:0;background:rgba(20,16,12,.45);display:none;align-items:center;justify-content:center;z-index:9999;padding:18px';
+    schEl.innerHTML='<div style="background:var(--paper,#FAF6EE);border-radius:14px;max-width:440px;width:100%;padding:20px 22px;box-shadow:0 18px 50px rgba(0,0,0,.3)">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><div style="font-weight:700;font-size:15px" id="sch-title">Schedule</div><button id="sch-x" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--ink-soft)">×</button></div>'
+      +'<div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px" id="sch-sub"></div>'
+      +'<input id="sch-when" placeholder="e.g. Tuesday or Thursday afternoon" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;box-sizing:border-box">'
+      +'<div style="margin-top:10px"><button class="btn primary sm" id="sch-find">Find times</button> <span id="sch-msg" style="font-size:12px;color:var(--ink-soft);margin-left:6px"></span></div>'
+      +'<div id="sch-slots" style="margin-top:12px;display:flex;flex-direction:column;gap:7px"></div>'
+      +'</div>';
+    document.body.appendChild(schEl);
+    schEl.addEventListener('click',function(e){if(e.target===schEl)closeScheduler();});
+    schEl.querySelector('#sch-x').onclick=closeScheduler;
+    schEl.querySelector('#sch-find').onclick=findTimes;
+    schEl.querySelector('#sch-when').addEventListener('keydown',function(e){if(e.key==='Enter')findTimes();});
+  }
+  function closeScheduler(){if(schEl)schEl.style.display='none';}
+  function openScheduler(p){
+    buildScheduler();schPerson=p;schSlots=[];
+    schEl.querySelector('#sch-title').textContent='Schedule with '+(p.name||p.email);
+    schEl.querySelector('#sch-sub').textContent='Invite goes to '+p.email+'. Default 1 hour unless you say otherwise.';
+    schEl.querySelector('#sch-when').value='';
+    schEl.querySelector('#sch-msg').textContent='';
+    schEl.querySelector('#sch-slots').innerHTML='';
+    schEl.style.display='flex';
+    setTimeout(function(){schEl.querySelector('#sch-when').focus();},50);
+  }
+  function smsg(t){if(schEl)schEl.querySelector('#sch-msg').textContent=t||'';}
+  async function parseRequest(text){
+    var key='',model='';try{key=localStorage.getItem('router:apikey')||'';model=localStorage.getItem('router:model')||'claude-sonnet-4-5';}catch(e){}
+    if(!key)throw new Error('NOKEY');
+    var today=new Date();
+    var prompt='Today is '+today.toDateString()+' ('+tz()+'). The user wants to schedule a meeting. Their request: "'+text+'".\n'
+      +'Return ONLY JSON, no prose, in this exact shape: {"durationMins":60,"windows":[{"date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM"}]}.\n'
+      +'Rules: resolve weekday names to the NEXT upcoming date from today. afternoon=12:00-17:00, morning=09:00-12:00, evening=17:00-20:00, unspecified=09:00-17:00. Use 24h times. Default durationMins=60 unless a length is stated. List one window object per day mentioned.';
+    var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:model||'claude-sonnet-4-5',max_tokens:400,messages:[{role:'user',content:prompt}]})});
+    if(!r.ok)throw new Error('Claude '+r.status);
+    var j=await r.json();var txt=(j.content&&j.content[0]&&j.content[0].text||'').replace(/```json|```/g,'').trim();
+    return JSON.parse(txt);
+  }
+  function localISO(d){var p=function(n){return (n<10?'0':'')+n;};return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes())+':00';}
+  function slotsFromWindows(spec,busy){
+    var dur=(spec.durationMins||60)*60000,out=[];
+    (spec.windows||[]).forEach(function(w){
+      var sp=w.start.split(':'),ep=w.end.split(':');
+      var cur=new Date(w.date+'T00:00:00');cur.setHours(+sp[0],+sp[1]||0,0,0);
+      var end=new Date(w.date+'T00:00:00');end.setHours(+ep[0],+ep[1]||0,0,0);
+      while(cur.getTime()+dur<=end.getTime()){
+        var s=new Date(cur),e=new Date(cur.getTime()+dur);
+        if(s>new Date()&&!busy.some(function(b){return s<b.end&&e>b.start;}))out.push({start:s,end:e});
+        cur=new Date(cur.getTime()+30*60000);
+      }
+    });
+    out.sort(function(a,b){return a.start-b.start;});
+    return out.slice(0,3);
+  }
+  async function findTimes(){
+    if(!token){smsg('Connect Google first.');return;}
+    var text=schEl.querySelector('#sch-when').value.trim();
+    if(!text){smsg('Tell me when, e.g. "Tue or Thu afternoon".');return;}
+    smsg('Asking Claude…');schEl.querySelector('#sch-slots').innerHTML='';
+    var spec;try{spec=await parseRequest(text);}catch(e){smsg(e.message==='NOKEY'?'Add your Claude API key in the Lead Router (Add API).':('Could not read that: '+e.message));return;}
+    if(!spec.windows||!spec.windows.length){smsg('I could not find a day in that — try naming a weekday.');return;}
+    var dates=spec.windows.map(function(w){return new Date(w.date+'T00:00:00');});
+    var tmin=new Date(Math.min.apply(null,dates));var tmax=new Date(Math.max.apply(null,dates));tmax.setHours(23,59,59);
+    smsg('Checking your calendar…');
+    var fb;try{fb=await gPost('https://www.googleapis.com/calendar/v3/freeBusy',{timeMin:tmin.toISOString(),timeMax:tmax.toISOString(),timeZone:tz(),items:[{id:'primary'}]});}catch(e){smsg('Calendar check failed: '+e.message);return;}
+    var busy=(((fb.calendars||{}).primary||{}).busy||[]).map(function(b){return {start:new Date(b.start),end:new Date(b.end)};});
+    schSlots=slotsFromWindows(spec,busy);
+    if(!schSlots.length){smsg('No open '+(spec.durationMins||60)+'-min slots in that window. Try other days/times.');return;}
+    smsg('Pick one to send the invite:');
+    var box=schEl.querySelector('#sch-slots');box.innerHTML='';
+    schSlots.forEach(function(s,i){
+      var b=document.createElement('button');b.className='btn sm';b.style.cssText='text-align:left;width:100%';
+      b.textContent=s.start.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})+' · '+s.start.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})+'–'+s.end.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+      b.onclick=function(){sendInvite(i);};box.appendChild(b);
+    });
+  }
+  async function sendInvite(i){
+    var s=schSlots[i];if(!s||!schPerson)return;
+    smsg('Sending invite…');schEl.querySelector('#sch-slots').innerHTML='';
+    var body={summary:'Meeting: '+(myEmail?myEmail.split('@')[0]:'')+' & '+(schPerson.name||schPerson.email),
+      description:'Scheduled from Pipeline Workspace.',
+      start:{dateTime:localISO(s.start),timeZone:tz()},end:{dateTime:localISO(s.end),timeZone:tz()},
+      attendees:[{email:schPerson.email}]};
+    try{await gPost('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all',body);
+      smsg('✓ Invite sent to '+schPerson.email);
+      var d=loadDismissed();if(schPerson.key){d[schPerson.key]=1;saveDismissed(d);}
+      setTimeout(function(){closeScheduler();render(allRows);},1200);
+    }catch(e){smsg('Could not send: '+e.message);}
+  }
+  window.fuSchedule=openScheduler;
   (function autoConnect(){
     if(!gid()||!savedEmail())return;
     var tries=0;
