@@ -178,6 +178,7 @@
     <div id="vault">
       <span style="font-size:13px;font-weight:600">Saved leads: <span id="vault-count">0</span></span>
       <button class="btn sm" id="viewSaved">View</button>
+      <button class="btn sm" id="syncLedger">Sync to Ledger</button>
       <button class="btn sm" id="exportAll">Export all (CSV)</button>
       <span style="font-size:12px;color:var(--ink-soft);margin-left:auto">kept across sessions</span>
     </div>
@@ -631,6 +632,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   g('saveDb').onclick=()=>{if(persistCurrent())toast('Saved — '+saved.length+' in your database');else toast('Nothing to save yet');};
   g('viewSaved').onclick=()=>{const l=g('savedList');l.style.display=(l.style.display==='none'||!l.style.display)?'flex':'none';};
+  g('syncLedger').onclick=()=>{if(!window.ledgerAddFromLead){toast('Ledger not ready');return;}let n=0;saved.forEach(r=>{if(Array.isArray(r.contacts)&&r.contacts.length){window.ledgerAddFromLead(r);n+=r.contacts.length;}});toast(n?('Synced '+n+' contact'+(n>1?'s':'')+' to the Ledger'):'No saved leads to sync');};
   g('exportAll').onclick=()=>{if(!saved.length){toast('No saved leads to export');return;}const cols=['email_date','saved_at','lead_id','lead_type','entity','contact_name','contact_title','contact_email','contact_alt_emails','contact_role','contact_organization','is_primary','record_action','activity_type','stage_signal','key_detail','subject','summary','next_step'];const rows=[cols.map(csvCell).join(',')];
     saved.forEach(r=>{const cs=(r.contacts&&r.contacts.length)?r.contacts:[{}];cs.forEach(p=>{rows.push([r.email_date||'',r.saved_at,r.id,r.lead_type,r.entity,p.name,p.title,p.email,(p.alt_emails||[]).join('; '),p.role,p.organization,p.primary?'yes':'no',r.record_action,r.activity_type,r.stage_signal,r.key_detail,r.subject,r.summary,r.next_step].map(csvCell).join(','));});});
     const b=new Blob([rows.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='lead-router-export-'+new Date().toISOString().slice(0,10)+'.csv';a.click();toast('Exported '+saved.length+' leads');};
