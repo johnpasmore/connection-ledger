@@ -146,6 +146,7 @@
       <button class="btn" id="impMsg">↑ Messages CSV</button>
       <button class="btn ghost" id="expBtn">↓ Export for CRM</button>
       <button class="btn ghost" id="backupBtn" title="Download a full backup of both tabs">⛁ Backup</button>
+      <button class="btn ghost" id="mergeBtn" title="Combine duplicate people (same name added from both email and LinkedIn)">⇲ Merge dupes</button>
       <button class="btn ghost" id="restoreBtn" title="Restore from a backup file">⟲ Restore</button>
       <input type="file" id="fileInv" accept=".csv" class="hidden">
       <input type="file" id="fileConn" accept=".csv" class="hidden">
@@ -311,8 +312,39 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   function channelDetail(c){const b=[];if(c.connected)b.push('Connected');else if(c.invitedDate||c.invitationMessage)b.push('Invited');if(c.messaged)b.push(c.replied?'Messaged · replied':'Messaged · no reply');if(c.hasEmail)b.push('Email');return b.join(' · ');}
   function channelBadges(c){let h='';if(hasLI(c)){const dim=(c.messaged&&!c.replied&&!c.connected)?';opacity:.55':'';h+=`<span title="${esc(channelDetail(c))}" style="display:inline-block;font-size:9px;font-weight:800;background:#2F5E8F;color:#fff;border-radius:4px;padding:1px 4px;margin-right:4px${dim}">in</span>`;}if(hasEm(c)){h+=`<span title="Email conversation" style="display:inline-block;font-size:10px;background:var(--clay-bg);color:var(--clay-dark);border-radius:4px;padding:1px 5px">✉</span>`;}return h;}
 
+  function findMatch(rec){
+    var url=rec.profileUrl?norm(rec.profileUrl).replace(/\/$/,''):'';
+    var em=norm(rec.email),nm=norm(rec.name);
+    if(url){var bu=contacts.find(function(c){return c.profileUrl&&norm(c.profileUrl).replace(/\/$/,'')===url;});if(bu)return bu;}
+    if(em){var be=contacts.find(function(c){return c.email&&norm(c.email)===em;});if(be)return be;}
+    if(nm){var bn=contacts.find(function(c){return norm(c.name)===nm&&(!c.profileUrl||!rec.profileUrl);});if(bn)return bn;}
+    return null;
+  }
+  function mergeInto(ex,rec){
+    if(rec.invitedDate){if(!ex.invitedDate||new Date(rec.invitedDate)<new Date(ex.invitedDate))ex.invitedDate=rec.invitedDate;}
+    if(rec.lastInvitedDate){if(!ex.lastInvitedDate||new Date(rec.lastInvitedDate)>new Date(ex.lastInvitedDate))ex.lastInvitedDate=rec.lastInvitedDate;}
+    if(rec.actionDate){if(!ex.actionDate||new Date(rec.actionDate)>new Date(ex.actionDate))ex.actionDate=rec.actionDate;}
+    ['profileUrl','company','position','invitationMessage','institution','stage','notes','email','state','connectedOn','lastMessageDate','source'].forEach(function(f){if(rec[f]&&!ex[f])ex[f]=rec[f];});
+    if(rec.connected){ex.connected=true;if(rec.connectedOn&&!ex.connectedOn)ex.connectedOn=rec.connectedOn;}
+    if(rec.messaged)ex.messaged=true;
+    if(rec.replied)ex.replied=true;
+    if(rec.hasEmail)ex.hasEmail=true;
+  }
+  function mergeDupes(){
+    var byName={};contacts.forEach(function(c){var n=norm(c.name);if(!n)return;(byName[n]=byName[n]||[]).push(c);});
+    var rm={},removed=0;
+    Object.keys(byName).forEach(function(n){
+      var grp=byName[n];if(grp.length<2)return;
+      var urls={};grp.forEach(function(c){if(c.profileUrl)urls[norm(c.profileUrl).replace(/\/$/,'')]=1;});
+      if(Object.keys(urls).length>=2)return;
+      var base=grp.find(function(c){return c.profileUrl;})||grp[0];
+      grp.forEach(function(c){if(c===base)return;mergeInto(base,c);rm[c.id]=1;removed++;});
+    });
+    if(removed){contacts=contacts.filter(function(c){return !rm[c.id];});save();render();}
+    toast(removed?('Merged '+removed+' duplicate record'+(removed>1?'s':'')+' by name'):'No duplicates to merge');
+  }
   function upsert(rec){
-    const k=keyOf(rec);let ex=contacts.find(c=>keyOf(c)===k&&k);
+    let ex=findMatch(rec);
     if(ex){
       if(rec.invitedDate){if(!ex.invitedDate||new Date(rec.invitedDate)<new Date(ex.invitedDate))ex.invitedDate=rec.invitedDate;}
       if(rec.invitedDate){if(!ex.lastInvitedDate||new Date(rec.invitedDate)>new Date(ex.lastInvitedDate))ex.lastInvitedDate=rec.invitedDate;}
@@ -475,6 +507,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('thresh').onchange=e=>{threshold=parseInt(e.target.value)||21;page=0;render();};
   document.getElementById('expBtn').onclick=exportCsv;
   document.getElementById('backupBtn').onclick=backup;
+  var mb=document.getElementById('mergeBtn');if(mb)mb.onclick=mergeDupes;
   document.getElementById('restoreBtn').onclick=()=>document.getElementById('fileBackup').click();
   document.getElementById('fileBackup').onchange=e=>readFile(e.target,restore);
   document.getElementById('impInv').onclick=()=>document.getElementById('fileInv').click();
@@ -710,6 +743,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var d=await unpack(await cloudGet());if(!d){setStatus('nothing saved in cloud yet');return;}applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
   (async function boot(){setStatus('checking…');try{var d=await unpack(await cloudGet());var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));if(d&&empty){applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);return;}lastSig=sig();setStatus('connected ✓');}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
   setInterval(async function(){if(!cloudOn)return;var s=sig();if(s===lastSig)return;setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — will retry');}},20000);
+  window.routerAddPerson=function(p){
+    if(!p||!p.name)return false;
+    var rec={id:'r_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),saved_at:new Date().toISOString(),email_date:p.date||'',lead_type:p.lead_type||'Partner',entity:p.organization||'',contacts:[{name:p.name,email:p.email||'',title:p.title||'',organization:p.organization||'',primary:true}],summary:p.summary||'Added from calendar follow-up',source:'calendar'};
+    saved.push(rec);dbSave();renderVault();
+    if(window.ledgerAddFromLead)window.ledgerAddFromLead(rec);
+    return true;
+  };
 })();
 
 /* ===== Follow-ups tab — Google Calendar + Gmail (read-only, in-browser) ===== */
@@ -721,6 +761,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function gid(){try{return localStorage.getItem('fu:clientid')||'';}catch(e){return '';}}
   function loadDismissed(){try{return JSON.parse(localStorage.getItem('fu:dismissed')||'{}');}catch(e){return {};}}
   function saveDismissed(d){try{localStorage.setItem('fu:dismissed',JSON.stringify(d));}catch(e){}}
+  function loadBlock(){try{return JSON.parse(localStorage.getItem('fu:blacklist')||'{}');}catch(e){return {};}}
+  function saveBlock(d){try{localStorage.setItem('fu:blacklist',JSON.stringify(d));}catch(e){}}
+  function savedEmail(){try{return localStorage.getItem('fu:email')||'';}catch(e){return '';}}
+  var silentMode=false;
   function status(t){var e=$('fu-status');if(e)e.textContent=t;}
   function busy(t){var e=$('fu-busy');if(e)e.textContent=t||'';}
   var tg=$('fu-toggle');if(tg)tg.onclick=function(){var p=$('fu-setup');p.style.display=(p.style.display==='none'||!p.style.display)?'flex':'none';};
@@ -730,14 +774,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(tokenClient)return true;
     var cid=gid();if(!cid){status('Add your Google OAuth Client ID first (Set up).');return false;}
     if(!(window.google&&google.accounts&&google.accounts.oauth2)){status('Google library still loading — try again in a moment.');return false;}
-    tokenClient=google.accounts.oauth2.initTokenClient({client_id:cid,scope:SCOPES,callback:function(resp){if(resp&&resp.access_token){token=resp.access_token;onConnected();}else status('Authorization failed.');}});
+    tokenClient=google.accounts.oauth2.initTokenClient({client_id:cid,scope:SCOPES,hint:savedEmail()||undefined,callback:function(resp){if(resp&&resp.access_token){token=resp.access_token;onConnected();}else if(!silentMode){status('Authorization failed — click Connect to try again.');}}});
     return true;
   }
-  function connect(){if(ensureClient()){status('Opening Google sign-in…');tokenClient.requestAccessToken();}}
-  if($('fu-connect'))$('fu-connect').onclick=connect;
+  function connect(silent){silentMode=!!silent;if(ensureClient()){if(!silent)status('Opening Google sign-in…');try{tokenClient.requestAccessToken(silent?{prompt:''}:{});}catch(e){if(!silent)status('Could not start sign-in.');}}}
+  if($('fu-connect'))$('fu-connect').onclick=function(){connect(false);};
   function authFetch(url){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){if(!r.ok){return r.text().then(function(t){throw new Error(r.status+': '+t.replace(/\s+/g,' ').slice(0,300));});}return r.json();});}
-  async function onConnected(){status('Connected ✓');try{var info=await authFetch('https://www.googleapis.com/oauth2/v3/userinfo');myEmail=(info.email||'').toLowerCase();myDomain=myEmail.split('@')[1]||'';}catch(e){}refresh();}
-  if($('fu-refresh'))$('fu-refresh').onclick=function(){if(!token){connect();return;}refresh();};
+  async function onConnected(){status('Connected ✓');try{var info=await authFetch('https://www.googleapis.com/oauth2/v3/userinfo');myEmail=(info.email||'').toLowerCase();myDomain=myEmail.split('@')[1]||'';try{localStorage.setItem('fu:email',myEmail);}catch(e){}}catch(e){}refresh();}
+  if($('fu-refresh'))$('fu-refresh').onclick=function(){if(!token){connect(false);return;}refresh();};
   function fmtYMD(d){var m=d.getMonth()+1,day=d.getDate();return d.getFullYear()+'/'+(m<10?'0'+m:m)+'/'+(day<10?'0'+day:day);}
   function typeOf(r){var h=(r.title||'').toLowerCase();if(/interview|candidate|resume|hiring|recruit|\brole\b|position/.test(h))return 'Job Candidate';if(/ventures|capital|partners|\bvc\b|fund|equity/.test(r.dom+' '+h))return 'Investor';if(/\.edu$/.test(r.dom)||/university|college|provost|dean|campus/.test(h))return 'Sales Prospect';return 'Partner / Prospect';}
   async function refresh(){
@@ -763,8 +807,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     busy('');allRows=uniq;render(uniq);
   }
   function render(rows){
-    var dis=loadDismissed();
-    var visible=rows.filter(function(r){return !dis[r.key];});
+    var dis=loadDismissed(),blk=loadBlock();
+    var visible=rows.filter(function(r){return !dis[r.key]&&!blk[r.email];});
     var due=visible.filter(function(r){return !r.followedUp;}).sort(function(a,b){return a.date-b.date;});
     var done=visible.filter(function(r){return r.followedUp;}).sort(function(a,b){return b.date-a.date;});
     var badge=$('fu-badge');if(badge){if(due.length){badge.textContent=due.length;badge.style.display='inline-block';}else badge.style.display='none';}
@@ -775,13 +819,18 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       else{s+='<div style="color:var(--green);font-weight:700;margin:6px 0 8px">✅ Nothing outstanding — every recent meeting is handled.</div>';}
       if(done.length){s+='<div style="font-weight:700;color:var(--green);margin:16px 0 8px">✅ Followed up ('+done.length+')</div>';done.forEach(function(r){s+=card(r,false,-1);});}
     }
-    var dn=Object.keys(dis).length;
-    if(dn)s+='<div style="font-size:12px;color:var(--ink-soft);margin-top:14px">'+dn+' dismissed · <a href="#" id="fu-resetdis">restore all</a></div>';
+    var dn=Object.keys(dis).length,bn=Object.keys(blk).length;
+    if(dn||bn){s+='<div style="font-size:12px;color:var(--ink-soft);margin-top:14px">';
+      if(dn)s+=dn+' dismissed · <a href="#" id="fu-resetdis">restore</a>';
+      if(dn&&bn)s+=' &nbsp;·&nbsp; ';
+      if(bn)s+=bn+' on never-list · <a href="#" id="fu-resetblk">clear</a>';
+      s+='</div>';}
     $('fu-results').innerHTML=s;
-    $('fu-results').querySelectorAll('[data-fudis]').forEach(function(b){
-      b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fudis')];if(!r)return;var d=loadDismissed();d[r.key]=1;saveDismissed(d);render(allRows);};
-    });
-    var rs=$('fu-resetdis');if(rs)rs.onclick=function(e){e.preventDefault();saveDismissed({});render(allRows);};
+    $('fu-results').querySelectorAll('[data-fudis]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fudis')];if(!r)return;var d=loadDismissed();d[r.key]=1;saveDismissed(d);render(allRows);};});
+    $('fu-results').querySelectorAll('[data-fublk]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fublk')];if(!r)return;var d=loadBlock();d[r.email]=1;saveBlock(d);render(allRows);};});
+    $('fu-results').querySelectorAll('[data-fuadd]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fuadd')];if(!r)return;if(window.routerAddPerson&&window.routerAddPerson({name:r.name,email:r.email,lead_type:typeOf(r),date:fmtYMD(r.date)})){b.textContent='✓ Added';b.style.color='var(--green)';b.disabled=true;}else{(window.toast||function(){})('Could not add');}};});
+    var rd=$('fu-resetdis');if(rd)rd.onclick=function(e){e.preventDefault();saveDismissed({});render(allRows);};
+    var rb=$('fu-resetblk');if(rb)rb.onclick=function(e){e.preventDefault();saveBlock({});render(allRows);};
   }
   function card(r,urgent,idx){
     var border=urgent?'var(--clay)':'var(--green)';
@@ -791,9 +840,23 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(urgent)h+='<button data-fudis="'+idx+'" title="No follow-up needed — dismiss" aria-label="Dismiss" style="position:absolute;top:5px;right:7px;border:none;background:none;color:var(--ink-soft);font-size:17px;line-height:1;cursor:pointer;padding:0">×</button>';
     h+='<div style="font-size:14px"><b>'+esc(r.name)+'</b> <span style="font-size:11px;color:var(--ink-soft)">· '+esc(typeOf(r))+'</span></div>';
     h+='<div style="font-size:12px;color:var(--ink-soft)">'+esc(r.title)+' — '+when+' ('+ago+')</div>';
-    if(urgent)h+='<div style="font-size:12px;margin-top:3px"><a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a></div>';
+    if(urgent){
+      h+='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">';
+      h+='<a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a>';
+      h+='<button data-fuadd="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">+ Add to lists</button>';
+      h+='<button data-fublk="'+idx+'" title="Never show this person again" style="border:none;background:none;color:var(--ink-soft);cursor:pointer;padding:0;font-size:12px">⊘ Never</button>';
+      h+='</div>';
+    }
     return h+'</div>';
   }
+  (function autoConnect(){
+    if(!gid()||!savedEmail())return;
+    var tries=0;
+    (function wait(){
+      if(window.google&&google.accounts&&google.accounts.oauth2){connect(true);return;}
+      if(tries++>40)return;setTimeout(wait,150);
+    })();
+  })();
 })();
 </script>
 </body>
