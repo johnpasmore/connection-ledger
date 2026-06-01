@@ -248,9 +248,10 @@
       <button class="btn sm primary" id="fu-connect">Connect Calendar + Gmail</button>
       <div class="note">Read-only access to your own calendar and sent mail, straight from your browser to Google. Nothing is stored on any server. See setup steps if you don't have a Client ID yet.</div>
     </div>
-    <div style="margin:16px 0 4px">
+    <div style="margin:16px 0 4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <button class="btn" id="fu-refresh">↻ Check follow-ups</button>
-      <span id="fu-busy" style="font-size:12.5px;color:var(--ink-soft);margin-left:8px"></span>
+      <span style="font-size:12.5px;color:var(--ink-soft)">Look back <input id="fu-days" type="number" min="1" max="730" value="30" style="width:62px;padding:4px 6px;border:1px solid var(--line);border-radius:6px"> days</span>
+      <span id="fu-busy" style="font-size:12.5px;color:var(--ink-soft)"></span>
     </div>
     <div id="fu-results"></div>
   </section>
@@ -789,7 +790,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 /* ===== Follow-ups tab — Google Calendar + Gmail (read-only, in-browser) ===== */
 (function(){
   var SCOPES='https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email';
-  var LOOKBACK=14;
+  var LOOKBACK=30;
   var token=null,myEmail='',myDomain='',tokenClient=null,allRows=[];
   function $(id){return document.getElementById(id);}
   function gid(){try{return localStorage.getItem('fu:clientid')||'';}catch(e){return '';}}
@@ -803,6 +804,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function busy(t){var e=$('fu-busy');if(e)e.textContent=t||'';}
   var tg=$('fu-toggle');if(tg)tg.onclick=function(){var p=$('fu-setup');p.style.display=(p.style.display==='none'||!p.style.display)?'flex':'none';};
   if($('fu-clientid'))$('fu-clientid').value=gid();
+  (function(){try{var d=parseInt(localStorage.getItem('fu:days'),10);if(d>0){LOOKBACK=d;if($('fu-days'))$('fu-days').value=d;}}catch(e){}})();
   if($('fu-savecid'))$('fu-savecid').onclick=function(){try{localStorage.setItem('fu:clientid',$('fu-clientid').value.trim());}catch(e){}status('Client ID saved — now click Connect.');};
   function ensureClient(){
     if(tokenClient)return true;
@@ -820,9 +822,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function typeOf(r){var h=(r.title||'').toLowerCase();if(/interview|candidate|resume|hiring|recruit|\brole\b|position/.test(h))return 'Job Candidate';if(/ventures|capital|partners|\bvc\b|fund|equity/.test(r.dom+' '+h))return 'Investor';if(/\.edu$/.test(r.dom)||/university|college|provost|dean|campus/.test(h))return 'Sales Prospect';return 'Partner / Prospect';}
   async function refresh(){
     if(!token)return;
+    var di=$('fu-days');if(di){var v=parseInt(di.value,10);if(v>0){LOOKBACK=v;try{localStorage.setItem('fu:days',String(v));}catch(e){}}}
     busy('Reading your calendar…');
     var now=new Date(),start=new Date(now.getTime()-LOOKBACK*86400000);
-    var url='https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=250&timeMin='+encodeURIComponent(start.toISOString())+'&timeMax='+encodeURIComponent(now.toISOString());
+    var url='https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=2500&timeMin='+encodeURIComponent(start.toISOString())+'&timeMax='+encodeURIComponent(now.toISOString());
     var data;try{data=await authFetch(url);}catch(e){busy('');status('Could not read calendar (error '+e.message+').');return;}
     var rows=[];
     (data.items||[]).forEach(function(ev){
@@ -846,12 +849,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var due=visible.filter(function(r){return !r.followedUp;}).sort(function(a,b){return a.date-b.date;});
     var done=visible.filter(function(r){return r.followedUp;}).sort(function(a,b){return b.date-a.date;});
     var badge=$('fu-badge');if(badge){if(due.length){badge.textContent=due.length;badge.style.display='inline-block';}else badge.style.display='none';}
-    var s='';
+    var s='',ci=[];
     if(!rows.length){s='<div style="color:var(--ink-soft);font-size:13px;padding:8px 0">No past meetings with outside guests in the last '+LOOKBACK+' days.</div>';}
     else{
-      if(due.length){s+='<div style="font-weight:700;color:var(--clay-dark);margin:6px 0 8px">⚠️ Needs follow-up ('+due.length+')</div>';due.forEach(function(r,i){s+=card(r,true,i);});}
+      if(due.length){s+='<div style="font-weight:700;color:var(--clay-dark);margin:6px 0 8px">⚠️ Needs follow-up ('+due.length+')</div>';due.forEach(function(r){ci.push(r);s+=card(r,true,ci.length-1);});}
       else{s+='<div style="color:var(--green);font-weight:700;margin:6px 0 8px">✅ Nothing outstanding — every recent meeting is handled.</div>';}
-      if(done.length){s+='<div style="font-weight:700;color:var(--green);margin:16px 0 8px">✅ Followed up ('+done.length+')</div>';done.forEach(function(r){s+=card(r,false,-1);});}
+      if(done.length){s+='<div style="font-weight:700;color:var(--green);margin:16px 0 8px">✅ Followed up ('+done.length+')</div>';done.forEach(function(r){ci.push(r);s+=card(r,false,ci.length-1);});}
     }
     var dn=Object.keys(dis).length,bn=Object.keys(blk).length;
     if(dn||bn){s+='<div style="font-size:12px;color:var(--ink-soft);margin-top:14px">';
@@ -860,10 +863,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       if(bn)s+=bn+' on never-list · <a href="#" id="fu-resetblk">clear</a>';
       s+='</div>';}
     $('fu-results').innerHTML=s;
-    $('fu-results').querySelectorAll('[data-fudis]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fudis')];if(!r)return;var d=loadDismissed();d[r.key]=1;saveDismissed(d);render(allRows);};});
-    $('fu-results').querySelectorAll('[data-fublk]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fublk')];if(!r)return;var d=loadBlock();d[r.email]=1;saveBlock(d);render(allRows);};});
-    $('fu-results').querySelectorAll('[data-fuadd]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fuadd')];if(!r)return;if(window.routerAddPerson&&window.routerAddPerson({name:r.name,email:r.email,lead_type:typeOf(r),date:fmtYMD(r.date)})){b.textContent='✓ Added';b.style.color='var(--green)';b.disabled=true;}else{(window.toast||function(){})('Could not add');}};});
-    $('fu-results').querySelectorAll('[data-fusch]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fusch')];if(r)openScheduler(r);};});
+    function rowf(b,a){return ci[+b.getAttribute(a)];}
+    $('fu-results').querySelectorAll('[data-fudis]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=rowf(b,'data-fudis');if(!r)return;var d=loadDismissed();d[r.key]=1;saveDismissed(d);render(allRows);};});
+    $('fu-results').querySelectorAll('[data-fublk]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=rowf(b,'data-fublk');if(!r)return;var d=loadBlock();d[r.email]=1;saveBlock(d);render(allRows);};});
+    $('fu-results').querySelectorAll('[data-fuadd]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=rowf(b,'data-fuadd');if(!r)return;if(window.ledgerAddFromLead){window.ledgerAddFromLead({lead_type:typeOf(r),entity:'',email_date:fmtYMD(r.date),summary:'Met '+fmtYMD(r.date)+' via calendar',contacts:[{name:r.name,email:r.email}]});b.textContent='✓ In Connections';b.style.color='var(--green)';b.disabled=true;}else{(window.toast||function(){})('Connections not ready');}};});
+    $('fu-results').querySelectorAll('[data-fusch]').forEach(function(b){b.onclick=function(e){e.preventDefault();var r=rowf(b,'data-fusch');if(r)openScheduler(r);};});
     var rd=$('fu-resetdis');if(rd)rd.onclick=function(e){e.preventDefault();saveDismissed({});render(allRows);};
     var rb=$('fu-resetblk');if(rb)rb.onclick=function(e){e.preventDefault();saveBlock({});render(allRows);};
   }
@@ -875,14 +879,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(urgent)h+='<button data-fudis="'+idx+'" title="No follow-up needed — dismiss" aria-label="Dismiss" style="position:absolute;top:5px;right:7px;border:none;background:none;color:var(--ink-soft);font-size:17px;line-height:1;cursor:pointer;padding:0">×</button>';
     h+='<div style="font-size:14px"><b>'+esc(r.name)+'</b> <span style="font-size:11px;color:var(--ink-soft)">· '+esc(typeOf(r))+'</span></div>';
     h+='<div style="font-size:12px;color:var(--ink-soft)">'+esc(r.title)+' — '+when+' ('+ago+')</div>';
+    h+='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">';
+    h+='<a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a>';
+    h+='<button data-fuadd="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">+ Add to Connections</button>';
     if(urgent){
-      h+='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">';
-      h+='<a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a>';
       h+='<button data-fusch="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">📅 Schedule</button>';
-      h+='<button data-fuadd="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">+ Add to lists</button>';
       h+='<button data-fublk="'+idx+'" title="Never show this person again" style="border:none;background:none;color:var(--ink-soft);cursor:pointer;padding:0;font-size:12px">⊘ Never</button>';
-      h+='</div>';
     }
+    h+='</div>';
     return h+'</div>';
   }
 
