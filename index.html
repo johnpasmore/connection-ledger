@@ -716,9 +716,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 (function(){
   var SCOPES='https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email';
   var LOOKBACK=14;
-  var token=null,myEmail='',myDomain='',tokenClient=null;
+  var token=null,myEmail='',myDomain='',tokenClient=null,allRows=[];
   function $(id){return document.getElementById(id);}
   function gid(){try{return localStorage.getItem('fu:clientid')||'';}catch(e){return '';}}
+  function loadDismissed(){try{return JSON.parse(localStorage.getItem('fu:dismissed')||'{}');}catch(e){return {};}}
+  function saveDismissed(d){try{localStorage.setItem('fu:dismissed',JSON.stringify(d));}catch(e){}}
   function status(t){var e=$('fu-status');if(e)e.textContent=t;}
   function busy(t){var e=$('fu-busy');if(e)e.textContent=t||'';}
   var tg=$('fu-toggle');if(tg)tg.onclick=function(){var p=$('fu-setup');p.style.display=(p.style.display==='none'||!p.style.display)?'flex':'none';};
@@ -755,29 +757,38 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
         rows.push({date:when,daysAgo:Math.floor((now-when)/86400000),name:a.displayName||email,email:email,title:ev.summary||'(no title)',dom:dom});
       });
     });
-    var seen={},uniq=[];rows.forEach(function(r){var k=r.email+'|'+r.title;if(seen[k]){if(r.date>seen[k].date){seen[k].date=r.date;seen[k].daysAgo=r.daysAgo;}return;}seen[k]=r;uniq.push(r);});
+    var seen={},uniq=[];rows.forEach(function(r){var k=r.email+'|'+r.title;if(seen[k]){if(r.date>seen[k].date){seen[k].date=r.date;seen[k].daysAgo=r.daysAgo;}return;}r.key=k;seen[k]=r;uniq.push(r);});
     busy('Checking which ones you’ve emailed…');
     for(var i=0;i<uniq.length;i++){var r=uniq[i];try{var q=encodeURIComponent('in:sent to:'+r.email+' after:'+fmtYMD(r.date));var gr=await authFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q='+q);r.followedUp=!!(gr.messages&&gr.messages.length);}catch(e){r.followedUp=false;}}
-    busy('');render(uniq);
+    busy('');allRows=uniq;render(uniq);
   }
   function render(rows){
-    var due=rows.filter(function(r){return !r.followedUp;}).sort(function(a,b){return a.date-b.date;});
-    var done=rows.filter(function(r){return r.followedUp;}).sort(function(a,b){return b.date-a.date;});
+    var dis=loadDismissed();
+    var visible=rows.filter(function(r){return !dis[r.key];});
+    var due=visible.filter(function(r){return !r.followedUp;}).sort(function(a,b){return a.date-b.date;});
+    var done=visible.filter(function(r){return r.followedUp;}).sort(function(a,b){return b.date-a.date;});
     var badge=$('fu-badge');if(badge){if(due.length){badge.textContent=due.length;badge.style.display='inline-block';}else badge.style.display='none';}
     var s='';
     if(!rows.length){s='<div style="color:var(--ink-soft);font-size:13px;padding:8px 0">No past meetings with outside guests in the last '+LOOKBACK+' days.</div>';}
     else{
-      if(due.length){s+='<div style="font-weight:700;color:var(--clay-dark);margin:6px 0 8px">⚠️ Needs follow-up ('+due.length+')</div>';due.forEach(function(r){s+=card(r,true);});}
-      else{s+='<div style="color:var(--green);font-weight:700;margin:6px 0 8px">✅ Every recent meeting has a follow-up email.</div>';}
-      if(done.length){s+='<div style="font-weight:700;color:var(--green);margin:16px 0 8px">✅ Followed up ('+done.length+')</div>';done.forEach(function(r){s+=card(r,false);});}
+      if(due.length){s+='<div style="font-weight:700;color:var(--clay-dark);margin:6px 0 8px">⚠️ Needs follow-up ('+due.length+')</div>';due.forEach(function(r,i){s+=card(r,true,i);});}
+      else{s+='<div style="color:var(--green);font-weight:700;margin:6px 0 8px">✅ Nothing outstanding — every recent meeting is handled.</div>';}
+      if(done.length){s+='<div style="font-weight:700;color:var(--green);margin:16px 0 8px">✅ Followed up ('+done.length+')</div>';done.forEach(function(r){s+=card(r,false,-1);});}
     }
+    var dn=Object.keys(dis).length;
+    if(dn)s+='<div style="font-size:12px;color:var(--ink-soft);margin-top:14px">'+dn+' dismissed · <a href="#" id="fu-resetdis">restore all</a></div>';
     $('fu-results').innerHTML=s;
+    $('fu-results').querySelectorAll('[data-fudis]').forEach(function(b){
+      b.onclick=function(e){e.preventDefault();var r=due[+b.getAttribute('data-fudis')];if(!r)return;var d=loadDismissed();d[r.key]=1;saveDismissed(d);render(allRows);};
+    });
+    var rs=$('fu-resetdis');if(rs)rs.onclick=function(e){e.preventDefault();saveDismissed({});render(allRows);};
   }
-  function card(r,urgent){
+  function card(r,urgent,idx){
     var border=urgent?'var(--clay)':'var(--green)';
     var when=r.date.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
     var ago=r.daysAgo<=0?'today':(r.daysAgo+' day'+(r.daysAgo>1?'s':'')+' ago');
-    var h='<div style="border:1px solid var(--line);border-left:3px solid '+border+';padding:7px 11px;margin-bottom:8px;background:#fff;border-radius:8px">';
+    var h='<div style="position:relative;border:1px solid var(--line);border-left:3px solid '+border+';padding:7px '+(urgent?'30px':'11px')+' 7px 11px;margin-bottom:8px;background:#fff;border-radius:8px">';
+    if(urgent)h+='<button data-fudis="'+idx+'" title="No follow-up needed — dismiss" aria-label="Dismiss" style="position:absolute;top:5px;right:7px;border:none;background:none;color:var(--ink-soft);font-size:17px;line-height:1;cursor:pointer;padding:0">×</button>';
     h+='<div style="font-size:14px"><b>'+esc(r.name)+'</b> <span style="font-size:11px;color:var(--ink-soft)">· '+esc(typeOf(r))+'</span></div>';
     h+='<div style="font-size:12px;color:var(--ink-soft)">'+esc(r.title)+' — '+when+' ('+ago+')</div>';
     if(urgent)h+='<div style="font-size:12px;margin-top:3px"><a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a></div>';
