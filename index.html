@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
 <style>
   :root{
     --paper:#FAF6EE;--paper-2:#F3ECDF;--ink:#1B1813;--ink-soft:#5A5347;--line:#E2D8C6;
@@ -117,6 +118,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="ledger">Connection Ledger</button>
     <button class="tab" data-tab="router">Lead Router</button>
+    <button class="tab" data-tab="followup">Follow-ups <span id="fu-badge" style="display:none;background:#8F3C20;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
   </div>
 
   <!-- ============ LEDGER TAB ============ -->
@@ -229,6 +231,26 @@
         <button class="btn" id="copyJson">Copy as JSON</button>
       </div>
     </div>
+  </section>
+
+  <!-- ============ FOLLOW-UPS TAB ============ -->
+  <section class="panel" id="panel-followup">
+    <p class="lede">Meetings from the last 14 days that had an outside guest. Anyone you haven't emailed since the meeting floats to the top — so nobody slips through your two-week window.</p>
+    <div class="settings-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 2px">
+      <span id="fu-status" style="font-size:12.5px;color:var(--ink-soft)">Not connected to Google yet.</span>
+      <button class="btn sm" id="fu-toggle">Set up</button>
+    </div>
+    <div class="keybar" id="fu-setup" style="display:none">
+      <div class="f" style="flex-basis:100%"><label class="fld">Google OAuth Client ID</label><input id="fu-clientid" placeholder="…apps.googleusercontent.com"></div>
+      <button class="btn sm" id="fu-savecid">Save</button>
+      <button class="btn sm primary" id="fu-connect">Connect Calendar + Gmail</button>
+      <div class="note">Read-only access to your own calendar and sent mail, straight from your browser to Google. Nothing is stored on any server. See setup steps if you don't have a Client ID yet.</div>
+    </div>
+    <div style="margin:16px 0 4px">
+      <button class="btn" id="fu-refresh">↻ Check follow-ups</button>
+      <span id="fu-busy" style="font-size:12.5px;color:var(--ink-soft);margin-left:8px"></span>
+    </div>
+    <div id="fu-results"></div>
   </section>
 </div>
 
@@ -688,6 +710,79 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var d=await unpack(await cloudGet());if(!d){setStatus('nothing saved in cloud yet');return;}applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
   (async function boot(){setStatus('checking…');try{var d=await unpack(await cloudGet());var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));if(d&&empty){applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);return;}lastSig=sig();setStatus('connected ✓');}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
   setInterval(async function(){if(!cloudOn)return;var s=sig();if(s===lastSig)return;setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — will retry');}},20000);
+})();
+
+/* ===== Follow-ups tab — Google Calendar + Gmail (read-only, in-browser) ===== */
+(function(){
+  var SCOPES='https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email';
+  var LOOKBACK=14;
+  var token=null,myEmail='',myDomain='',tokenClient=null;
+  function $(id){return document.getElementById(id);}
+  function gid(){try{return localStorage.getItem('fu:clientid')||'';}catch(e){return '';}}
+  function status(t){var e=$('fu-status');if(e)e.textContent=t;}
+  function busy(t){var e=$('fu-busy');if(e)e.textContent=t||'';}
+  var tg=$('fu-toggle');if(tg)tg.onclick=function(){var p=$('fu-setup');p.style.display=(p.style.display==='none'||!p.style.display)?'flex':'none';};
+  if($('fu-clientid'))$('fu-clientid').value=gid();
+  if($('fu-savecid'))$('fu-savecid').onclick=function(){try{localStorage.setItem('fu:clientid',$('fu-clientid').value.trim());}catch(e){}status('Client ID saved — now click Connect.');};
+  function ensureClient(){
+    if(tokenClient)return true;
+    var cid=gid();if(!cid){status('Add your Google OAuth Client ID first (Set up).');return false;}
+    if(!(window.google&&google.accounts&&google.accounts.oauth2)){status('Google library still loading — try again in a moment.');return false;}
+    tokenClient=google.accounts.oauth2.initTokenClient({client_id:cid,scope:SCOPES,callback:function(resp){if(resp&&resp.access_token){token=resp.access_token;onConnected();}else status('Authorization failed.');}});
+    return true;
+  }
+  function connect(){if(ensureClient()){status('Opening Google sign-in…');tokenClient.requestAccessToken();}}
+  if($('fu-connect'))$('fu-connect').onclick=connect;
+  function authFetch(url){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();});}
+  async function onConnected(){status('Connected ✓');try{var info=await authFetch('https://www.googleapis.com/oauth2/v3/userinfo');myEmail=(info.email||'').toLowerCase();myDomain=myEmail.split('@')[1]||'';}catch(e){}refresh();}
+  if($('fu-refresh'))$('fu-refresh').onclick=function(){if(!token){connect();return;}refresh();};
+  function fmtYMD(d){var m=d.getMonth()+1,day=d.getDate();return d.getFullYear()+'/'+(m<10?'0'+m:m)+'/'+(day<10?'0'+day:day);}
+  function typeOf(r){var h=(r.title||'').toLowerCase();if(/interview|candidate|resume|hiring|recruit|\brole\b|position/.test(h))return 'Job Candidate';if(/ventures|capital|partners|\bvc\b|fund|equity/.test(r.dom+' '+h))return 'Investor';if(/\.edu$/.test(r.dom)||/university|college|provost|dean|campus/.test(h))return 'Sales Prospect';return 'Partner / Prospect';}
+  async function refresh(){
+    if(!token)return;
+    busy('Reading your calendar…');
+    var now=new Date(),start=new Date(now.getTime()-LOOKBACK*86400000);
+    var url='https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=250&timeMin='+encodeURIComponent(start.toISOString())+'&timeMax='+encodeURIComponent(now.toISOString());
+    var data;try{data=await authFetch(url);}catch(e){busy('');status('Could not read calendar (error '+e.message+').');return;}
+    var rows=[];
+    (data.items||[]).forEach(function(ev){
+      if(!ev.start||!ev.start.dateTime)return;
+      var when=new Date(ev.start.dateTime);if(when>=now)return;
+      (ev.attendees||[]).forEach(function(a){
+        var email=(a.email||'').toLowerCase();
+        if(!email||a.resource||email===myEmail)return;
+        var dom=email.split('@')[1]||'';if(dom===myDomain)return;
+        rows.push({date:when,daysAgo:Math.floor((now-when)/86400000),name:a.displayName||email,email:email,title:ev.summary||'(no title)',dom:dom});
+      });
+    });
+    var seen={},uniq=[];rows.forEach(function(r){var k=r.email+'|'+r.title;if(seen[k]){if(r.date>seen[k].date){seen[k].date=r.date;seen[k].daysAgo=r.daysAgo;}return;}seen[k]=r;uniq.push(r);});
+    busy('Checking which ones you’ve emailed…');
+    for(var i=0;i<uniq.length;i++){var r=uniq[i];try{var q=encodeURIComponent('in:sent to:'+r.email+' after:'+fmtYMD(r.date));var gr=await authFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q='+q);r.followedUp=!!(gr.messages&&gr.messages.length);}catch(e){r.followedUp=false;}}
+    busy('');render(uniq);
+  }
+  function render(rows){
+    var due=rows.filter(function(r){return !r.followedUp;}).sort(function(a,b){return a.date-b.date;});
+    var done=rows.filter(function(r){return r.followedUp;}).sort(function(a,b){return b.date-a.date;});
+    var badge=$('fu-badge');if(badge){if(due.length){badge.textContent=due.length;badge.style.display='inline-block';}else badge.style.display='none';}
+    var s='';
+    if(!rows.length){s='<div style="color:var(--ink-soft);font-size:13px;padding:8px 0">No past meetings with outside guests in the last '+LOOKBACK+' days.</div>';}
+    else{
+      if(due.length){s+='<div style="font-weight:700;color:var(--clay-dark);margin:6px 0 8px">⚠️ Needs follow-up ('+due.length+')</div>';due.forEach(function(r){s+=card(r,true);});}
+      else{s+='<div style="color:var(--green);font-weight:700;margin:6px 0 8px">✅ Every recent meeting has a follow-up email.</div>';}
+      if(done.length){s+='<div style="font-weight:700;color:var(--green);margin:16px 0 8px">✅ Followed up ('+done.length+')</div>';done.forEach(function(r){s+=card(r,false);});}
+    }
+    $('fu-results').innerHTML=s;
+  }
+  function card(r,urgent){
+    var border=urgent?'var(--clay)':'var(--green)';
+    var when=r.date.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+    var ago=r.daysAgo<=0?'today':(r.daysAgo+' day'+(r.daysAgo>1?'s':'')+' ago');
+    var h='<div style="border:1px solid var(--line);border-left:3px solid '+border+';padding:7px 11px;margin-bottom:8px;background:#fff;border-radius:8px">';
+    h+='<div style="font-size:14px"><b>'+esc(r.name)+'</b> <span style="font-size:11px;color:var(--ink-soft)">· '+esc(typeOf(r))+'</span></div>';
+    h+='<div style="font-size:12px;color:var(--ink-soft)">'+esc(r.title)+' — '+when+' ('+ago+')</div>';
+    if(urgent)h+='<div style="font-size:12px;margin-top:3px"><a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a></div>';
+    return h+'</div>';
+  }
 })();
 </script>
 </body>
