@@ -183,6 +183,13 @@
     </div>
     <div id="savedList" style="display:none"></div>
 
+    <div id="askPanel" style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0 4px">
+      <div style="font-weight:700;font-size:13.5px;margin-bottom:3px">Ask Claude about a contact</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:9px">Search anyone in your Connection Ledger and get a re-engage recommendation.</div>
+      <input id="askSearch" placeholder="Search by name, company, or title…" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;box-sizing:border-box">
+      <div id="askResults" style="margin-top:10px"></div>
+    </div>
+
     <textarea id="thread" placeholder="Paste a full inbound email — include the From / To / Cc / Subject lines and signatures if you can."></textarea>
     <div class="row">
       <button class="btn primary" id="analyze">Classify &amp; route</button>
@@ -389,21 +396,22 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     if(editingId){Object.assign(contacts.find(x=>x.id===editingId),data);}else{contacts.push(Object.assign({id:uid(),invitedDate:new Date().toISOString(),lastInvitedDate:new Date().toISOString(),invitationMessage:'',connectedOn:data.connected?new Date().toISOString():'',firstAdded:new Date().toISOString()},data));}
     save();closeModal();render();toast('Saved');}
   function delContact(){if(!editingId)return;contacts=contacts.filter(c=>c.id!==editingId);save();closeModal();render();toast('Removed');}
+  async function salesReengageText(c){
+    let key='',model='';try{key=localStorage.getItem('router:apikey')||'';model=localStorage.getItem('router:model')||'claude-sonnet-4-5';}catch(e){}
+    if(!key)throw new Error('NOKEY');
+    const dv=dateOf(c);const ds=dv?daysSince(dv):null;
+    const profile=['Name: '+(c.name||'—'),'Title: '+(c.position||'unknown'),'Company/Org: '+(c.company||'—'),'Institution (if higher-ed): '+(c.institution||'—'),'State/Region: '+(c.state||'unknown'),'Channels: '+([hasLI(c)?'LinkedIn':'',hasEm(c)?'email':''].filter(Boolean).join(' + ')||'unknown'),'Ever replied: '+(c.replied?'yes':(c.connected?'connected, no message reply':'no')),'Status: '+(SL[status(c)]||status(c)),'Last interaction: '+(toISODate(dv)||'unknown')+((ds!=null&&!isNaN(ds))?(' ('+ds+' days ago)'):''),'John\u2019s notes: '+(c.notes||'none')].join('\n');
+    const prompt='You are advising John Pasmore, CEO of Latimer.AI \u2014 an inclusive AI platform sold to higher-education institutions (universities and colleges). His goal is growing sales. Below is one contact from his outreach list. Decide whether he should re-engage this person now to advance a sale.\n\nContact:\n'+profile+'\n\nRespond in exactly this short format:\nVerdict: <Re-engage now / Maybe later / Skip>\nWhy: <one or two sentences tied to their role, the kind of organization, and how stale the contact is>\nAngle: <if worth it, one specific non-generic opening line he could send; otherwise \u201c\u2014\u201d>\nUnder 90 words total. Be candid \u2014 if this person is not a plausible higher-ed buyer or champion, say Skip.';
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:model||'claude-sonnet-4-5',max_tokens:400,messages:[{role:'user',content:prompt}]})});
+    if(!r.ok){const t=await r.text();throw new Error('API '+r.status+': '+t.slice(0,180));}
+    const data=await r.json();return (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
+  }
+  window.salesReengageText=salesReengageText;
   async function aiReengage(){
     const c=contacts.find(x=>x.id===editingId);if(!c)return;
-    let key='',model='';try{key=localStorage.getItem('router:apikey')||'';model=localStorage.getItem('router:model')||'claude-sonnet-4-5';}catch(e){}
-    const out=document.getElementById('aiReengageOut');out.classList.remove('hidden');
-    if(!key){out.textContent='No Anthropic API key found. Add it once on the Lead Router tab ("Add API") — the suggester reuses that key.';return;}
-    out.textContent='Thinking…';
-    const dv=dateOf(c);const ds=dv?daysSince(dv):null;
-    const profile=['Name: '+(c.name||'—'),'Title: '+(c.position||'unknown'),'Company/Org: '+(c.company||'—'),'Institution (if higher-ed): '+(c.institution||'—'),'Channels: '+([hasLI(c)?'LinkedIn':'',hasEm(c)?'email':''].filter(Boolean).join(' + ')||'unknown'),'Ever replied: '+(c.replied?'yes':(c.connected?'connected, no message reply':'no')),'Status: '+SL[status(c)],'Last interaction: '+(toISODate(dv)||'unknown')+((ds!=null&&!isNaN(ds))?(' ('+ds+' days ago)'):''),'John\u2019s notes: '+(c.notes||'none')].join('\n');
-    const prompt='You are advising John Pasmore, CEO of Latimer.AI \u2014 an inclusive AI platform sold to higher-education institutions (universities and colleges). His goal is growing sales. Below is one contact from his outreach list. Decide whether he should re-engage this person now to advance a sale.\n\nContact:\n'+profile+'\n\nRespond in exactly this short format:\nVerdict: <Re-engage now / Maybe later / Skip>\nWhy: <one or two sentences tied to their role, the kind of organization, and how stale the contact is>\nAngle: <if worth it, one specific non-generic opening line he could send; otherwise \u201c\u2014\u201d>\nUnder 90 words total. Be candid \u2014 if this person is not a plausible higher-ed buyer or champion, say Skip.';
-    try{
-      const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:model||'claude-sonnet-4-5',max_tokens:400,messages:[{role:'user',content:prompt}]})});
-      if(!r.ok){const t=await r.text();out.textContent='API error '+r.status+': '+t.slice(0,180);return;}
-      const data=await r.json();const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
-      out.textContent=text||'(no response)';
-    }catch(e){out.textContent='Could not reach the API: '+(e&&e.message?e.message:e);}
+    const out=document.getElementById('aiReengageOut');out.classList.remove('hidden');out.textContent='Thinking…';
+    try{const t=await salesReengageText(c);out.textContent=t||'(no response)';}
+    catch(e){out.textContent=(e&&e.message==='NOKEY')?'No Anthropic API key found. Add it once on the Lead Router tab ("Add API") — the suggester reuses that key.':('Error: '+(e&&e.message?e.message:e));}
   }
   function exportCsv(){if(!contacts.length){toast('Nothing to export');return;}const cols=['Name','LinkedIn URL','Email','Company','Title','Date','Institution','State','Status','Channels','Messaged','Replied','Has Email','Invited Date','Connected On','Stage','Notes'];const rows=[cols.map(csvCell).join(',')];contacts.forEach(c=>{const ch=[hasLI(c)?'LinkedIn':'',hasEm(c)?'Email':''].filter(Boolean).join('+');rows.push([c.name,c.profileUrl,c.email||'',c.company,c.position,toISODate(dateOf(c)),c.institution,c.state||'',SL[status(c)],ch,c.messaged?'yes':'',c.replied?'yes':'',c.hasEmail?'yes':'',c.invitedDate?fmt(c.invitedDate):'',c.connectedOn?fmt(c.connectedOn):'',c.stage||'',(c.notes||'').replace(/\n/g,' ')].map(csvCell).join(','));});dl(rows.join('\n'),'connection-ledger-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');toast('Exported '+contacts.length+' contacts');}
   function dl(content,name,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
@@ -628,6 +636,32 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     const b=new Blob([rows.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='lead-router-export-'+new Date().toISOString().slice(0,10)+'.csv';a.click();toast('Exported '+saved.length+' leads');};
 
   saved=dbLoad();renderVault();
+  (function askClaudePanel(){
+    var s=document.getElementById('askSearch'),res=document.getElementById('askResults');
+    if(!s)return;
+    function nm(x){return (x||'').toString().toLowerCase();}
+    function load(){try{return JSON.parse(localStorage.getItem('ledger:contacts')||'[]');}catch(e){return [];}}
+    function run(){
+      var q=nm(s.value).trim();res.innerHTML='';
+      if(q.length<2){res.innerHTML='<div style="font-size:12px;color:var(--ink-soft)">Type at least 2 letters to find someone.</div>';return;}
+      var hits=load().filter(function(c){return nm(c.name+' '+c.company+' '+c.position+' '+c.institution).indexOf(q)>=0;}).slice(0,8);
+      if(!hits.length){res.innerHTML='<div style="font-size:12px;color:var(--ink-soft)">No matches in your contacts.</div>';return;}
+      hits.forEach(function(c){
+        var row=document.createElement('div');row.style.cssText='border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:7px';
+        var title=(c.name||'—')+(c.position?(' \u00b7 '+c.position):'')+(c.company?(' \u00b7 '+c.company):'');
+        row.innerHTML='<div style="display:flex;align-items:center;gap:10px"><div style="flex:1;font-size:13px">'+esc(title)+'</div><button class="btn sm" style="white-space:nowrap">\u2726 Ask Claude</button></div><div class="askOut" style="display:none;margin-top:8px;font-size:13px;line-height:1.55;white-space:pre-wrap;background:var(--clay-bg);border-radius:8px;padding:10px 12px"></div>';
+        var btn=row.querySelector('button'),out=row.querySelector('.askOut');
+        btn.onclick=async function(){
+          out.style.display='block';out.textContent='Thinking\u2026';
+          if(!window.salesReengageText){out.textContent='Re-engage engine not loaded.';return;}
+          try{var t=await window.salesReengageText(c);out.textContent=t||'(no response)';}
+          catch(e){out.textContent=(e&&e.message==='NOKEY')?'No API key yet \u2014 add it above with "Add API".':('Error: '+(e&&e.message?e.message:e));}
+        };
+        res.appendChild(row);
+      });
+    }
+    s.oninput=run;
+  })();
   (function backfill(){
     try{if(localStorage.getItem('router:backfilled_v1'))return;}catch(e){return;}
     if(window.ledgerAddFromLead){saved.forEach(r=>window.ledgerAddFromLead(r));}
@@ -643,10 +677,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function setStatus(t){var el=document.getElementById('cloudStatus');if(el)el.textContent='Cloud: '+t;}
   function applyCloud(d){try{if(d&&d.ledger)localStorage.setItem('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));}catch(e){}}
   async function cloudGet(){var r=await fetch('/api/state',{headers:{'Accept':'application/json'}});if(!r.ok)throw new Error('get '+r.status);return r.json();}
-  async function cloudPut(){var r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:payload()})});if(!r.ok)throw new Error('put '+r.status);lastSig=sig();return r.json();}
+  async function cloudPut(){var r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:payload()})});if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error(r.status+' '+t.slice(0,160));}lastSig=sig();return r.json();}
   function parseData(r){if(!r||r.data==null)return null;return typeof r.data==='string'?JSON.parse(r.data):r.data;}
   var sb=document.getElementById('cloudSaveBtn'),lb=document.getElementById('cloudLoadBtn');
-  if(sb)sb.onclick=async function(){setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — saved locally');}};
+  if(sb)sb.onclick=async function(){setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('cloud error: '+(e&&e.message?e.message:e));}};
   if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var d=parseData(await cloudGet());if(!d){setStatus('nothing saved in cloud yet');return;}applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
   (async function boot(){setStatus('checking…');try{var d=parseData(await cloudGet());var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));if(d&&empty){applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);return;}lastSig=sig();setStatus('connected ✓');}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
   setInterval(async function(){if(!cloudOn)return;var s=sig();if(s===lastSig)return;setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — will retry');}},20000);
