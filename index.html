@@ -473,11 +473,12 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       upsert({name:p.name,email:p.email||'',hasEmail:!!p.email,stage:'In conversation',actionDate:toISODate(p.date)||todayISO(),notes:'['+(p.lead_type||'Lead')+'] from calendar follow-up',source:'inbound'});
       ex=findMatch({name:p.name,email:p.email||'',profileUrl:''});
     }
-    if(ex)ex.priority=true;
+    if(ex){if(p.email){if(!ex.email)ex.email=p.email;ex.hasEmail=true;}ex.priority=true;}
     save();render();updatePriorityBadge();
     if(document.getElementById('panel-priority').classList.contains('active'))renderPriority();
     return true;
   };
+  window.ledgerIsPriority=function(p){if(!p)return false;var ex=findMatch({name:p.name||'',email:p.email||'',profileUrl:''});return !!(ex&&ex.priority);};
   function openEdit(id){const c=contacts.find(x=>x.id===id);editingId=id;
     document.getElementById('m-title').textContent=c.name||'Contact';
     const mu=document.getElementById('m-url');if(c.profileUrl){mu.textContent=c.profileUrl;mu.classList.remove('hidden');}else mu.classList.add('hidden');
@@ -895,7 +896,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     h+='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">';
     h+='<a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a>';
     h+='<button data-fuadd="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">+ Add to Connections</button>';
-    h+='<button data-fupri="'+idx+'" title="Add (if needed) and mark as a priority" style="border:none;background:none;color:#C8881F;cursor:pointer;padding:0;font-size:12px">★ Priority</button>';
+    var isPri=(window.ledgerIsPriority&&window.ledgerIsPriority({name:r.name,email:r.email}));
+    if(isPri)h+='<span title="Already a priority" style="color:#C8881F;font-size:12px;font-weight:600">★ Priority</span>';
+    else h+='<button data-fupri="'+idx+'" title="Add (if needed) and mark as a priority" style="border:none;background:none;color:#C8881F;cursor:pointer;padding:0;font-size:12px">☆ Priority</button>';
     if(urgent){
       h+='<button data-fusch="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">📅 Schedule</button>';
       h+='<button data-fublk="'+idx+'" title="Never show this person again" style="border:none;background:none;color:var(--ink-soft);cursor:pointer;padding:0;font-size:12px">⊘ Never</button>';
