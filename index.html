@@ -146,6 +146,7 @@
       <button class="btn" id="impConn">↑ Connections CSV</button>
       <button class="btn" id="impMsg">↑ Messages CSV</button>
       <button class="btn ghost" id="expBtn">↓ Export for CRM</button>
+      <button class="btn ghost" id="syncEmailBtn" title="Pull the latest email replies from Gmail for every contact that has an email address">✉ Sync Gmail replies</button>
       <button class="btn ghost" id="backupBtn" title="Download a full backup of both tabs">⛁ Backup</button>
       <button class="btn ghost" id="mergeBtn" title="Combine duplicate people (same name added from both email and LinkedIn)">⇲ Merge dupes</button>
       <button class="btn ghost" id="restoreBtn" title="Restore from a backup file">⟲ Restore</button>
@@ -277,6 +278,14 @@
   <div class="row2"><div class="field"><label class="fld">Type</label><select id="f-category"><option value="">—</option><option>Investor</option><option>Partner</option><option>Sales Prospect</option><option>Job Candidate</option><option>Customer</option><option>Employee</option><option>Institution</option><option>Commercial</option></select></div><div class="field"><label class="fld">&nbsp;</label><div style="font-size:11.5px;color:var(--ink-soft);line-height:1.3">How you categorize this contact (the calendar tool's guess can be wrong).</div></div></div>
   <div class="field"><label class="fld">Date of action (invitation, message, or connection)</label><input id="f-date" type="date"></div>
   <div class="field"><label class="fld">Notes</label><textarea id="f-notes" placeholder="Context, where you met, why you reached out, last touch…"></textarea></div>
+  <div class="field hidden" id="emailPullWrap" style="border-top:1px solid var(--line);padding-top:13px;margin-top:3px">
+    <label class="fld">Email replies</label>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn" id="emailPullBtn">✉ Pull replies from Gmail</button>
+      <span id="emailPullMsg" style="font-size:12px;color:var(--ink-soft)"></span>
+    </div>
+    <div id="emailPullOut" style="margin-top:11px;display:none;flex-direction:column;gap:9px"></div>
+  </div>
   <div class="field hidden" id="aiReengageWrap" style="border-top:1px solid var(--line);padding-top:13px;margin-top:3px">
     <button class="btn" id="aiReengageBtn" style="width:100%">✦ Should I re-engage? — ask Claude</button>
     <div id="aiReengageOut" class="hidden" style="margin-top:11px;font-size:13.5px;line-height:1.55;background:var(--clay-bg);border-radius:10px;padding:13px 15px;white-space:pre-wrap"></div>
@@ -368,7 +377,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       if(rec.lastMessageDate){if(!ex.lastMessageDate||new Date(rec.lastMessageDate)>new Date(ex.lastMessageDate))ex.lastMessageDate=rec.lastMessageDate;}
       return false;
     }
-    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',messaged:false,replied:false,hasEmail:false,lastMessageDate:'',state:'',manualStatus:'',stage:'New',notes:'',priority:false,category:'',source:'',firstAdded:new Date().toISOString()},rec));
+    contacts.push(Object.assign({id:uid(),name:'',profileUrl:'',email:'',company:'',position:'',institution:'',invitedDate:'',lastInvitedDate:'',actionDate:'',invitationMessage:'',connected:false,connectedOn:'',messaged:false,replied:false,hasEmail:false,lastMessageDate:'',lastReplyDate:'',replies:[],state:'',manualStatus:'',stage:'New',notes:'',priority:false,category:'',source:'',firstAdded:new Date().toISOString()},rec));
     return true;
   }
   function findHeaderAndParse(text,mustHave){const lines=text.split(/\r?\n/);let start=0;for(let i=0;i<Math.min(lines.length,12);i++){const low=lines[i].toLowerCase();if(mustHave.some(h=>low.includes(h))){start=i;break;}}return Papa.parse(lines.slice(start).join('\n'),{header:true,skipEmptyLines:true}).data;}
@@ -484,6 +493,21 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   var CATS=['Investor','Partner','Sales Prospect','Job Candidate','Customer','Employee','Institution','Commercial'];
   function normalizeCat(t){t=(t||'').trim();if(/^partner/i.test(t))return 'Partner';for(var i=0;i<CATS.length;i++){if(CATS[i].toLowerCase()===t.toLowerCase())return CATS[i];}return '';}
   function deriveCat(c){if(c.category)return c.category;var m=/^\[([^\]]+)\]/.exec(c.notes||'');return m?normalizeCat(m[1]):'';}
+  function fmtDT(iso){if(!iso)return '';var d=new Date(iso);if(isNaN(d))return '';return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'2-digit'})+' · '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});}
+  function renderReplies(c){
+    var out=document.getElementById('emailPullOut');if(!out)return;
+    var reps=(c&&c.replies)||[];
+    if(!reps.length){out.style.display='none';out.innerHTML='';return;}
+    out.style.display='flex';
+    out.innerHTML=reps.map(function(r){
+      return '<div style="background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:11px 13px">'
+        +'<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">'
+        +'<span style="font-weight:700;font-size:12.5px">'+esc(r.subject||'(no subject)')+'</span>'
+        +'<span style="font-size:11px;color:var(--ink-soft);white-space:nowrap">'+esc(fmtDT(r.dateISO))+'</span></div>'
+        +'<div style="font-size:13px;line-height:1.5;white-space:pre-wrap;margin-top:6px;max-height:220px;overflow:auto">'+esc(r.body||'')+'</div>'
+        +'</div>';
+    }).join('');
+  }
   function openEdit(id){const c=contacts.find(x=>x.id===id);editingId=id;
     document.getElementById('m-title').textContent=c.name||'Contact';
     const mu=document.getElementById('m-url');if(c.profileUrl){mu.textContent=c.profileUrl;mu.classList.remove('hidden');}else mu.classList.add('hidden');
@@ -496,10 +520,11 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     document.getElementById('f-category').value=deriveCat(c)||'';
     document.getElementById('delBtn').classList.remove('hidden');
     const aw=document.getElementById('aiReengageWrap');aw.classList.remove('hidden');const ao=document.getElementById('aiReengageOut');ao.classList.add('hidden');ao.textContent='';
+    document.getElementById('emailPullWrap').classList.remove('hidden');document.getElementById('emailPullMsg').textContent='';renderReplies(c);
     document.getElementById('scrim').classList.add('show');}
   function openAdd(){editingId=null;document.getElementById('m-title').textContent='Log a contact';document.getElementById('m-url').classList.add('hidden');document.getElementById('m-meta').classList.add('hidden');
     ['f-name','f-email','f-prof','f-inst','f-company','f-position','f-notes','f-state'].forEach(i=>document.getElementById(i).value='');document.getElementById('f-status').value='pending';document.getElementById('f-salesstage').value='New';document.getElementById('f-date').value=todayISO();document.getElementById('f-category').value='';
-    document.getElementById('delBtn').classList.add('hidden');document.getElementById('aiReengageWrap').classList.add('hidden');document.getElementById('scrim').classList.add('show');}
+    document.getElementById('delBtn').classList.add('hidden');document.getElementById('aiReengageWrap').classList.add('hidden');document.getElementById('emailPullWrap').classList.add('hidden');var eo=document.getElementById('emailPullOut');eo.style.display='none';eo.innerHTML='';document.getElementById('scrim').classList.add('show');}
   function closeModal(){document.getElementById('scrim').classList.remove('show');}
   function saveModal(){const name=document.getElementById('f-name').value.trim();if(!name){toast('Name is required');return;}const st=document.getElementById('f-status').value;
     const data={name,email:document.getElementById('f-email').value.trim(),profileUrl:document.getElementById('f-prof').value.trim(),institution:document.getElementById('f-inst').value.trim(),company:document.getElementById('f-company').value.trim(),position:document.getElementById('f-position').value.trim(),state:document.getElementById('f-state').value.trim(),stage:document.getElementById('f-salesstage').value,category:document.getElementById('f-category').value,notes:document.getElementById('f-notes').value.trim(),actionDate:document.getElementById('f-date').value||todayISO(),connected:st==='connected',manualStatus:st};
@@ -563,6 +588,47 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('thresh').onchange=e=>{threshold=parseInt(e.target.value)||21;page=0;render();};
   document.getElementById('expBtn').onclick=exportCsv;
   document.getElementById('backupBtn').onclick=backup;
+  function applyReplies(c,res){
+    if(!res||!res.connected||!res.replied||!res.messages||!res.messages.length)return false;
+    c.replies=res.messages;c.replied=true;c.hasEmail=true;
+    var newest=res.messages[0]&&res.messages[0].dateISO;
+    if(newest){c.lastReplyDate=newest;c.lastMessageDate=newest;if(!dateOf(c)||new Date(newest)>new Date(dateOf(c)))c.actionDate=toISODate(newest);}
+    return true;
+  }
+  document.getElementById('emailPullBtn').onclick=async function(){
+    var msg=document.getElementById('emailPullMsg');
+    if(!editingId){msg.textContent='Save this contact first, then pull replies.';return;}
+    var c=contacts.find(x=>x.id===editingId);if(!c)return;
+    var email=document.getElementById('f-email').value.trim();
+    if(!email){msg.textContent='Add an email address above and Save first.';return;}
+    if(c.email!==email){c.email=email;c.hasEmail=true;save();}
+    if(!(window.gmailIsConnected&&window.gmailIsConnected())){
+      msg.textContent='Opening Google sign-in — approve it, then click again.';
+      if(window.gmailConnect)window.gmailConnect();return;
+    }
+    var btn=this;btn.disabled=true;msg.textContent='Reading Gmail…';
+    try{
+      var res=await window.gmailPullReplies(email,c.firstAdded||dateOf(c));
+      if(!res.connected){msg.textContent='Not connected — open the Follow-ups tab, Connect, then retry.';}
+      else if(res.error){msg.textContent=res.error;}
+      else if(!applyReplies(c,res)){msg.textContent='No replies from '+email+' found in your inbox.';}
+      else{save();render();renderReplies(c);msg.textContent='Pulled '+res.messages.length+' message'+(res.messages.length>1?'s':'')+' — newest first.';}
+    }catch(e){msg.textContent='Could not read Gmail: '+(e&&e.message||e);}
+    btn.disabled=false;
+  };
+  var seb=document.getElementById('syncEmailBtn');
+  if(seb)seb.onclick=async function(){
+    if(!(window.gmailIsConnected&&window.gmailIsConnected())){toast('Opening Google sign-in — approve it, then click Sync again');if(window.gmailConnect)window.gmailConnect();return;}
+    var targets=contacts.filter(function(c){return (c.email||'').trim();});
+    if(!targets.length){toast('No contacts have an email address');return;}
+    seb.disabled=true;var withReplies=0;
+    for(var i=0;i<targets.length;i++){
+      var c=targets[i];seb.textContent='✉ Syncing '+(i+1)+'/'+targets.length+'…';
+      try{var res=await window.gmailPullReplies(c.email,c.firstAdded||dateOf(c));if(applyReplies(c,res))withReplies++;}catch(e){}
+    }
+    save();render();seb.disabled=false;seb.textContent='✉ Sync Gmail replies';
+    toast('Synced '+targets.length+' contacts · '+withReplies+' had replies');
+  };
   var mb=document.getElementById('mergeBtn');if(mb)mb.onclick=mergeDupes;
   document.getElementById('restoreBtn').onclick=()=>document.getElementById('fileBackup').click();
   document.getElementById('fileBackup').onchange=e=>readFile(e.target,restore);
@@ -838,6 +904,56 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function connect(silent){silentMode=!!silent;if(ensureClient()){if(!silent)status('Opening Google sign-in…');try{tokenClient.requestAccessToken(silent?{prompt:''}:{});}catch(e){if(!silent)status('Could not start sign-in.');}}}
   if($('fu-connect'))$('fu-connect').onclick=function(){connect(false);};
   function authFetch(url){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){if(!r.ok){return r.text().then(function(t){throw new Error(r.status+': '+t.replace(/\s+/g,' ').slice(0,300));});}return r.json();});}
+  /* ----- Read actual reply bodies from Gmail (read-only scope already granted) ----- */
+  function b64urlDecode(data){
+    if(!data)return '';
+    try{var s=data.replace(/-/g,'+').replace(/_/g,'/');var pad=s.length%4;if(pad)s+=new Array(5-pad).join('=');
+      var bin=atob(s);var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(bytes);}catch(e){return '';}
+  }
+  function htmlToText(h){try{var d=document.createElement('div');d.innerHTML=h.replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|div|tr|li|h[1-6])>/gi,'\n');return (d.textContent||d.innerText||'').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();}catch(e){return h;}}
+  function extractBody(payload){
+    if(!payload)return '';var plain='',html='';
+    (function walk(p){if(!p)return;var mt=p.mimeType||'';if(mt==='text/plain'&&p.body&&p.body.data)plain+=b64urlDecode(p.body.data);else if(mt==='text/html'&&p.body&&p.body.data)html+=b64urlDecode(p.body.data);(p.parts||[]).forEach(walk);})(payload);
+    if(plain.trim())return plain;if(html.trim())return htmlToText(html);return '';
+  }
+  function stripQuoted(t){
+    if(!t)return '';t=t.replace(/\r\n/g,'\n').replace(/\u00a0/g,' ');
+    var cut=t.search(/\nOn .{6,120}wrote:/);if(cut>0)t=t.slice(0,cut);
+    var lines=t.split('\n'),out=[];
+    for(var i=0;i<lines.length;i++){var ln=lines[i];
+      if(/^\s*>/.test(ln))break;
+      if(/^\s*-{2,}\s*Original Message\s*-{2,}/i.test(ln))break;
+      if(/^_{5,}\s*$/.test(ln))break;
+      if(i>0&&/^\s*From:\s.+@.+/.test(ln)&&/(Sent|To|Subject):/i.test(lines.slice(i,i+4).join('\n')))break;
+      out.push(ln);
+    }
+    return out.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+  }
+  window.gmailIsConnected=function(){return !!token;};
+  window.gmailConnect=function(){connect(false);};
+  window.gmailPullReplies=async function(email,sinceISO){
+    if(!token)return {connected:false};
+    email=(email||'').trim().toLowerCase();
+    if(!email)return {connected:true,error:'No email address on this contact yet.'};
+    var q='from:'+email;
+    if(sinceISO){var d=new Date(sinceISO);if(!isNaN(d)){d.setDate(d.getDate()-1);q+=' after:'+fmtYMD(d);}}
+    var list;try{list=await authFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q='+encodeURIComponent(q));}catch(e){return {connected:true,error:'Gmail error: '+e.message};}
+    var ids=(list.messages||[]);
+    if(!ids.length)return {connected:true,replied:false,messages:[]};
+    var out=[];
+    for(var i=0;i<ids.length&&i<3;i++){
+      try{
+        var full=await authFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[i].id+'?format=full');
+        var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
+        var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
+        var body=stripQuoted(extractBody(full.payload));if(!body)body=(full.snippet||'').trim();
+        out.push({id:ids[i].id,dateISO:(when&&!isNaN(when))?when.toISOString():'',subject:H.subject||'(no subject)',from:H.from||email,body:body});
+      }catch(e){}
+    }
+    out.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
+    return {connected:true,replied:out.length>0,messages:out};
+  };
   async function onConnected(){status('Connected ✓');try{var info=await authFetch('https://www.googleapis.com/oauth2/v3/userinfo');myEmail=(info.email||'').toLowerCase();myDomain=myEmail.split('@')[1]||'';try{localStorage.setItem('fu:email',myEmail);}catch(e){}}catch(e){}refresh();}
   if($('fu-refresh'))$('fu-refresh').onclick=function(){if(!token){connect(false);return;}refresh();};
   function fmtYMD(d){var m=d.getMonth()+1,day=d.getDate();return d.getFullYear()+'/'+(m<10?'0'+m:m)+'/'+(day<10?'0'+day:day);}
