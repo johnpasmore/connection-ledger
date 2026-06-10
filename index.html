@@ -140,6 +140,7 @@
       <select class="filter" id="filter"><option value="all">All statuses</option><option value="pending">Awaiting reply</option><option value="no_response">No response</option><option value="connected">Connected</option></select>
       <select class="filter" id="sortby"><option value="status">Sort: Status</option><option value="date_desc">Date ↓ newest</option><option value="date_asc">Date ↑ oldest</option></select>
       <select class="filter" id="chan"><option value="all">All channels</option><option value="email">Has email</option><option value="li_only">LinkedIn only</option><option value="email_only">Email only</option><option value="both">Both channels</option><option value="msg_noreply">Messaged, no reply</option></select>
+      <select class="filter" id="mailAppSel" title="Which mail app the Email links open in"><option value="gmail">Email via Gmail</option><option value="outlook">Email via Outlook (work)</option><option value="outlook_personal">Email via Outlook.com</option><option value="default">Email via default app</option></select>
       <input class="filter" id="stateFilter" placeholder="State…" style="width:110px">
       <div class="thresh">Stale after <input type="number" id="thresh" value="21" min="1"> days</div>
       <button class="btn" id="impInv">↑ Invitations CSV</button>
@@ -302,6 +303,18 @@ function esc(s){return (s||'').toString().replace(/[&<>"]/g,m=>({'&':'&amp;','<'
 function csvCell(v){v=(v==null?'':String(v));return '"'+v.replace(/"/g,'""')+'"';}
 function toISODate(s){if(!s)return '';const d=new Date(s);if(isNaN(d))return '';return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);}
 function todayISO(){return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);}
+/* ---------- email compose (opens a new tab; respects the chosen mail app) ---------- */
+function mailApp(){try{return localStorage.getItem('ui:mailapp')||'gmail';}catch(e){return 'gmail';}}
+function setMailApp(v){try{localStorage.setItem('ui:mailapp',v);}catch(e){}}
+function composeUrl(to,subject,body){
+  to=to||'';var su=subject||'',bd=body||'',app=mailApp();
+  if(app==='outlook')return 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(to)+(su?'&subject='+encodeURIComponent(su):'')+(bd?'&body='+encodeURIComponent(bd):'');
+  if(app==='outlook_personal')return 'https://outlook.live.com/mail/0/deeplink/compose?to='+encodeURIComponent(to)+(su?'&subject='+encodeURIComponent(su):'')+(bd?'&body='+encodeURIComponent(bd):'');
+  if(app==='default')return 'mailto:'+encodeURIComponent(to)+((su||bd)?('?'+[su?'subject='+encodeURIComponent(su):'',bd?'body='+encodeURIComponent(bd):''].filter(Boolean).join('&')):'');
+  return 'https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(to)+(su?'&su='+encodeURIComponent(su):'')+(bd?'&body='+encodeURIComponent(bd):'');
+}
+function openCompose(to,subject,body){var url=composeUrl(to,subject,body);if(url.indexOf('mailto:')===0){window.location.href=url;return;}window.open(url,'_blank','noopener');}
+window.openCompose=openCompose;window.composeUrl=composeUrl;window.mailApp=mailApp;
 /* tabs */
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
@@ -470,7 +483,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
         +'<div style="font-size:12px;color:var(--ink-soft);margin-top:3px">'
         +[esc(c.position),esc(c.company||c.institution)].filter(Boolean).join(' · ')
         +(c.stage?(' · <span class="stagetag">'+esc(c.stage)+'</span>'):'')+'</div>'
-        +(c.email?('<div style="font-size:12px;margin-top:4px"><a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(c.email)+'" onclick="event.stopPropagation()">Email '+esc(c.email)+' →</a></div>'):'')
+        +(c.email?('<div style="font-size:12px;margin-top:4px"><a href="'+composeUrl(c.email)+'" target="_blank" rel="noopener" onclick="event.stopPropagation();event.preventDefault();window.openCompose(\''+esc(c.email)+'\')">Email '+esc(c.email)+' →</a></div>'):'')
         +'</div>';
     }).join('');
     box.querySelectorAll('.pr-star').forEach(function(b){b.onclick=function(e){e.stopPropagation();togglePriority(b.getAttribute('data-id'));};});
@@ -584,6 +597,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('filter').onchange=()=>{page=0;render();};
   document.getElementById('sortby').onchange=()=>{page=0;render();};
   document.getElementById('chan').onchange=()=>{page=0;render();};
+  (function(){var ms=document.getElementById('mailAppSel');if(ms){ms.value=mailApp();ms.onchange=function(){setMailApp(ms.value);render();toast('Email links now open in '+ms.options[ms.selectedIndex].text.replace('Email via ',''));};}})();
   document.getElementById('stateFilter').oninput=()=>{page=0;render();};
   document.getElementById('thresh').onchange=e=>{threshold=parseInt(e.target.value)||21;page=0;render();};
   document.getElementById('expBtn').onclick=exportCsv;
@@ -1019,7 +1033,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     h+='<div style="font-size:14px"><b>'+esc(r.name)+'</b> <span style="font-size:11px;color:var(--ink-soft)">· '+esc(typeOf(r))+'</span></div>';
     h+='<div style="font-size:12px;color:var(--ink-soft)">'+esc(r.title)+' — '+when+' ('+ago+')</div>';
     h+='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">';
-    h+='<a href="https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(r.email)+'">Email '+esc(r.email)+' →</a>';
+    h+='<a href="'+composeUrl(r.email)+'" target="_blank" rel="noopener" onclick="event.preventDefault();window.openCompose(\''+esc(r.email)+'\')">Email '+esc(r.email)+' →</a>';
     h+='<button data-fuadd="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">+ Add to Connections</button>';
     var isPri=(window.ledgerIsPriority&&window.ledgerIsPriority({name:r.name,email:r.email}));
     if(isPri)h+='<span title="Already a priority" style="color:#C8881F;font-size:12px;font-weight:600">★ Priority</span>';
