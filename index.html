@@ -104,6 +104,27 @@
   .spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--clay);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px} @keyframes spin{to{transform:rotate(360deg)}}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:var(--paper);padding:11px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:80;opacity:0;transition:.3s} .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
   @media(max-width:620px){.grid,.cc-grid{grid-template-columns:1fr}}
+  /* ---------- Dashboard ---------- */
+  .dash-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 8px}
+  .dash-kpi{background:var(--paper-2);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+  .dash-kpi .n{font-family:'Fraunces',serif;font-size:26px;font-weight:600;line-height:1;color:var(--ink)}
+  .dash-kpi .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-soft);margin-top:8px;line-height:1.3}
+  .dash-kpi .d{font-size:11px;color:var(--ink-soft);margin-top:4px}
+  .chartcard{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px 12px;margin-top:18px}
+  .chartcard h3{font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-bottom:2px}
+  .chartcard .csub{font-size:12px;color:var(--ink-soft);margin-bottom:10px}
+  .chartlegend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px;font-size:12px;color:var(--ink-soft)}
+  .chartlegend .lg{display:inline-flex;align-items:center;gap:6px}
+  .chartlegend .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .chartwrap{width:100%;overflow-x:auto}
+  .chartwrap svg{display:block;width:100%;height:auto;min-width:520px}
+  .dash-note{font-size:11.5px;color:var(--ink-soft);margin-top:8px;font-style:italic}
+  .dash-tip{position:fixed;z-index:90;pointer-events:none;background:var(--ink);color:var(--paper);font-size:12px;line-height:1.45;padding:8px 10px;border-radius:8px;opacity:0;transition:opacity .12s;max-width:240px;box-shadow:0 8px 24px rgba(27,24,19,.28)}
+  .dash-tip.show{opacity:1}
+  .dash-tip b{color:#fff}
+  details.dashtable{margin-top:18px} details.dashtable summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--clay);padding:6px 0}
+  details.dashtable table{margin-top:8px} details.dashtable td,details.dashtable th{font-size:12px;padding:7px 10px;text-align:right} details.dashtable td:first-child,details.dashtable th:first-child{text-align:left}
+  @media(max-width:760px){.dash-kpis{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -120,6 +141,7 @@
     <button class="tab" data-tab="router">Lead Router</button>
     <button class="tab" data-tab="followup">Follow-ups <span id="fu-badge" style="display:none;background:#8F3C20;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
     <button class="tab" data-tab="priority">★ Priority <span id="pr-badge" style="display:none;background:#C8881F;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
+    <button class="tab" data-tab="dashboard">Dashboard</button>
   </div>
 
   <!-- ============ LEDGER TAB ============ -->
@@ -263,6 +285,13 @@
     <p class="lede">Everyone you've starred as a priority, in one place — your short list of who to act on next. Star or unstar anyone from the ★ in the Connection Ledger.</p>
     <div id="pr-list" style="margin-top:14px"></div>
   </section>
+
+  <!-- ============ DASHBOARD TAB ============ -->
+  <section class="panel" id="panel-dashboard">
+    <p class="lede">Outreach volume and success rates, month by month — a rolling 12-month view. Rebuilt each time you import your Messages, Invitations, and Connections CSVs.</p>
+    <div id="dash-empty" class="hint" style="display:none">Import your <b>Messages</b>, <b>Invitations</b>, and <b>Connections</b> CSVs (Connection Ledger → the ↑ buttons) to populate this dashboard.</div>
+    <div id="dash-body"></div>
+  </section>
 </div>
 
 <!-- ledger edit modal -->
@@ -303,6 +332,33 @@ function esc(s){return (s||'').toString().replace(/[&<>"]/g,m=>({'&':'&amp;','<'
 function csvCell(v){v=(v==null?'':String(v));return '"'+v.replace(/"/g,'""')+'"';}
 function toISODate(s){if(!s)return '';const d=new Date(s);if(isNaN(d))return '';return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);}
 function todayISO(){return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);}
+/* Normalize the several date shapes LinkedIn exports emit into an ISO string that
+   `new Date()` parses identically in every browser (Safari/iOS reject "8/2/26, 6:39 PM"
+   and "2026-08-04 00:54:08 UTC", so those rows would otherwise sort to epoch 0).
+   Local wall-clock values return offset-free ISO (parsed as local, so the displayed
+   day never shifts); explicit-UTC values keep their "Z" so the instant is preserved.
+   Returns '' when the value is genuinely unreadable. */
+function parseLIDate(s){
+  if(s==null)return '';s=String(s).trim();if(!s)return '';
+  var M={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+  var m,z=function(n){return ('0'+n).slice(-2);};
+  // ISO 8601-ish: YYYY-MM-DD, optional time, optional UTC/Z/GMT
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?\s*(UTC|Z|GMT)?/i);
+  if(m){var utc=m[7]?'Z':'';if(m[4]==null)return m[1]+'-'+m[2]+'-'+m[3]+'T00:00:00'+utc;return m[1]+'-'+m[2]+'-'+m[3]+'T'+m[4]+':'+m[5]+':'+(m[6]||'00')+utc;}
+  // "03 Aug 2026"  (Connections → Connected On)
+  m=s.match(/^(\d{1,2})\s+([A-Za-z]{3,})\.?\s+(\d{4})$/);
+  if(m&&M[m[2].slice(0,3).toLowerCase()])return m[3]+'-'+M[m[2].slice(0,3).toLowerCase()]+'-'+z(m[1])+'T00:00:00';
+  // "Aug 3, 2026"
+  m=s.match(/^([A-Za-z]{3,})\.?\s+(\d{1,2}),?\s+(\d{4})$/);
+  if(m&&M[m[1].slice(0,3).toLowerCase()])return m[3]+'-'+M[m[1].slice(0,3).toLowerCase()]+'-'+z(m[2])+'T00:00:00';
+  // "8/2/26, 6:39 PM"  (Invitations → Sent At) — local wall-clock
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?/);
+  if(m){var mo=+m[1],da=+m[2],yr=+m[3];if(m[3].length<=2)yr=yr<70?2000+yr:1900+yr;
+    if(mo>=1&&mo<=12&&da>=1&&da<=31){var out=yr+'-'+z(mo)+'-'+z(da);
+      if(m[4]!=null){var hh=+m[4];if(m[7]){hh=hh%12;if(/[Pp]/.test(m[7]))hh+=12;}out+='T'+z(hh)+':'+m[5]+':'+(m[6]||'00');}else out+='T00:00:00';
+      return out;}}
+  var d=new Date(s);return isNaN(d)?'':d.toISOString();
+}
 /* ---------- email compose (opens a new tab; respects the chosen mail app) ---------- */
 function mailApp(){try{return localStorage.getItem('ui:mailapp')||'gmail';}catch(e){return 'gmail';}}
 function setMailApp(v){try{localStorage.setItem('ui:mailapp',v);}catch(e){}}
@@ -322,13 +378,19 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   b.classList.add('active');
   document.getElementById('panel-'+b.dataset.tab).classList.add('active');
   if(b.dataset.tab==='priority'&&window.renderPriority)window.renderPriority();
+  if(b.dataset.tab==='dashboard'&&window.renderDashboard)window.renderDashboard();
 });
 
 /* =================== CONNECTION LEDGER =================== */
 (function(){
   const KEY='ledger:contacts';
   let contacts=[]; let editingId=null; let threshold=21; let page=0;
-  function load(){try{const v=localStorage.getItem(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
+  // One-time cleanup: rewrite legacy raw LinkedIn date strings (stored before dates
+  // were normalized at import) into browser-safe ISO, so they sort correctly too.
+  // Values already in clean ISO are left untouched; anything unreadable is kept as-is.
+  function normLIDate(v){if(!v)return v||'';if(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(v))return v;return parseLIDate(v)||v;}
+  const LEGACY_DATE_FIELDS=['actionDate','connectedOn','invitedDate','lastInvitedDate','lastMessageDate','lastReplyDate'];
+  function load(){try{const v=localStorage.getItem(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{LEGACY_DATE_FIELDS.forEach(f=>{if(c[f])c[f]=normLIDate(c[f]);});if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
   function save(){try{localStorage.setItem(KEY,JSON.stringify(contacts));}catch(e){toast('Could not save');}}
   function uid(){return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
   function norm(s){return (s||'').toString().trim().toLowerCase();}
@@ -395,23 +457,25 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   }
   function findHeaderAndParse(text,mustHave){const lines=text.split(/\r?\n/);let start=0;for(let i=0;i<Math.min(lines.length,12);i++){const low=lines[i].toLowerCase();if(mustHave.some(h=>low.includes(h))){start=i;break;}}return Papa.parse(lines.slice(start).join('\n'),{header:true,skipEmptyLines:true}).data;}
   function pick(row,cands){const keys=Object.keys(row);for(const c of cands){const h=keys.find(k=>k.trim().toLowerCase()===c);if(h&&row[h]!=null&&row[h]!=='')return row[h].toString().trim();}for(const c of cands){const h=keys.find(k=>k.trim().toLowerCase().includes(c));if(h&&row[h]!=null&&row[h]!=='')return row[h].toString().trim();}return '';}
-  function importInvitations(text){const rows=findHeaderAndParse(text,['from','to','sent','direction']);let added=0,seen=0;rows.forEach(row=>{const dir=pick(row,['direction']).toUpperCase();if(dir&&dir.indexOf('OUT')===-1)return;const name=pick(row,['to','invitee','recipient'])||pick(row,['from']);if(!name)return;const url=pick(row,['inviteeprofileurl','profile url','url']);const sent=pick(row,['sent at','sentat','sent','date']);const msg=pick(row,['message']);seen++;if(upsert({name,profileUrl:url,invitedDate:sent,lastInvitedDate:sent,actionDate:sent,invitationMessage:msg}))added++;});return {added,seen};}
-  function importConnections(text){const rows=findHeaderAndParse(text,['first name','last name','connected on','url']);let added=0,matched=0;rows.forEach(row=>{const fn=pick(row,['first name','firstname']);const ln=pick(row,['last name','lastname']);const name=(fn+' '+ln).trim();const url=pick(row,['url','profile url']);const company=pick(row,['company']);const position=pick(row,['position','title']);const on=pick(row,['connected on','connectedon','date']);if(!name&&!url)return;if(upsert({name,profileUrl:url,company,position,connected:true,connectedOn:on,actionDate:on}))added++;else matched++;});return {added,matched};}
+  function importInvitations(text){const rows=findHeaderAndParse(text,['from','to','sent','direction']);let added=0,seen=0,unparsed=0,newest='';rows.forEach(row=>{const dir=pick(row,['direction']).toUpperCase();if(dir&&dir.indexOf('OUT')===-1)return;const name=pick(row,['to','invitee','recipient'])||pick(row,['from']);if(!name)return;const url=pick(row,['inviteeprofileurl','profile url','url']);const sentRaw=pick(row,['sent at','sentat','sent','date']);const sent=parseLIDate(sentRaw);if(sentRaw&&!sent)unparsed++;if(sent&&(!newest||Date.parse(sent)>Date.parse(newest)))newest=sent;const msg=pick(row,['message']);seen++;if(upsert({name,profileUrl:url,invitedDate:sent,lastInvitedDate:sent,actionDate:sent,invitationMessage:msg}))added++;});return {added,seen,unparsed,newest};}
+  function importConnections(text){const rows=findHeaderAndParse(text,['first name','last name','connected on','url']);let added=0,matched=0,unparsed=0,newest='';rows.forEach(row=>{const fn=pick(row,['first name','firstname']);const ln=pick(row,['last name','lastname']);const name=(fn+' '+ln).trim();const url=pick(row,['url','profile url']);const company=pick(row,['company']);const position=pick(row,['position','title']);const onRaw=pick(row,['connected on','connectedon','date']);const on=parseLIDate(onRaw);if(onRaw&&!on)unparsed++;if(on&&(!newest||Date.parse(on)>Date.parse(newest)))newest=on;if(!name&&!url)return;if(upsert({name,profileUrl:url,company,position,connected:true,connectedOn:on,actionDate:on}))added++;else matched++;});return {added,matched,unparsed,newest};}
 
   function importMessages(text){
     const rows=findHeaderAndParse(text,['conversation id','from','to']);
     const freq={};rows.forEach(r=>{const fr=pick(r,['from']);if(fr)freq[fr]=(freq[fr]||0)+1;});
     let self='',mx=-1;for(const k in freq){if(freq[k]>mx){mx=freq[k];self=k;}}
-    const conv={};
+    const conv={};let unparsed=0,newest='';
+    const monthly={};const mo=k=>monthly[k]||(monthly[k]={sent:0,recv:0,started:0,replied:0});
     rows.forEach(r=>{
       const cid=pick(r,['conversation id'])||pick(r,['conversation title'])||'_';
       const fr=pick(r,['from']);const frUrl=pick(r,['sender profile url']);
       const to=pick(r,['to']);const toUrl=pick(r,['recipient profile urls']);
-      const date=pick(r,['date']);
-      const c=conv[cid]||(conv[cid]={others:{},inbound:false,outbound:false,last:''});
-      if(date&&(!c.last||new Date(date)>new Date(c.last)))c.last=date;
-      if(fr&&fr!==self){c.others[fr]=c.others[fr]||frUrl;c.inbound=true;}
-      if(fr===self){c.outbound=true;if(to&&to!==self){to.split(',').forEach((t,i)=>{t=t.trim();if(t&&t!==self){const u=(toUrl||'').split(/[ ,]+/).filter(Boolean)[i]||'';c.others[t]=c.others[t]||u;}});}}
+      const dateRaw=pick(r,['date']);const date=parseLIDate(dateRaw);if(dateRaw&&!date)unparsed++;
+      const ym=date?date.slice(0,7):'';
+      const c=conv[cid]||(conv[cid]={others:{},inbound:false,outbound:false,last:'',firstOut:''});
+      if(date&&(!c.last||Date.parse(date)>Date.parse(c.last)))c.last=date;
+      if(fr&&fr!==self){c.others[fr]=c.others[fr]||frUrl;c.inbound=true;if(ym)mo(ym).recv++;}
+      if(fr===self){c.outbound=true;if(ym){mo(ym).sent++;if(!c.firstOut||date<c.firstOut)c.firstOut=date;}if(to&&to!==self){to.split(',').forEach((t,i)=>{t=t.trim();if(t&&t!==self){const u=(toUrl||'').split(/[ ,]+/).filter(Boolean)[i]||'';c.others[t]=c.others[t]||u;}});}}
     });
     let people=0,noreply=0;
     Object.values(conv).forEach(c=>{
@@ -420,9 +484,13 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       const name=names[0];const url=c.others[name];
       const replied=c.inbound;
       if(!replied)noreply++;people++;
+      // cohort: attribute this thread to the month of your FIRST outbound message
+      if(c.firstOut){const k=c.firstOut.slice(0,7);mo(k).started++;if(replied)mo(k).replied++;}
+      if(c.last&&(!newest||Date.parse(c.last)>Date.parse(newest)))newest=c.last;
       upsert({name,profileUrl:url,messaged:true,replied,actionDate:c.last,lastMessageDate:c.last});
     });
-    return {people,noreply};
+    try{localStorage.setItem('ledger:msgstats',JSON.stringify({months:monthly,updatedAt:new Date().toISOString()}));}catch(e){}
+    return {people,noreply,unparsed,newest};
   }
   function render(){
     const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const chan=document.getElementById('chan').value;const stateQ=norm((document.getElementById('stateFilter').value||''));const tbody=document.getElementById('tbody');
@@ -503,6 +571,8 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     return true;
   };
   window.ledgerIsPriority=function(p){if(!p)return false;var ex=findMatch({name:p.name||'',email:p.email||'',profileUrl:''});return !!(ex&&ex.priority);};
+  // minimal snapshot for the Dashboard: invite/connection dates + connected flag
+  window.ledgerSnapshot=function(){return contacts.map(function(c){return {invitedDate:c.invitedDate||'',connectedOn:c.connectedOn||'',connected:!!c.connected,messaged:!!c.messaged};});};
   var CATS=['Investor','Partner','Sales Prospect','Job Candidate','Customer','Employee','Institution','Commercial'];
   function normalizeCat(t){t=(t||'').trim();if(/^partner/i.test(t))return 'Partner';for(var i=0;i<CATS.length;i++){if(CATS[i].toLowerCase()===t.toLowerCase())return CATS[i];}return '';}
   function deriveCat(c){if(c.category)return c.category;var m=/^\[([^\]]+)\]/.exec(c.notes||'');return m?normalizeCat(m[1]):'';}
@@ -649,9 +719,10 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('impInv').onclick=()=>document.getElementById('fileInv').click();
   document.getElementById('impConn').onclick=()=>document.getElementById('fileConn').click();
   document.getElementById('impMsg').onclick=()=>document.getElementById('fileMsg').click();
-  document.getElementById('fileMsg').onchange=e=>readFile(e.target,t=>{toast('Reading messages…');setTimeout(()=>{const{people,noreply}=importMessages(t);save();render();toast(`Added ${people} messaged (${noreply} never replied)`);},30);});
-  document.getElementById('fileInv').onchange=e=>readFile(e.target,t=>{const{added,seen}=importInvitations(t);save();render();toast(seen?`Imported ${seen} sent invites (${added} new)`:'No outgoing invitations found');});
-  document.getElementById('fileConn').onchange=e=>readFile(e.target,t=>{const{added,matched}=importConnections(t);save();render();toast(`Connections: ${added} added, ${matched} updated`);});
+  function importSuffix(newest,unparsed){let s=newest?(' · newest '+fmt(newest)):'';if(unparsed)s+=` · ⚠ ${unparsed} unreadable date${unparsed>1?'s':''}`;return s;}
+  document.getElementById('fileMsg').onchange=e=>readFile(e.target,t=>{toast('Reading messages…');setTimeout(()=>{const{people,noreply,unparsed,newest}=importMessages(t);save();render();toast(`Added ${people} messaged (${noreply} never replied)`+importSuffix(newest,unparsed));},30);});
+  document.getElementById('fileInv').onchange=e=>readFile(e.target,t=>{const{added,seen,unparsed,newest}=importInvitations(t);save();render();toast((seen?`Imported ${seen} sent invites (${added} new)`:'No outgoing invitations found')+importSuffix(newest,unparsed));});
+  document.getElementById('fileConn').onchange=e=>readFile(e.target,t=>{const{added,matched,unparsed,newest}=importConnections(t);save();render();toast(`Connections: ${added} added, ${matched} updated`+importSuffix(newest,unparsed));});
   window.ledgerAddFromLead=function(lead){
     if(!lead||!Array.isArray(lead.contacts))return;
     const isInst=lead.lead_type==='Institution';
@@ -675,7 +746,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     });
     if(any){save();render();}
   };
-  contacts=load();render();
+  contacts=load();save();render();
 })();
 
 /* =================== LEAD ROUTER =================== */
@@ -870,13 +941,106 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   };
 })();
 
+/* ===== Dashboard tab — rolling 12-month volume & success rates ===== */
+(function(){
+  var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var C={clay:'#B4502E',blue:'#2F5E8F',amber:'#A8782A',green:'#3E6E4B',ink:'#1B1813',soft:'#5A5347',line:'#E2D8C6'};
+  function tip(){var t=document.getElementById('dash-tip');if(!t){t=document.createElement('div');t.id='dash-tip';t.className='dash-tip';document.body.appendChild(t);}return t;}
+  function fmtNum(v){v=Math.round(v);return v>=1000?(v/1000).toFixed(v>=10000?0:1).replace(/\.0$/,'')+'k':''+v;}
+  function niceMax(v){if(v<=0)return 1;var p=Math.pow(10,Math.floor(Math.log10(v))),n=v/p,k;if(n<=1)k=1;else if(n<=2)k=2;else if(n<=2.5)k=2.5;else if(n<=5)k=5;else k=10;return k*p;}
+  function rtr(x,y,w,h,r){if(h<=0.5)return '';r=Math.min(r,w/2,h);return 'M'+x+','+(y+h)+' L'+x+','+(y+r)+' Q'+x+','+y+' '+(x+r)+','+y+' L'+(x+w-r)+','+y+' Q'+(x+w)+','+y+' '+(x+w)+','+(y+r)+' L'+(x+w)+','+(y+h)+' Z';}
+  function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+
+  function monthList(){var now=new Date(),y=now.getFullYear(),m=now.getMonth(),a=[];for(var i=11;i>=0;i--){var yy=y,mm=m-i;while(mm<0){mm+=12;yy--;}a.push(yy+'-'+String(mm+1).padStart(2,'0'));}return a;}
+  function label(k,first){var p=k.split('-');return (p[1]==='01'||k===first)?MN[+p[1]-1]+" '"+p[0].slice(2):MN[+p[1]-1];}
+
+  function collect(){
+    var months=monthList(),first=months[0],idx={};months.forEach(function(k,i){idx[k]=i;});
+    var msgSent=months.map(function(){return 0;}),msgRecv=msgSent.slice(),started=msgSent.slice(),replied=msgSent.slice();
+    var invSent=msgSent.slice(),invAcc=msgSent.slice(),conns=msgSent.slice();
+    var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}
+    if(ms&&ms.months)for(var k in ms.months){if(k in idx){var r=ms.months[k];msgSent[idx[k]]=r.sent||0;msgRecv[idx[k]]=r.recv||0;started[idx[k]]=r.started||0;replied[idx[k]]=r.replied||0;}}
+    var snap=(window.ledgerSnapshot?window.ledgerSnapshot():[]);
+    snap.forEach(function(c){
+      if(c.invitedDate){var ki=c.invitedDate.slice(0,7);if(ki in idx){invSent[idx[ki]]++;if(c.connected)invAcc[idx[ki]]++;}}
+      if(c.connectedOn){var kc=c.connectedOn.slice(0,7);if(kc in idx)conns[idx[kc]]++;}
+    });
+    // suppress a rate when its denominator is too small to be meaningful (avoids 0% noise
+    // from months with 1-2 invites, and the misleading dip on the current partial month)
+    var MINDEN=5;
+    var replyRate=months.map(function(_,i){return started[i]>=MINDEN?Math.round(100*replied[i]/started[i]):null;});
+    var acceptRate=months.map(function(_,i){return invSent[i]>=MINDEN?Math.round(100*invAcc[i]/invSent[i]):null;});
+    return {months:months,first:first,msgSent:msgSent,msgRecv:msgRecv,started:started,replied:replied,invSent:invSent,invAcc:invAcc,conns:conns,replyRate:replyRate,acceptRate:acceptRate,hasMsg:!!(ms&&ms.months)};
+  }
+
+  var W=760,H=230,L=42,R=16,T=14,B=32;
+  function bars(months,first,a,b,ca,cb,la,lb){
+    var pw=W-L-R,ph=H-T-B,mx=niceMax(Math.max(1,Math.max.apply(null,a),Math.max.apply(null,b)));
+    var gw=pw/months.length,bw=Math.min(16,(gw-6)/2),g='';
+    for(var t=0;t<=4;t++){var v=mx*t/4,y=T+ph-ph*(v/mx);g+='<line x1="'+L+'" y1="'+y+'" x2="'+(W-R)+'" y2="'+y+'" stroke="'+C.line+'" stroke-width="1"/>';g+='<text x="'+(L-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="'+C.soft+'">'+fmtNum(v)+'</text>';}
+    months.forEach(function(m,i){
+      var gx=L+i*gw,x0=gx+(gw-(bw*2+2))/2,ha=ph*(a[i]/mx),hb=ph*(b[i]/mx),ml=label(m,first),mfull=MN[+m.split('-')[1]-1]+" "+m.split('-')[0];
+      g+='<path d="'+rtr(x0,T+ph-ha,bw,ha,3)+'" fill="'+ca+'" data-tip="'+esc(mfull+' · '+la+': <b>'+a[i]+'</b>')+'"/>';
+      g+='<path d="'+rtr(x0+bw+2,T+ph-hb,bw,hb,3)+'" fill="'+cb+'" data-tip="'+esc(mfull+' · '+lb+': <b>'+b[i]+'</b>')+'"/>';
+      g+='<text x="'+(gx+gw/2)+'" y="'+(H-11)+'" text-anchor="middle" font-size="10" fill="'+C.soft+'">'+ml+'</text>';
+    });
+    return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="monthly bar chart">'+g+'</svg>';
+  }
+  function lines(months,first,a,b,ca,cb,la,lb){
+    var pw=W-L-R,ph=H-T-B,mx=100,g='';
+    for(var t=0;t<=4;t++){var v=mx*t/4,y=T+ph-ph*(v/mx);g+='<line x1="'+L+'" y1="'+y+'" x2="'+(W-R)+'" y2="'+y+'" stroke="'+C.line+'" stroke-width="1"/>';g+='<text x="'+(L-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="'+C.soft+'">'+v+'%</text>';}
+    var gw=pw/months.length,cx=function(i){return L+gw*(i+0.5);},cy=function(v){return T+ph-ph*(v/mx);};
+    function series(arr,col,lab){
+      var pts=[],d='';arr.forEach(function(v,i){if(v==null)return;pts.push([cx(i),cy(v),v,i]);});
+      for(var i=0;i<pts.length;i++)d+=(i?' L':'M')+pts[i][0].toFixed(1)+','+pts[i][1].toFixed(1);
+      var s='<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+      pts.forEach(function(p){var mfull=MN[+months[p[3]].split('-')[1]-1]+" "+months[p[3]].split('-')[0];s+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4.5" fill="#fff" stroke="'+col+'" stroke-width="2" data-tip="'+esc(mfull+' · '+lab+': <b>'+p[2]+'%</b>')+'"/>';});
+      if(pts.length){var lp=pts[pts.length-1];s+='<text x="'+(lp[0]+7)+'" y="'+(lp[1]+3)+'" font-size="11" font-weight="700" fill="'+col+'">'+lp[2]+'%</text>';}
+      return s;
+    }
+    g+=series(a,ca,la)+series(b,cb,lb);
+    months.forEach(function(m,i){g+='<text x="'+cx(i)+'" y="'+(H-11)+'" text-anchor="middle" font-size="10" fill="'+C.soft+'">'+label(m,first)+'</text>';});
+    return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="monthly rate chart">'+g+'</svg>';
+  }
+  function legend(items){return '<div class="chartlegend">'+items.map(function(it){return '<span class="lg"><span class="sw" style="background:'+it[1]+'"></span>'+it[0]+'</span>';}).join('')+'</div>';}
+  function card(title,sub,leg,svg){return '<div class="chartcard"><h3>'+title+'</h3><div class="csub">'+sub+'</div>'+leg+'<div class="chartwrap">'+svg+'</div></div>';}
+
+  function sum(a){return a.reduce(function(x,y){return x+(y||0);},0);}
+  window.renderDashboard=function(){
+    var d=collect(),body=document.getElementById('dash-body'),empty=document.getElementById('dash-empty');
+    var anyInv=sum(d.invSent),anyConn=sum(d.conns);
+    if(!d.hasMsg&&!anyInv&&!anyConn){if(empty)empty.style.display='block';if(body)body.innerHTML='';return;}
+    if(empty)empty.style.display='none';
+    var tReplied=sum(d.replied),tStarted=sum(d.started),tAcc=sum(d.invAcc),tInv=sum(d.invSent);
+    var kpis=[
+      ['Messages sent',fmtNum(sum(d.msgSent)),'last 12 mo'],
+      ['Invites sent',fmtNum(tInv),'last 12 mo'],
+      ['Connections won',fmtNum(anyConn),'last 12 mo'],
+      ['Reply rate',(tStarted?Math.round(100*tReplied/tStarted)+'%':'—'),'of people messaged'],
+      ['Invite accept rate',(tInv?Math.round(100*tAcc/tInv)+'%':'—'),'of invites sent']
+    ];
+    var kh='<div class="dash-kpis">'+kpis.map(function(k){return '<div class="dash-kpi"><div class="n">'+k[1]+'</div><div class="l">'+k[0]+'</div><div class="d">'+k[2]+'</div></div>';}).join('')+'</div>';
+    var c1=card('Message volume','Messages you sent and received each month',legend([['Sent',C.clay],['Received',C.blue]]),bars(d.months,d.first,d.msgSent,d.msgRecv,C.clay,C.blue,'Sent','Received'));
+    var c2=card('Invites & connections','Connection requests sent vs. new connections gained',legend([['Invites sent',C.amber],['Connections won',C.green]]),bars(d.months,d.first,d.invSent,d.conns,C.amber,C.green,'Invites sent','Connections won'));
+    var c3=card('Success rates','Share that succeeded, by the month the outreach began (cohort)',legend([['Reply rate',C.clay],['Invite accept rate',C.blue]]),lines(d.months,d.first,d.replyRate,d.acceptRate,C.clay,C.blue,'Reply rate','Invite accept rate'));
+    var trows=d.months.map(function(m,i){return '<tr><td>'+label(m,d.first)+'</td><td>'+d.msgSent[i]+'</td><td>'+d.msgRecv[i]+'</td><td>'+d.invSent[i]+'</td><td>'+d.conns[i]+'</td><td>'+(d.replyRate[i]==null?'—':d.replyRate[i]+'%')+'</td><td>'+(d.acceptRate[i]==null?'—':d.acceptRate[i]+'%')+'</td></tr>';}).join('');
+    var table='<details class="dashtable"><summary>Show the numbers</summary><table><thead><tr><th>Month</th><th>Msg sent</th><th>Msg recv</th><th>Invites</th><th>Conns</th><th>Reply %</th><th>Accept %</th></tr></thead><tbody>'+trows+'</tbody></table></details>';
+    var note='<div class="dash-note">Rates are cohort-based: a month reflects outreach that <i>began</i> that month, so the most recent months read low until replies and acceptances catch up.'+(d.hasMsg?'':' Import your Messages CSV to fill in message volume and reply rate.')+'</div>';
+    body.innerHTML=kh+c1+c2+c3+note+table;
+  };
+  // shared hover tooltip for all charts
+  document.addEventListener('mouseover',function(e){var el=e.target.closest?e.target.closest('[data-tip]'):null;if(!el)return;var t=tip();t.innerHTML=el.getAttribute('data-tip');t.classList.add('show');});
+  document.addEventListener('mousemove',function(e){var t=document.getElementById('dash-tip');if(!t||!t.classList.contains('show'))return;var x=Math.min(e.clientX+14,window.innerWidth-250),y=Math.min(e.clientY+14,window.innerHeight-70);t.style.left=Math.max(8,x)+'px';t.style.top=Math.max(8,y)+'px';});
+  document.addEventListener('mouseout',function(e){var el=e.target.closest?e.target.closest('[data-tip]'):null;if(!el)return;var t=document.getElementById('dash-tip');if(t)t.classList.remove('show');});
+})();
+
 /* ===== Cloudflare D1 cloud sync (localStorage-first, graceful fallback) ===== */
 (function(){
   var cloudOn=true,lastSig=null;
   function sig(){try{return (localStorage.getItem('ledger:contacts')||'')+'\u0001'+(localStorage.getItem('router:records')||'');}catch(e){return '';}}
-  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}return {ledger:p('ledger:contacts'),router:p('router:records')};}
+  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}return {ledger:p('ledger:contacts'),router:p('router:records'),msgstats:ms};}
   function setStatus(t){var el=document.getElementById('cloudStatus');if(el)el.textContent='Cloud: '+t;}
-  function applyCloud(d){try{if(d&&d.ledger)localStorage.setItem('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));}catch(e){}}
+  function applyCloud(d){try{if(d&&d.ledger)localStorage.setItem('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));if(d&&d.msgstats)localStorage.setItem('ledger:msgstats',JSON.stringify(d.msgstats));}catch(e){}}
   async function cloudGet(){var r=await fetch('/api/state',{headers:{'Accept':'application/json'}});if(!r.ok)throw new Error('get '+r.status);return r.json();}
   async function gzipB64(str){var cs=new CompressionStream('gzip');var buf=await new Response(new Blob([str]).stream().pipeThrough(cs)).arrayBuffer();var bytes=new Uint8Array(buf),bin='';for(var i=0;i<bytes.length;i+=0x8000){bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));}return btoa(bin);}
   async function gunzipB64(b64){var bin=atob(b64);var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);var ds=new DecompressionStream('gzip');return await new Response(new Blob([bytes]).stream().pipeThrough(ds)).text();}
