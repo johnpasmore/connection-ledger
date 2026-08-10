@@ -355,7 +355,12 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
 (function(){
   const KEY='ledger:contacts';
   let contacts=[]; let editingId=null; let threshold=21; let page=0;
-  function load(){try{const v=localStorage.getItem(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
+  // One-time cleanup: rewrite legacy raw LinkedIn date strings (stored before dates
+  // were normalized at import) into browser-safe ISO, so they sort correctly too.
+  // Values already in clean ISO are left untouched; anything unreadable is kept as-is.
+  function normLIDate(v){if(!v)return v||'';if(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(v))return v;return parseLIDate(v)||v;}
+  const LEGACY_DATE_FIELDS=['actionDate','connectedOn','invitedDate','lastInvitedDate','lastMessageDate','lastReplyDate'];
+  function load(){try{const v=localStorage.getItem(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{LEGACY_DATE_FIELDS.forEach(f=>{if(c[f])c[f]=normLIDate(c[f]);});if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
   function save(){try{localStorage.setItem(KEY,JSON.stringify(contacts));}catch(e){toast('Could not save');}}
   function uid(){return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
   function norm(s){return (s||'').toString().trim().toLowerCase();}
@@ -704,7 +709,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     });
     if(any){save();render();}
   };
-  contacts=load();render();
+  contacts=load();save();render();
 })();
 
 /* =================== LEAD ROUTER =================== */
