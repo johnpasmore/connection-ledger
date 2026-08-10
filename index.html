@@ -303,6 +303,33 @@ function esc(s){return (s||'').toString().replace(/[&<>"]/g,m=>({'&':'&amp;','<'
 function csvCell(v){v=(v==null?'':String(v));return '"'+v.replace(/"/g,'""')+'"';}
 function toISODate(s){if(!s)return '';const d=new Date(s);if(isNaN(d))return '';return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);}
 function todayISO(){return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);}
+/* Normalize the several date shapes LinkedIn exports emit into an ISO string that
+   `new Date()` parses identically in every browser (Safari/iOS reject "8/2/26, 6:39 PM"
+   and "2026-08-04 00:54:08 UTC", so those rows would otherwise sort to epoch 0).
+   Local wall-clock values return offset-free ISO (parsed as local, so the displayed
+   day never shifts); explicit-UTC values keep their "Z" so the instant is preserved.
+   Returns '' when the value is genuinely unreadable. */
+function parseLIDate(s){
+  if(s==null)return '';s=String(s).trim();if(!s)return '';
+  var M={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+  var m,z=function(n){return ('0'+n).slice(-2);};
+  // ISO 8601-ish: YYYY-MM-DD, optional time, optional UTC/Z/GMT
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?\s*(UTC|Z|GMT)?/i);
+  if(m){var utc=m[7]?'Z':'';if(m[4]==null)return m[1]+'-'+m[2]+'-'+m[3]+'T00:00:00'+utc;return m[1]+'-'+m[2]+'-'+m[3]+'T'+m[4]+':'+m[5]+':'+(m[6]||'00')+utc;}
+  // "03 Aug 2026"  (Connections → Connected On)
+  m=s.match(/^(\d{1,2})\s+([A-Za-z]{3,})\.?\s+(\d{4})$/);
+  if(m&&M[m[2].slice(0,3).toLowerCase()])return m[3]+'-'+M[m[2].slice(0,3).toLowerCase()]+'-'+z(m[1])+'T00:00:00';
+  // "Aug 3, 2026"
+  m=s.match(/^([A-Za-z]{3,})\.?\s+(\d{1,2}),?\s+(\d{4})$/);
+  if(m&&M[m[1].slice(0,3).toLowerCase()])return m[3]+'-'+M[m[1].slice(0,3).toLowerCase()]+'-'+z(m[2])+'T00:00:00';
+  // "8/2/26, 6:39 PM"  (Invitations → Sent At) — local wall-clock
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?/);
+  if(m){var mo=+m[1],da=+m[2],yr=+m[3];if(m[3].length<=2)yr=yr<70?2000+yr:1900+yr;
+    if(mo>=1&&mo<=12&&da>=1&&da<=31){var out=yr+'-'+z(mo)+'-'+z(da);
+      if(m[4]!=null){var hh=+m[4];if(m[7]){hh=hh%12;if(/[Pp]/.test(m[7]))hh+=12;}out+='T'+z(hh)+':'+m[5]+':'+(m[6]||'00');}else out+='T00:00:00';
+      return out;}}
+  var d=new Date(s);return isNaN(d)?'':d.toISOString();
+}
 /* ---------- email compose (opens a new tab; respects the chosen mail app) ---------- */
 function mailApp(){try{return localStorage.getItem('ui:mailapp')||'gmail';}catch(e){return 'gmail';}}
 function setMailApp(v){try{localStorage.setItem('ui:mailapp',v);}catch(e){}}
@@ -395,21 +422,21 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   }
   function findHeaderAndParse(text,mustHave){const lines=text.split(/\r?\n/);let start=0;for(let i=0;i<Math.min(lines.length,12);i++){const low=lines[i].toLowerCase();if(mustHave.some(h=>low.includes(h))){start=i;break;}}return Papa.parse(lines.slice(start).join('\n'),{header:true,skipEmptyLines:true}).data;}
   function pick(row,cands){const keys=Object.keys(row);for(const c of cands){const h=keys.find(k=>k.trim().toLowerCase()===c);if(h&&row[h]!=null&&row[h]!=='')return row[h].toString().trim();}for(const c of cands){const h=keys.find(k=>k.trim().toLowerCase().includes(c));if(h&&row[h]!=null&&row[h]!=='')return row[h].toString().trim();}return '';}
-  function importInvitations(text){const rows=findHeaderAndParse(text,['from','to','sent','direction']);let added=0,seen=0;rows.forEach(row=>{const dir=pick(row,['direction']).toUpperCase();if(dir&&dir.indexOf('OUT')===-1)return;const name=pick(row,['to','invitee','recipient'])||pick(row,['from']);if(!name)return;const url=pick(row,['inviteeprofileurl','profile url','url']);const sent=pick(row,['sent at','sentat','sent','date']);const msg=pick(row,['message']);seen++;if(upsert({name,profileUrl:url,invitedDate:sent,lastInvitedDate:sent,actionDate:sent,invitationMessage:msg}))added++;});return {added,seen};}
-  function importConnections(text){const rows=findHeaderAndParse(text,['first name','last name','connected on','url']);let added=0,matched=0;rows.forEach(row=>{const fn=pick(row,['first name','firstname']);const ln=pick(row,['last name','lastname']);const name=(fn+' '+ln).trim();const url=pick(row,['url','profile url']);const company=pick(row,['company']);const position=pick(row,['position','title']);const on=pick(row,['connected on','connectedon','date']);if(!name&&!url)return;if(upsert({name,profileUrl:url,company,position,connected:true,connectedOn:on,actionDate:on}))added++;else matched++;});return {added,matched};}
+  function importInvitations(text){const rows=findHeaderAndParse(text,['from','to','sent','direction']);let added=0,seen=0,unparsed=0,newest='';rows.forEach(row=>{const dir=pick(row,['direction']).toUpperCase();if(dir&&dir.indexOf('OUT')===-1)return;const name=pick(row,['to','invitee','recipient'])||pick(row,['from']);if(!name)return;const url=pick(row,['inviteeprofileurl','profile url','url']);const sentRaw=pick(row,['sent at','sentat','sent','date']);const sent=parseLIDate(sentRaw);if(sentRaw&&!sent)unparsed++;if(sent&&(!newest||Date.parse(sent)>Date.parse(newest)))newest=sent;const msg=pick(row,['message']);seen++;if(upsert({name,profileUrl:url,invitedDate:sent,lastInvitedDate:sent,actionDate:sent,invitationMessage:msg}))added++;});return {added,seen,unparsed,newest};}
+  function importConnections(text){const rows=findHeaderAndParse(text,['first name','last name','connected on','url']);let added=0,matched=0,unparsed=0,newest='';rows.forEach(row=>{const fn=pick(row,['first name','firstname']);const ln=pick(row,['last name','lastname']);const name=(fn+' '+ln).trim();const url=pick(row,['url','profile url']);const company=pick(row,['company']);const position=pick(row,['position','title']);const onRaw=pick(row,['connected on','connectedon','date']);const on=parseLIDate(onRaw);if(onRaw&&!on)unparsed++;if(on&&(!newest||Date.parse(on)>Date.parse(newest)))newest=on;if(!name&&!url)return;if(upsert({name,profileUrl:url,company,position,connected:true,connectedOn:on,actionDate:on}))added++;else matched++;});return {added,matched,unparsed,newest};}
 
   function importMessages(text){
     const rows=findHeaderAndParse(text,['conversation id','from','to']);
     const freq={};rows.forEach(r=>{const fr=pick(r,['from']);if(fr)freq[fr]=(freq[fr]||0)+1;});
     let self='',mx=-1;for(const k in freq){if(freq[k]>mx){mx=freq[k];self=k;}}
-    const conv={};
+    const conv={};let unparsed=0,newest='';
     rows.forEach(r=>{
       const cid=pick(r,['conversation id'])||pick(r,['conversation title'])||'_';
       const fr=pick(r,['from']);const frUrl=pick(r,['sender profile url']);
       const to=pick(r,['to']);const toUrl=pick(r,['recipient profile urls']);
-      const date=pick(r,['date']);
+      const dateRaw=pick(r,['date']);const date=parseLIDate(dateRaw);if(dateRaw&&!date)unparsed++;
       const c=conv[cid]||(conv[cid]={others:{},inbound:false,outbound:false,last:''});
-      if(date&&(!c.last||new Date(date)>new Date(c.last)))c.last=date;
+      if(date&&(!c.last||Date.parse(date)>Date.parse(c.last)))c.last=date;
       if(fr&&fr!==self){c.others[fr]=c.others[fr]||frUrl;c.inbound=true;}
       if(fr===self){c.outbound=true;if(to&&to!==self){to.split(',').forEach((t,i)=>{t=t.trim();if(t&&t!==self){const u=(toUrl||'').split(/[ ,]+/).filter(Boolean)[i]||'';c.others[t]=c.others[t]||u;}});}}
     });
@@ -420,9 +447,10 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
       const name=names[0];const url=c.others[name];
       const replied=c.inbound;
       if(!replied)noreply++;people++;
+      if(c.last&&(!newest||Date.parse(c.last)>Date.parse(newest)))newest=c.last;
       upsert({name,profileUrl:url,messaged:true,replied,actionDate:c.last,lastMessageDate:c.last});
     });
-    return {people,noreply};
+    return {people,noreply,unparsed,newest};
   }
   function render(){
     const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const chan=document.getElementById('chan').value;const stateQ=norm((document.getElementById('stateFilter').value||''));const tbody=document.getElementById('tbody');
@@ -649,9 +677,10 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('impInv').onclick=()=>document.getElementById('fileInv').click();
   document.getElementById('impConn').onclick=()=>document.getElementById('fileConn').click();
   document.getElementById('impMsg').onclick=()=>document.getElementById('fileMsg').click();
-  document.getElementById('fileMsg').onchange=e=>readFile(e.target,t=>{toast('Reading messages…');setTimeout(()=>{const{people,noreply}=importMessages(t);save();render();toast(`Added ${people} messaged (${noreply} never replied)`);},30);});
-  document.getElementById('fileInv').onchange=e=>readFile(e.target,t=>{const{added,seen}=importInvitations(t);save();render();toast(seen?`Imported ${seen} sent invites (${added} new)`:'No outgoing invitations found');});
-  document.getElementById('fileConn').onchange=e=>readFile(e.target,t=>{const{added,matched}=importConnections(t);save();render();toast(`Connections: ${added} added, ${matched} updated`);});
+  function importSuffix(newest,unparsed){let s=newest?(' · newest '+fmt(newest)):'';if(unparsed)s+=` · ⚠ ${unparsed} unreadable date${unparsed>1?'s':''}`;return s;}
+  document.getElementById('fileMsg').onchange=e=>readFile(e.target,t=>{toast('Reading messages…');setTimeout(()=>{const{people,noreply,unparsed,newest}=importMessages(t);save();render();toast(`Added ${people} messaged (${noreply} never replied)`+importSuffix(newest,unparsed));},30);});
+  document.getElementById('fileInv').onchange=e=>readFile(e.target,t=>{const{added,seen,unparsed,newest}=importInvitations(t);save();render();toast((seen?`Imported ${seen} sent invites (${added} new)`:'No outgoing invitations found')+importSuffix(newest,unparsed));});
+  document.getElementById('fileConn').onchange=e=>readFile(e.target,t=>{const{added,matched,unparsed,newest}=importConnections(t);save();render();toast(`Connections: ${added} added, ${matched} updated`+importSuffix(newest,unparsed));});
   window.ledgerAddFromLead=function(lead){
     if(!lead||!Array.isArray(lead.contacts))return;
     const isInst=lead.lead_type==='Institution';
