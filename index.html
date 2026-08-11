@@ -125,6 +125,23 @@
   details.dashtable{margin-top:18px} details.dashtable summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--clay);padding:6px 0}
   details.dashtable table{margin-top:8px} details.dashtable td,details.dashtable th{font-size:12px;padding:7px 10px;text-align:right} details.dashtable td:first-child,details.dashtable th:first-child{text-align:left}
   @media(max-width:760px){.dash-kpis{grid-template-columns:repeat(2,1fr)}}
+  /* ---------- Decks ---------- */
+  .decks-targets{border:1px dashed var(--line);border-radius:11px;background:var(--paper-2);padding:12px 14px;margin:14px 0 4px}
+  .decks-targets summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--clay);list-style:none}
+  .decks-targets summary::-webkit-details-marker{display:none}
+  .decks-targets textarea{width:100%;min-height:150px;font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:11px;border-radius:9px;border:1px solid var(--line);background:#fff;resize:vertical;line-height:1.55;margin-top:10px}
+  .decks-targets textarea:focus{outline:none;border-color:var(--clay)}
+  .decks-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:16px 0 6px}
+  .decks-since{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft)}
+  .decks-since input{padding:6px 8px;border:1px solid var(--line);border-radius:7px}
+  #decks-progress{font-size:12.5px;color:var(--ink-soft);min-height:18px}
+  .decks-search input{width:100%;max-width:340px;font-size:13.5px;padding:9px 13px;border-radius:9px;border:1px solid var(--line);background:#fff}
+  .decks-search input:focus{outline:none;border-color:var(--clay)}
+  table.decks-tbl td .att{font-weight:600;font-size:13px}
+  table.decks-tbl td .re{font-size:12.5px;color:var(--ink-soft)}
+  table.decks-tbl td.dt{white-space:nowrap}
+  .decks-mini{font-size:11px;background:var(--paper-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink-soft);cursor:pointer}
+  .decks-mini:hover{border-color:var(--clay);color:var(--clay)}
 </style>
 </head>
 <body>
@@ -142,6 +159,7 @@
     <button class="tab" data-tab="followup">Follow-ups <span id="fu-badge" style="display:none;background:#8F3C20;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
     <button class="tab" data-tab="priority">★ Priority <span id="pr-badge" style="display:none;background:#C8881F;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
     <button class="tab" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="decks">Decks</button>
   </div>
 
   <!-- ============ LEDGER TAB ============ -->
@@ -292,6 +310,40 @@
     <div id="dash-empty" class="hint" style="display:none">Import your <b>Messages</b>, <b>Invitations</b>, and <b>Connections</b> CSVs (Connection Ledger → the ↑ buttons) to populate this dashboard.</div>
     <div id="dash-body"></div>
   </section>
+
+  <!-- ============ DECKS TAB ============ -->
+  <section class="panel" id="panel-decks">
+    <p class="lede">Scans your <b>Sent</b> mail for the deck &amp; collateral PDFs below and builds a record of who received which deck, and when. Read-only — it reuses the Gmail connection from the Follow-ups tab and never leaves your browser.</p>
+    <div class="settings-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 2px">
+      <span id="decks-connstatus" style="font-size:12.5px;color:var(--ink-soft)"></span>
+    </div>
+    <details class="decks-targets" id="decks-targets">
+      <summary>▸ Attachments to look for <span id="decks-tcount" style="font-weight:400;color:var(--ink-soft)"></span></summary>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;line-height:1.5">One filename per line. Matched exactly (case-insensitive) against each attachment's name. Edit the list to add or correct filenames, then Save.</div>
+      <textarea id="decks-targetlist" spellcheck="false"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn sm primary" id="decks-savetargets">Save list</button>
+        <button class="btn sm ghost" id="decks-resettargets" title="Restore the built-in default list">Reset to default</button>
+      </div>
+    </details>
+    <div class="stats" id="decks-stats" style="display:none">
+      <div class="stat"><div class="n" id="decks-s-sends">0</div><div class="l">Deck sends</div></div>
+      <div class="stat"><div class="n" id="decks-s-people">0</div><div class="l">Recipients</div></div>
+      <div class="stat"><div class="n" id="decks-s-decks">0</div><div class="l">Decks sent</div></div>
+      <div class="stat"><div class="n" id="decks-s-last">—</div><div class="l">Most recent</div></div>
+    </div>
+    <div class="decks-bar">
+      <button class="btn primary" id="decks-scan">⟳ Scan sent mail</button>
+      <span class="decks-since">Sent after <input type="date" id="decks-since"> <span style="opacity:.7">(blank = all time)</span></span>
+      <button class="btn ghost" id="decks-export" style="display:none">↓ Export CSV</button>
+      <button class="btn ghost" id="decks-ledger" style="display:none" title="Add every recipient to the Connection Ledger">＋ Recipients to Ledger</button>
+      <button class="btn ghost danger" id="decks-clear" style="display:none">Clear</button>
+    </div>
+    <div id="decks-progress"></div>
+    <div class="decks-search" style="margin:10px 0"><input id="decks-filter" placeholder="Filter by name, email, or deck…" style="display:none"></div>
+    <div id="decks-body"></div>
+    <div class="empty hidden" id="decks-empty"><div class="big">No deck sends recorded yet</div><div>Click <b>Scan sent mail</b> to search your Sent folder for the decks above.</div></div>
+  </section>
 </div>
 
 <!-- ledger edit modal -->
@@ -406,6 +458,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.getElementById('panel-'+b.dataset.tab).classList.add('active');
   if(b.dataset.tab==='priority'&&window.renderPriority)window.renderPriority();
   if(b.dataset.tab==='dashboard'&&window.renderDashboard)window.renderDashboard();
+  if(b.dataset.tab==='decks'&&window.renderDecks)window.renderDecks();
 });
 
 /* =================== CONNECTION LEDGER =================== */
@@ -696,10 +749,12 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   function dl(content,name,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 
   /* combined backup / restore (both tabs) */
-  function backup(){const data={contacts:contacts,leads:JSON.parse(localStorage.getItem('router:records')||'[]')};dl(JSON.stringify(data,null,2),'sales-console-backup-'+new Date().toISOString().slice(0,10)+'.json','application/json');toast('Backed up both tabs');}
+  function backup(){const data={contacts:contacts,leads:JSON.parse(localStorage.getItem('router:records')||'[]'),decks:JSON.parse(localStorage.getItem('decks:db')||'[]'),deckTargets:JSON.parse(localStorage.getItem('decks:targets')||'null')};dl(JSON.stringify(data,null,2),'sales-console-backup-'+new Date().toISOString().slice(0,10)+'.json','application/json');toast('Backed up all tabs');}
   async function restore(text){try{const data=JSON.parse(text);const c=Array.isArray(data)?data:(data.contacts||[]);const l=(data&&data.leads)||[];
     contacts=await load();c.forEach(rec=>upsert(rec));await save();
     const cur=JSON.parse(localStorage.getItem('router:records')||'[]');const ids=new Set(cur.map(x=>x.id));l.forEach(x=>{if(!ids.has(x.id))cur.push(x);});localStorage.setItem('router:records',JSON.stringify(cur));
+    if(data&&Array.isArray(data.decks))localStorage.setItem('decks:db',JSON.stringify(data.decks));
+    if(data&&Array.isArray(data.deckTargets))localStorage.setItem('decks:targets',JSON.stringify(data.deckTargets));
     toast('Restored — reloading');setTimeout(()=>location.reload(),800);}catch(e){toast('That file is not a valid backup');}}
   function readFile(input,handler){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{handler(r.result);input.value='';};r.readAsText(f);}
 
@@ -1187,6 +1242,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   window.gmailIsConnected=function(){return !!token;};
   window.gmailConnect=function(){connect(false);};
+  /* Generic authenticated Gmail/Google API GET, so other tabs (e.g. Decks)
+     can reuse the same in-browser OAuth token instead of re-prompting. */
+  window.gmailFetch=function(url){if(!token)return Promise.reject(new Error('Not connected to Gmail'));return authFetch(url);};
+  window.gmailHasClientId=function(){return !!gid();};
   window.gmailPullReplies=async function(email,sinceISO){
     if(!token)return {connected:false};
     email=(email||'').trim().toLowerCase();
@@ -1392,6 +1451,232 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       if(tries++>40)return;setTimeout(wait,150);
     })();
   })();
+})();
+
+/* ===== Decks tab — scan Sent mail for deck/collateral PDFs, build a send log ===== */
+(function(){
+  function $(id){return document.getElementById(id);}
+  var DEFAULT_TARGETS=[
+    'LatimerAI-h-26.v2.pdf',
+    'LatimerAI-g-26.v3.pdf',
+    'Latimer_Capabilities_Fall_2026_v11.pdf',
+    'Latimer_Capabilities_Fall_2026-Final.pdf',
+    'Latimer_Capabilities_Fall_2026__General_ 6.c.pdf',
+    'Latimer_Capabilities_Fall_2026__General_ 6.pdf',
+    'Latimer_Capabilities_Fall_2026-4.c.pdf',
+    'Latimer - 2025 - Final - jp',
+    'Latimer - 2025 - Final-June.v2.pdf',
+    'Latimer - 2025 - Final-June.v3.pdf',
+    'Latimer - Grammarly Updated - August 2025-SH.pdf',
+    'Latimer 2025 - Final.pdf',
+    'LatimerAI - Education One Sheet-2025.pdf',
+    'a.FUTURESUM.pitchdeck.pdf',
+    'FUTURESUM 2024 - Updated.pdf',
+    'FUTURESUM.General-FINAL.pdf',
+    'FUTURESUM.pitchdeck-FINAL copy.pdf',
+    'FUTURESUM.pitchdeck-FINAL.pdf',
+    'latimer.pitchdeck.11.a.pdf',
+    'latimer.pitchdeck.11.b.pdf',
+    'latimer.pitchdeck.11.pdf',
+    'latimer.presentation.deck.general.a.pdf',
+    'Latimer.Pricing.2024.Final.5.17.pdf',
+    'Latimer - Business Case - Final.pdf',
+    'Latimer - Business Case - Updated - 10.25.2023.pdf',
+    'latimer.presentation.sept.2023.pdf',
+    'Sept.Latimer.Pitchdeck-NYS.pdf'
+  ];
+  var TKEY='decks:targets', DBKEY='decks:db';
+  var rows=[], filterText='', scanning=false;
+
+  function loadTargets(){try{var v=JSON.parse(localStorage.getItem(TKEY)||'null');if(Array.isArray(v)&&v.length)return v;}catch(e){}return DEFAULT_TARGETS.slice();}
+  function saveTargets(list){try{localStorage.setItem(TKEY,JSON.stringify(list));}catch(e){}}
+  function loadDb(){try{var v=JSON.parse(localStorage.getItem(DBKEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
+  function saveDb(){try{localStorage.setItem(DBKEY,JSON.stringify(rows));}catch(e){}}
+  function targets(){return loadTargets().map(function(s){return s.trim();}).filter(Boolean);}
+  function normName(s){return (s||'').trim().toLowerCase();}
+  function fmtYMD(d){var m=d.getMonth()+1,day=d.getDate();return d.getFullYear()+'/'+(m<10?'0'+m:m)+'/'+(day<10?'0'+day:day);}
+  function isoDay(d){return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);}
+  function fmtDate(iso){if(!iso)return '—';var t=new Date(iso);if(isNaN(t))return iso;return t.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});}
+  function dl(content,name,type){var b=new Blob([content],{type:type});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
+
+  /* Parse an address-list header ("Jane Doe" <jane@x.com>, bob@y.com) into {name,email}. */
+  function parseAddrs(h){
+    if(!h)return [];
+    var parts=[],cur='',q=false;
+    for(var i=0;i<h.length;i++){var ch=h[i];if(ch==='"')q=!q;if(ch===','&&!q){parts.push(cur);cur='';}else cur+=ch;}
+    if(cur.trim())parts.push(cur);
+    return parts.map(function(p){
+      p=p.trim();var m=p.match(/^(.*?)\s*<([^>]+)>$/),name='',email='';
+      if(m){name=m[1].trim().replace(/^"|"$/g,'').trim();email=m[2].trim();}
+      else{email=p.replace(/^"|"$/g,'').trim();}
+      return {name:name,email:email.toLowerCase()};
+    }).filter(function(a){return a.email&&a.email.indexOf('@')>0;});
+  }
+  /* Walk a message payload collecting real attachment filenames. */
+  function attachNames(payload){
+    var out=[];
+    (function walk(p){if(!p)return;if(p.filename&&p.filename.trim()&&p.body&&(p.body.attachmentId||p.body.size)&&p.body.attachmentId)out.push(p.filename);(p.parts||[]).forEach(walk);})(payload);
+    return out;
+  }
+  function connStatus(){
+    var e=$('decks-connstatus');if(!e)return;
+    if(window.gmailIsConnected&&window.gmailIsConnected())e.innerHTML='Gmail connected ✓';
+    else if(window.gmailHasClientId&&window.gmailHasClientId())e.textContent='Not connected yet — the scan will open Google sign-in.';
+    else e.innerHTML='No Google connection yet. Set up your OAuth Client ID on the <b>Follow-ups</b> tab first, then come back.';
+  }
+  function progress(t){var e=$('decks-progress');if(e)e.textContent=t||'';}
+
+  /* Simple bounded-concurrency runner. */
+  async function pool(items,worker,size){
+    var idx=0,results=new Array(items.length);
+    async function run(){while(idx<items.length){var i=idx++;try{results[i]=await worker(items[i],i);}catch(e){results[i]=null;}}}
+    var runners=[];for(var k=0;k<Math.min(size,items.length);k++)runners.push(run());
+    await Promise.all(runners);return results;
+  }
+
+  async function waitForConnect(ms){
+    var t0=Date.now();
+    while(Date.now()-t0<ms){if(window.gmailIsConnected&&window.gmailIsConnected())return true;await new Promise(function(r){setTimeout(r,300);});}
+    return !!(window.gmailIsConnected&&window.gmailIsConnected());
+  }
+
+  async function scan(){
+    if(scanning)return;
+    var tlist=targets();
+    if(!tlist.length){progress('Add at least one attachment filename first.');return;}
+    if(!(window.gmailIsConnected&&window.gmailIsConnected())){
+      if(!(window.gmailHasClientId&&window.gmailHasClientId())){progress('Set up your Google OAuth Client ID on the Follow-ups tab first.');connStatus();return;}
+      progress('Opening Google sign-in…');
+      if(window.gmailConnect)window.gmailConnect();
+      var ok=await waitForConnect(60000);
+      if(!ok){progress('Not connected — approve the Google sign-in, then click Scan again.');return;}
+    }
+    scanning=true;$('decks-scan').disabled=true;connStatus();
+    try{
+      var since='';var si=$('decks-since');if(si&&si.value){var sd=new Date(si.value);if(!isNaN(sd))since=' after:'+fmtYMD(sd);}
+      var myEmail='';try{myEmail=(localStorage.getItem('fu:email')||'').toLowerCase();}catch(e){}
+
+      // 1) find candidate message ids across all target filenames
+      var idSet={};
+      for(var ti=0;ti<tlist.length;ti++){
+        progress('Searching for deck '+(ti+1)+' of '+tlist.length+'…');
+        var q='in:sent has:attachment filename:"'+tlist[ti].replace(/"/g,'')+'"'+since;
+        var pageToken='',guard=0;
+        do{
+          var url='https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=200&q='+encodeURIComponent(q)+(pageToken?'&pageToken='+pageToken:'');
+          var res;try{res=await window.gmailFetch(url);}catch(e){progress('Gmail error: '+e.message);scanning=false;$('decks-scan').disabled=false;return;}
+          (res.messages||[]).forEach(function(m){idSet[m.id]=1;});
+          pageToken=res.nextPageToken||'';
+        }while(pageToken&&++guard<25);
+      }
+      var ids=Object.keys(idSet);
+      if(!ids.length){progress('No sent messages found with any of those attachments'+(since?' in that date range':'')+'.');scanning=false;$('decks-scan').disabled=false;return;}
+
+      // 2) fetch each candidate once, verify actual attachment names, extract recipients + date
+      var tset={};tlist.forEach(function(t){tset[normName(t)]=t;});
+      var found=[];var done=0;
+      await pool(ids,async function(id){
+        var full;try{full=await window.gmailFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+id+'?format=full');}catch(e){done++;return;}
+        done++;if(done%5===0||done===ids.length)progress('Reading messages… '+done+' of '+ids.length);
+        var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
+        var matched=[];attachNames(full.payload).forEach(function(n){var key=normName(n);if(tset[key]&&matched.indexOf(tset[key])<0)matched.push(tset[key]);});
+        if(!matched.length)return;
+        var when=full.internalDate?new Date(+full.internalDate):(H.date?new Date(H.date):null);
+        var iso=(when&&!isNaN(when))?when.toISOString():'';
+        var recips=parseAddrs(H.to).filter(function(a){return a.email!==myEmail;});
+        recips.forEach(function(r){matched.forEach(function(att){
+          found.push({name:r.name,email:r.email,attachment:att,dateISO:iso,dateDay:iso?isoDay(when):'',subject:H.subject||'',msgId:id});
+        });});
+      },5);
+
+      // 3) dedupe rows on email|attachment|day
+      var seen={},out=[];
+      found.forEach(function(r){var k=r.email+'|'+normName(r.attachment)+'|'+r.dateDay;if(seen[k])return;seen[k]=1;out.push(r);});
+      out.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
+      rows=out;saveDb();
+      progress('Done — '+rows.length+' deck send'+(rows.length===1?'':'s')+' from '+ids.length+' message'+(ids.length===1?'':'s')+' scanned.');
+      render();
+    }finally{scanning=false;$('decks-scan').disabled=false;}
+  }
+
+  function stats(){
+    var people={},decks={},last='';
+    rows.forEach(function(r){if(r.email)people[r.email]=1;if(r.attachment)decks[normName(r.attachment)]=1;if(r.dateISO>last)last=r.dateISO;});
+    $('decks-s-sends').textContent=rows.length;
+    $('decks-s-people').textContent=Object.keys(people).length;
+    $('decks-s-decks').textContent=Object.keys(decks).length;
+    $('decks-s-last').textContent=last?fmtDate(last):'—';
+  }
+
+  function render(){
+    var body=$('decks-body'),empty=$('decks-empty'),statsEl=$('decks-stats'),filt=$('decks-filter');
+    var has=rows.length>0;
+    statsEl.style.display=has?'flex':'none';
+    $('decks-export').style.display=has?'inline-block':'none';
+    $('decks-ledger').style.display=has?'inline-block':'none';
+    $('decks-clear').style.display=has?'inline-block':'none';
+    filt.style.display=has?'block':'none';
+    if(!has){body.innerHTML='';empty.classList.remove('hidden');return;}
+    empty.classList.add('hidden');stats();
+    var ft=filterText.trim().toLowerCase();
+    var list=ft?rows.filter(function(r){return (r.name+' '+r.email+' '+r.attachment).toLowerCase().indexOf(ft)>=0;}):rows;
+    var h='<table class="decks-tbl"><thead><tr><th>Recipient</th><th>Email</th><th>Attachment</th><th>Date sent</th><th></th></tr></thead><tbody>';
+    if(!list.length){h+='<tr><td colspan="5" style="color:var(--ink-soft)">No rows match "'+esc(filterText)+'".</td></tr>';}
+    list.forEach(function(r){
+      h+='<tr title="'+esc(r.subject)+'">'
+        +'<td>'+(esc(r.name)||'<span style="color:var(--ink-soft)">—</span>')+'</td>'
+        +'<td>'+(r.email?'<a href="'+composeUrl(r.email)+'" target="_blank" rel="noopener" onclick="event.preventDefault();window.openCompose(\''+esc(r.email)+'\')">'+esc(r.email)+'</a>':'—')+'</td>'
+        +'<td><span class="att">'+esc(r.attachment)+'</span></td>'
+        +'<td class="dt">'+fmtDate(r.dateISO)+'</td>'
+        +'<td><button class="decks-mini" data-add="'+esc(r.email)+'|'+esc(r.name)+'" title="Add this recipient to the Connection Ledger">＋ Ledger</button></td>'
+        +'</tr>';
+    });
+    h+='</tbody></table>';
+    body.innerHTML=h;
+    body.querySelectorAll('[data-add]').forEach(function(b){b.onclick=function(){
+      var v=b.getAttribute('data-add').split('|'),email=v[0],name=v.slice(1).join('|');
+      if(window.ledgerAddFromLead){window.ledgerAddFromLead({lead_type:'Sales Prospect',entity:'',summary:'Received deck (from Decks scan)',contacts:[{name:name||email,email:email}]});b.textContent='✓ Added';b.disabled=true;}
+      else toast('Ledger not ready');
+    };});
+  }
+
+  function toLedgerAll(){
+    if(!window.ledgerAddFromLead){toast('Ledger not ready');return;}
+    var seen={},contacts=[];
+    rows.forEach(function(r){if(!r.email||seen[r.email])return;seen[r.email]=1;contacts.push({name:r.name||r.email,email:r.email});});
+    if(!contacts.length){toast('No recipients to add');return;}
+    window.ledgerAddFromLead({lead_type:'Sales Prospect',entity:'',summary:'Received deck (from Decks scan)',contacts:contacts});
+    toast('Added '+contacts.length+' recipient'+(contacts.length===1?'':'s')+' to the Ledger');
+  }
+
+  function exportCsv(){
+    if(!rows.length)return;
+    var lines=[['Recipient Name','Recipient Email','Attachment Name','Date Sent'].map(csvCell).join(',')];
+    rows.forEach(function(r){lines.push([r.name,r.email,r.attachment,r.dateDay||''].map(csvCell).join(','));});
+    dl(lines.join('\r\n'),'deck-sends-'+new Date().toISOString().slice(0,10)+'.csv','text/csv');
+    toast('Exported '+rows.length+' rows');
+  }
+
+  function syncTargetsUI(){
+    var ta=$('decks-targetlist');if(ta)ta.value=loadTargets().join('\n');
+    var c=$('decks-tcount');if(c)c.textContent='('+targets().length+')';
+  }
+
+  window.renderDecks=function(){
+    rows=loadDb();
+    connStatus();
+    syncTargetsUI();
+    render();
+  };
+
+  // wire up (elements exist at load)
+  var scanBtn=$('decks-scan');if(scanBtn)scanBtn.onclick=scan;
+  var expBtn=$('decks-export');if(expBtn)expBtn.onclick=exportCsv;
+  var ledBtn=$('decks-ledger');if(ledBtn)ledBtn.onclick=toLedgerAll;
+  var clrBtn=$('decks-clear');if(clrBtn)clrBtn.onclick=function(){if(!rows.length)return;if(!confirm('Clear the scanned deck-send records? (Your Sent mail is untouched.)'))return;rows=[];saveDb();progress('');render();};
+  var save=$('decks-savetargets');if(save)save.onclick=function(){var ta=$('decks-targetlist');var list=(ta.value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);saveTargets(list);syncTargetsUI();toast('Saved '+list.length+' filename'+(list.length===1?'':'s'));};
+  var reset=$('decks-resettargets');if(reset)reset.onclick=function(){saveTargets(DEFAULT_TARGETS.slice());syncTargetsUI();toast('Restored default list');};
+  var filt=$('decks-filter');if(filt)filt.oninput=function(){filterText=filt.value;render();};
 })();
 </script>
 </body>
