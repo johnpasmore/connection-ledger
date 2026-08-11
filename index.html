@@ -142,6 +142,8 @@
   table.decks-tbl td.dt{white-space:nowrap}
   .decks-mini{font-size:11px;background:var(--paper-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink-soft);cursor:pointer}
   .decks-mini:hover{border-color:var(--clay);color:var(--clay)}
+  .decks-del{font-size:13px;line-height:1;background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:2px 5px;margin-left:5px;border-radius:5px}
+  .decks-del:hover{color:var(--clay-dark);background:var(--red-bg)}
 </style>
 </head>
 <body>
@@ -1486,7 +1488,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     'Sept.Latimer.Pitchdeck-NYS.pdf'
   ];
   var TKEY='decks:targets', DBKEY='decks:db';
-  var rows=[], filterText='', scanning=false, sortAsc=false;
+  var rows=[], filterText='', scanning=false, sortAsc=false, rowSeq=0;
+  function ensureIds(){rows.forEach(function(r){if(!r._id)r._id='dk_'+(++rowSeq)+'_'+Math.random().toString(36).slice(2,7);});}
 
   function loadTargets(){try{var v=JSON.parse(localStorage.getItem(TKEY)||'null');if(Array.isArray(v)&&v.length)return v;}catch(e){}return DEFAULT_TARGETS.slice();}
   function saveTargets(list){try{localStorage.setItem(TKEY,JSON.stringify(list));}catch(e){}}
@@ -1593,7 +1596,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var seen={},out=[];
       found.forEach(function(r){var k=r.email+'|'+normName(r.attachment)+'|'+r.dateDay;if(seen[k])return;seen[k]=1;out.push(r);});
       out.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
-      rows=out;saveDb();
+      rows=out;ensureIds();saveDb();
       progress('Done — '+rows.length+' deck send'+(rows.length===1?'':'s')+' from '+ids.length+' message'+(ids.length===1?'':'s')+' scanned.');
       render();
     }finally{scanning=false;$('decks-scan').disabled=false;}
@@ -1631,12 +1634,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
         +'<td>'+(r.email?'<a href="'+composeUrl(r.email)+'" target="_blank" rel="noopener" onclick="event.preventDefault();window.openCompose(\''+esc(r.email)+'\')">'+esc(r.email)+'</a>':'—')+'</td>'
         +'<td><span class="att">'+esc(r.attachment)+'</span></td>'
         +'<td class="dt">'+fmtDate(r.dateISO)+'</td>'
-        +'<td><button class="decks-mini" data-add="'+esc(r.email)+'|'+esc(r.name)+'" title="Add this recipient to the Connection Ledger">＋ Ledger</button></td>'
+        +'<td style="white-space:nowrap"><button class="decks-mini" data-add="'+esc(r.email)+'|'+esc(r.name)+'" title="Add this recipient to the Connection Ledger">＋ Ledger</button>'
+        +'<button class="decks-del" data-del="'+esc(r._id)+'" title="Delete this entry">✕</button></td>'
         +'</tr>';
     });
     h+='</tbody></table>';
     body.innerHTML=h;
     var sh=body.querySelector('.decks-sortdt');if(sh)sh.onclick=function(){sortAsc=!sortAsc;render();};
+    body.querySelectorAll('[data-del]').forEach(function(b){b.onclick=function(){var id=b.getAttribute('data-del');rows=rows.filter(function(r){return r._id!==id;});saveDb();render();};});
     body.querySelectorAll('[data-add]').forEach(function(b){b.onclick=function(){
       var v=b.getAttribute('data-add').split('|'),email=v[0],name=v.slice(1).join('|');
       if(window.ledgerAddFromLead){window.ledgerAddFromLead({lead_type:'Sales Prospect',entity:'',summary:'Received deck (from Decks scan)',contacts:[{name:name||email,email:email}]});b.textContent='✓ Added';b.disabled=true;}
@@ -1667,7 +1672,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
 
   window.renderDecks=function(){
-    rows=loadDb();
+    rows=loadDb();ensureIds();
     connStatus();
     syncTargetsUI();
     render();
