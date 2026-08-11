@@ -9,9 +9,10 @@ export async function onRequest(context) {
   const email =
     request.headers.get("Cf-Access-Authenticated-User-Email") || "default";
   try {
+    await ensureSchema(env);
     if (request.method === "GET") {
       const p = new URL(request.url).searchParams;
-      if (p.get("all") === "1") return await listAll(env, email);
+      if (p.get("all") === "1") return await listAll(env, email, p);
       return await list(env, email, p);
     }
     if (request.method === "POST") return await bulkUpsert(env, email, await request.json());
@@ -20,6 +21,21 @@ export async function onRequest(context) {
   } catch (err) {
     return json({ error: String(err && err.message ? err.message : err) }, 500);
   }
+}
+
+// Create the table + indexes on first use, so no manual schema step is needed.
+// Cheap after the first call (IF NOT EXISTS), and cached per isolate.
+let schemaReady = false;
+async function ensureSchema(env) {
+  if (schemaReady) return;
+  await env.DB.batch([
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS contacts (user_email TEXT NOT NULL, id TEXT NOT NULL, name TEXT, profile_url TEXT, email TEXT, company TEXT, position TEXT, institution TEXT, action_day TEXT, connected INTEGER DEFAULT 0, connected_on TEXT, invited_date TEXT, messaged INTEGER DEFAULT 0, replied INTEGER DEFAULT 0, has_email INTEGER DEFAULT 0, manual_status TEXT, stage TEXT, category TEXT, priority INTEGER DEFAULT 0, state TEXT, notes TEXT, data TEXT, updated_at TEXT, PRIMARY KEY (user_email, id))"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_contacts_user_day ON contacts(user_email, action_day DESC)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_contacts_user_conn ON contacts(user_email, connected)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_contacts_user_name ON contacts(user_email, name COLLATE NOCASE)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_contacts_user_invite ON contacts(user_email, invited_date)"),
+  ]);
+  schemaReady = true;
 }
 
 // ---- shared SQL fragments -------------------------------------------------
@@ -83,12 +99,17 @@ async function list(env, email, p) {
   });
 }
 
-// Return every contact's full object — the app loads these into memory once and
-// does its rich interactions client-side (dedup, priority, merge, search).
-async function listAll(env, email) {
-  const res = await env.DB.prepare("SELECT data FROM contacts WHERE user_email=?").bind(email).all();
+// Return contacts' full objects in bounded chunks — the app loads these into
+// memory once (looping offset until `done`) and does its rich interactions
+// client-side. Chunking keeps each D1 query + response well under any size cap.
+async function listAll(env, email, p) {
+  const limit = clampInt(p && p.get("limit"), 2000, 1, 5000);
+  const offset = clampInt(p && p.get("offset"), 0, 0, 1e12);
+  const res = await env.DB
+    .prepare("SELECT data FROM contacts WHERE user_email=? ORDER BY rowid LIMIT ? OFFSET ?")
+    .bind(email, limit, offset).all();
   const rows = res.results.map(r => safeParse(r.data)).filter(Boolean);
-  return json({ rows, total: rows.length });
+  return json({ rows, offset, limit, done: rows.length < limit });
 }
 
 async function remove(env, email, body) {
