@@ -418,7 +418,38 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   function normLIDate(v){if(!v)return v||'';if(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(v))return v;return parseLIDate(v)||v;}
   const LEGACY_DATE_FIELDS=['actionDate','connectedOn','invitedDate','lastInvitedDate','lastMessageDate','lastReplyDate'];
   async function load(){try{const v=await lsGetLarge(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{LEGACY_DATE_FIELDS.forEach(f=>{if(c[f])c[f]=normLIDate(c[f]);});if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
-  async function save(){const ok=await lsSetLarge(KEY,JSON.stringify(contacts));if(!ok)toast('Could not save — storage full');}
+  async function save(){const ok=await lsSetLarge(KEY,JSON.stringify(contacts));if(!ok)toast('Could not save — storage full');scheduleSync();}
+
+  /* ---- D1 rows as the source of truth, with localStorage as an offline cache.
+     Every mutation already funnels through save(), so a single debounced,
+     diff-based sync keeps the database in step — only changed/removed rows are
+     sent. If the API/table isn't reachable, serverOn stays false and the app
+     behaves exactly as the local-only version. ---- */
+  let serverOn=false, syncing=false, syncTimer=null, syncedHashes={};
+  const SYNCED_KEY='ledger:synced', DIRTY_KEY='ledger:dirty';
+  function chash(c){var s=JSON.stringify(c),h=0;for(var i=0;i<s.length;i++){h=(h<<5)-h+s.charCodeAt(i);h|=0;}return h;}
+  function snapHashes(arr){const m={};arr.forEach(c=>{m[c.id]=chash(c);});return m;}
+  function markDirty(){try{localStorage.setItem(DIRTY_KEY,'1');}catch(e){}}
+  function clearDirty(){try{localStorage.removeItem(DIRTY_KEY);}catch(e){}}
+  function isDirty(){try{return localStorage.getItem(DIRTY_KEY)==='1';}catch(e){return false;}}
+  async function persistSynced(){try{await lsSetLarge(SYNCED_KEY,JSON.stringify(syncedHashes));}catch(e){}}
+  async function loadSynced(){try{const v=await lsGetLarge(SYNCED_KEY);return v?JSON.parse(v):{};}catch(e){return {};}}
+  async function serverGetAll(){try{const r=await fetch('/api/contacts?all=1',{headers:{Accept:'application/json'}});if(!r.ok)return null;const j=await r.json();return Array.isArray(j.rows)?j.rows:null;}catch(e){return null;}}
+  async function serverUpsert(arr){for(let i=0;i<arr.length;i+=800){const r=await fetch('/api/contacts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts:arr.slice(i,i+800)})});if(!r.ok)throw new Error('upsert '+r.status);}}
+  async function serverDelete(ids){if(!ids.length)return;const r=await fetch('/api/contacts',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})});if(!r.ok)throw new Error('delete '+r.status);}
+  async function syncNow(){
+    if(!serverOn||syncing)return; syncing=true;
+    try{
+      const cur=snapHashes(contacts);
+      const up=contacts.filter(c=>syncedHashes[c.id]!==cur[c.id]);
+      const del=Object.keys(syncedHashes).filter(id=>!(id in cur));
+      if(del.length)await serverDelete(del);
+      if(up.length)await serverUpsert(up);
+      syncedHashes=cur; await persistSynced(); clearDirty();
+    }catch(e){markDirty();}
+    syncing=false;
+  }
+  function scheduleSync(){if(!serverOn)return;markDirty();clearTimeout(syncTimer);syncTimer=setTimeout(syncNow,1500);}
   function uid(){return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
   function norm(s){return (s||'').toString().trim().toLowerCase();}
   function keyOf(c){return c.profileUrl?norm(c.profileUrl).replace(/\/$/,''):norm(c.name);}
@@ -775,7 +806,23 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     });
     if(any){save();render();}
   };
-  (async function(){contacts=await load();await save();render();})();
+  (async function boot(){
+    contacts=await load();
+    let assigned=false;contacts.forEach(c=>{if(!c.id){c.id=uid();assigned=true;}});
+    syncedHashes=await loadSynced();
+    render();
+    const server=await serverGetAll();
+    if(server===null){ if(assigned)await lsSetLarge(KEY,JSON.stringify(contacts)); return; } // D1 unavailable → local-only
+    serverOn=true;
+    if(server.length===0 && contacts.length>0){
+      try{await serverUpsert(contacts);syncedHashes=snapHashes(contacts);await persistSynced();clearDirty();toast('Synced '+contacts.length+' contacts to the database');}catch(e){markDirty();}
+    } else if(isDirty() && contacts.length){
+      await syncNow();
+    } else if(server.length>0){
+      contacts=server;contacts.forEach(c=>{if(!c.id)c.id=uid();});
+      await lsSetLarge(KEY,JSON.stringify(contacts));syncedHashes=snapHashes(contacts);await persistSynced();clearDirty();render();
+    } else if(assigned){ await lsSetLarge(KEY,JSON.stringify(contacts)); }
+  })();
 })();
 
 /* =================== LEAD ROUTER =================== */

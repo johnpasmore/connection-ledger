@@ -9,8 +9,13 @@ export async function onRequest(context) {
   const email =
     request.headers.get("Cf-Access-Authenticated-User-Email") || "default";
   try {
-    if (request.method === "GET") return await list(env, email, new URL(request.url).searchParams);
+    if (request.method === "GET") {
+      const p = new URL(request.url).searchParams;
+      if (p.get("all") === "1") return await listAll(env, email);
+      return await list(env, email, p);
+    }
     if (request.method === "POST") return await bulkUpsert(env, email, await request.json());
+    if (request.method === "DELETE") return await remove(env, email, await request.json());
     return json({ error: "Method not allowed" }, 405);
   } catch (err) {
     return json({ error: String(err && err.message ? err.message : err) }, 500);
@@ -76,6 +81,22 @@ async function list(env, email, p) {
     total: (totalRes.results[0] || {}).n || 0,
     counts: { tracked: c.tracked || 0, connected: c.connected || 0, no_response: c.no_response || 0, pending: c.pending || 0 },
   });
+}
+
+// Return every contact's full object — the app loads these into memory once and
+// does its rich interactions client-side (dedup, priority, merge, search).
+async function listAll(env, email) {
+  const res = await env.DB.prepare("SELECT data FROM contacts WHERE user_email=?").bind(email).all();
+  const rows = res.results.map(r => safeParse(r.data)).filter(Boolean);
+  return json({ rows, total: rows.length });
+}
+
+async function remove(env, email, body) {
+  const ids = (body && Array.isArray(body.ids)) ? body.ids : [];
+  if (!ids.length) return json({ deleted: 0 });
+  const stmts = ids.map(id => env.DB.prepare("DELETE FROM contacts WHERE user_email=? AND id=?").bind(email, id));
+  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+  return json({ deleted: ids.length });
 }
 
 async function bulkUpsert(env, email, body) {
