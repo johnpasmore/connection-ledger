@@ -359,6 +359,33 @@ function parseLIDate(s){
       return out;}}
   var d=new Date(s);return isNaN(d)?'':d.toISOString();
 }
+/* ---------- large-value storage: gzip so a big contact list fits in localStorage
+   (a ~5MB cap that ~10k contacts blow past uncompressed — the save then throws
+   QuotaExceededError, silently fails, and every reload reverts to the last copy
+   that fit). Compressed, the same data is well under 1MB. Falls back to raw. ---------- */
+async function gzB64(str){
+  if(typeof CompressionStream==='undefined')return null;
+  var cs=new CompressionStream('gzip');
+  var buf=await new Response(new Blob([str]).stream().pipeThrough(cs)).arrayBuffer();
+  var b=new Uint8Array(buf),s='';
+  for(var i=0;i<b.length;i+=0x8000)s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
+  return btoa(s);
+}
+async function gunzB64(b64){
+  var bin=atob(b64),b=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i);
+  var ds=new DecompressionStream('gzip');
+  return await new Response(new Blob([b]).stream().pipeThrough(ds)).text();
+}
+async function lsSetLarge(key,str){
+  try{var b64=await gzB64(str);if(b64!=null){localStorage.setItem(key,'GZ1:'+b64);return true;}}catch(e){}
+  try{localStorage.setItem(key,str);return true;}catch(e){return false;}
+}
+async function lsGetLarge(key){
+  var v=localStorage.getItem(key);if(v==null)return null;
+  if(v.slice(0,4)==='GZ1:'){try{return await gunzB64(v.slice(4));}catch(e){return null;}}
+  return v;
+}
 /* ---------- email compose (opens a new tab; respects the chosen mail app) ---------- */
 function mailApp(){try{return localStorage.getItem('ui:mailapp')||'gmail';}catch(e){return 'gmail';}}
 function setMailApp(v){try{localStorage.setItem('ui:mailapp',v);}catch(e){}}
@@ -390,8 +417,8 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   // Values already in clean ISO are left untouched; anything unreadable is kept as-is.
   function normLIDate(v){if(!v)return v||'';if(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(v))return v;return parseLIDate(v)||v;}
   const LEGACY_DATE_FIELDS=['actionDate','connectedOn','invitedDate','lastInvitedDate','lastMessageDate','lastReplyDate'];
-  function load(){try{const v=localStorage.getItem(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{LEGACY_DATE_FIELDS.forEach(f=>{if(c[f])c[f]=normLIDate(c[f]);});if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
-  function save(){try{localStorage.setItem(KEY,JSON.stringify(contacts));}catch(e){toast('Could not save');}}
+  async function load(){try{const v=await lsGetLarge(KEY);if(v){const arr=JSON.parse(v);arr.forEach(c=>{LEGACY_DATE_FIELDS.forEach(f=>{if(c[f])c[f]=normLIDate(c[f]);});if(!c.actionDate)c.actionDate=c.connectedOn||c.lastInvitedDate||c.invitedDate||c.firstAdded||'';});return arr;}}catch(e){}return [];}
+  async function save(){const ok=await lsSetLarge(KEY,JSON.stringify(contacts));if(!ok)toast('Could not save — storage full');}
   function uid(){return 'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
   function norm(s){return (s||'').toString().trim().toLowerCase();}
   function keyOf(c){return c.profileUrl?norm(c.profileUrl).replace(/\/$/,''):norm(c.name);}
@@ -573,6 +600,8 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   window.ledgerIsPriority=function(p){if(!p)return false;var ex=findMatch({name:p.name||'',email:p.email||'',profileUrl:''});return !!(ex&&ex.priority);};
   // minimal snapshot for the Dashboard: invite/connection dates + connected flag
   window.ledgerSnapshot=function(){return contacts.map(function(c){return {invitedDate:c.invitedDate||'',connectedOn:c.connectedOn||'',connected:!!c.connected,messaged:!!c.messaged};});};
+  // live in-memory list — read this instead of re-parsing localStorage (which is now compressed)
+  window.ledgerAll=function(){return contacts;};
   var CATS=['Investor','Partner','Sales Prospect','Job Candidate','Customer','Employee','Institution','Commercial'];
   function normalizeCat(t){t=(t||'').trim();if(/^partner/i.test(t))return 'Partner';for(var i=0;i<CATS.length;i++){if(CATS[i].toLowerCase()===t.toLowerCase())return CATS[i];}return '';}
   function deriveCat(c){if(c.category)return c.category;var m=/^\[([^\]]+)\]/.exec(c.notes||'');return m?normalizeCat(m[1]):'';}
@@ -636,9 +665,9 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   function dl(content,name,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
 
   /* combined backup / restore (both tabs) */
-  function backup(){const data={contacts:JSON.parse(localStorage.getItem('ledger:contacts')||'[]'),leads:JSON.parse(localStorage.getItem('router:records')||'[]')};dl(JSON.stringify(data,null,2),'sales-console-backup-'+new Date().toISOString().slice(0,10)+'.json','application/json');toast('Backed up both tabs');}
-  function restore(text){try{const data=JSON.parse(text);const c=Array.isArray(data)?data:(data.contacts||[]);const l=(data&&data.leads)||[];
-    contacts=load();c.forEach(rec=>upsert(rec));save();
+  function backup(){const data={contacts:contacts,leads:JSON.parse(localStorage.getItem('router:records')||'[]')};dl(JSON.stringify(data,null,2),'sales-console-backup-'+new Date().toISOString().slice(0,10)+'.json','application/json');toast('Backed up both tabs');}
+  async function restore(text){try{const data=JSON.parse(text);const c=Array.isArray(data)?data:(data.contacts||[]);const l=(data&&data.leads)||[];
+    contacts=await load();c.forEach(rec=>upsert(rec));await save();
     const cur=JSON.parse(localStorage.getItem('router:records')||'[]');const ids=new Set(cur.map(x=>x.id));l.forEach(x=>{if(!ids.has(x.id))cur.push(x);});localStorage.setItem('router:records',JSON.stringify(cur));
     toast('Restored — reloading');setTimeout(()=>location.reload(),800);}catch(e){toast('That file is not a valid backup');}}
   function readFile(input,handler){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{handler(r.result);input.value='';};r.readAsText(f);}
@@ -746,7 +775,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     });
     if(any){save();render();}
   };
-  contacts=load();save();render();
+  (async function(){contacts=await load();await save();render();})();
 })();
 
 /* =================== LEAD ROUTER =================== */
@@ -905,7 +934,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var s=document.getElementById('askSearch'),res=document.getElementById('askResults');
     if(!s)return;
     function nm(x){return (x||'').toString().toLowerCase();}
-    function load(){try{return JSON.parse(localStorage.getItem('ledger:contacts')||'[]');}catch(e){return [];}}
+    function load(){try{return (window.ledgerAll?window.ledgerAll():[]);}catch(e){return [];}}
     function run(){
       var q=nm(s.value).trim();res.innerHTML='';
       if(q.length<2){res.innerHTML='<div style="font-size:12px;color:var(--ink-soft)">Type at least 2 letters to find someone.</div>';return;}
@@ -1038,9 +1067,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 (function(){
   var cloudOn=true,lastSig=null;
   function sig(){try{return (localStorage.getItem('ledger:contacts')||'')+'\u0001'+(localStorage.getItem('router:records')||'');}catch(e){return '';}}
-  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}return {ledger:p('ledger:contacts'),router:p('router:records'),msgstats:ms};}
+  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}return {ledger:(window.ledgerAll?window.ledgerAll():p('ledger:contacts')),router:p('router:records'),msgstats:ms};}
   function setStatus(t){var el=document.getElementById('cloudStatus');if(el)el.textContent='Cloud: '+t;}
-  function applyCloud(d){try{if(d&&d.ledger)localStorage.setItem('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));if(d&&d.msgstats)localStorage.setItem('ledger:msgstats',JSON.stringify(d.msgstats));}catch(e){}}
+  async function applyCloud(d){try{if(d&&d.ledger)await lsSetLarge('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));if(d&&d.msgstats)localStorage.setItem('ledger:msgstats',JSON.stringify(d.msgstats));}catch(e){}}
   async function cloudGet(){var r=await fetch('/api/state',{headers:{'Accept':'application/json'}});if(!r.ok)throw new Error('get '+r.status);return r.json();}
   async function gzipB64(str){var cs=new CompressionStream('gzip');var buf=await new Response(new Blob([str]).stream().pipeThrough(cs)).arrayBuffer();var bytes=new Uint8Array(buf),bin='';for(var i=0;i<bytes.length;i+=0x8000){bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));}return btoa(bin);}
   async function gunzipB64(b64){var bin=atob(b64);var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);var ds=new DecompressionStream('gzip');return await new Response(new Blob([bytes]).stream().pipeThrough(ds)).text();}
@@ -1048,8 +1077,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function unpack(r){if(!r||r.data==null)return null;var d=r.data;if(typeof d==='string'){try{return JSON.parse(await gunzipB64(d));}catch(e){try{return JSON.parse(d);}catch(e2){return null;}}}return d;}
   var sb=document.getElementById('cloudSaveBtn'),lb=document.getElementById('cloudLoadBtn');
   if(sb)sb.onclick=async function(){setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('cloud error: '+(e&&e.message?e.message:e));}};
-  if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var d=await unpack(await cloudGet());if(!d){setStatus('nothing saved in cloud yet');return;}applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
-  (async function boot(){setStatus('checking…');try{var d=await unpack(await cloudGet());var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));if(d&&empty){applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);return;}lastSig=sig();setStatus('connected ✓');}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
+  if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var d=await unpack(await cloudGet());if(!d){setStatus('nothing saved in cloud yet');return;}await applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
+  (async function boot(){setStatus('checking…');try{var d=await unpack(await cloudGet());var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));if(d&&empty){await applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);return;}lastSig=sig();setStatus('connected ✓');}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
   setInterval(async function(){if(!cloudOn)return;var s=sig();if(s===lastSig)return;setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — will retry');}},20000);
 })();
 
