@@ -340,7 +340,7 @@
       <button class="btn ghost danger" id="decks-clear" style="display:none">Clear</button>
     </div>
     <div id="decks-progress"></div>
-    <div class="decks-search" style="margin:10px 0"><input id="decks-filter" placeholder="Filter by name, email, or deck…" style="display:none"></div>
+    <div class="decks-search" style="margin:10px 0;position:relative;max-width:340px"><input id="decks-filter" placeholder="Filter by name, email, or deck…" style="display:none;padding-right:34px"><button id="decks-filter-clear" type="button" title="Clear filter" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:none;cursor:pointer;font-size:16px;color:var(--ink-soft);line-height:1;padding:4px 6px">✕</button></div>
     <div id="decks-body"></div>
     <div class="empty hidden" id="decks-empty"><div class="big">No deck sends recorded yet</div><div>Click <b>Scan sent mail</b> to search your Sent folder for the decks above.</div></div>
   </section>
@@ -1486,7 +1486,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     'Sept.Latimer.Pitchdeck-NYS.pdf'
   ];
   var TKEY='decks:targets', DBKEY='decks:db';
-  var rows=[], filterText='', scanning=false;
+  var rows=[], filterText='', scanning=false, sortAsc=false;
 
   function loadTargets(){try{var v=JSON.parse(localStorage.getItem(TKEY)||'null');if(Array.isArray(v)&&v.length)return v;}catch(e){}return DEFAULT_TARGETS.slice();}
   function saveTargets(list){try{localStorage.setItem(TKEY,JSON.stringify(list));}catch(e){}}
@@ -1616,11 +1616,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     $('decks-ledger').style.display=has?'inline-block':'none';
     $('decks-clear').style.display=has?'inline-block':'none';
     filt.style.display=has?'block':'none';
+    var fclr=$('decks-filter-clear');if(fclr)fclr.style.display=(has&&filterText)?'block':'none';
     if(!has){body.innerHTML='';empty.classList.remove('hidden');return;}
     empty.classList.add('hidden');stats();
     var ft=filterText.trim().toLowerCase();
-    var list=ft?rows.filter(function(r){return (r.name+' '+r.email+' '+r.attachment).toLowerCase().indexOf(ft)>=0;}):rows;
-    var h='<table class="decks-tbl"><thead><tr><th>Recipient</th><th>Email</th><th>Attachment</th><th>Date sent</th><th></th></tr></thead><tbody>';
+    var list=(ft?rows.filter(function(r){return (r.name+' '+r.email+' '+r.attachment).toLowerCase().indexOf(ft)>=0;}):rows).slice();
+    list.sort(function(a,b){var c=(a.dateISO||'').localeCompare(b.dateISO||'');return sortAsc?c:-c;});
+    var arrow=sortAsc?'▲':'▼';
+    var h='<table class="decks-tbl"><thead><tr><th>Recipient</th><th>Email</th><th>Attachment</th><th class="decks-sortdt" style="cursor:pointer;user-select:none;white-space:nowrap" title="'+(sortAsc?'Showing oldest first — click for newest first':'Showing newest first — click for oldest first')+'">Date sent <span style="color:var(--clay)">'+arrow+'</span></th><th></th></tr></thead><tbody>';
     if(!list.length){h+='<tr><td colspan="5" style="color:var(--ink-soft)">No rows match "'+esc(filterText)+'".</td></tr>';}
     list.forEach(function(r){
       h+='<tr title="'+esc(r.subject)+'">'
@@ -1633,6 +1636,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     });
     h+='</tbody></table>';
     body.innerHTML=h;
+    var sh=body.querySelector('.decks-sortdt');if(sh)sh.onclick=function(){sortAsc=!sortAsc;render();};
     body.querySelectorAll('[data-add]').forEach(function(b){b.onclick=function(){
       var v=b.getAttribute('data-add').split('|'),email=v[0],name=v.slice(1).join('|');
       if(window.ledgerAddFromLead){window.ledgerAddFromLead({lead_type:'Sales Prospect',entity:'',summary:'Received deck (from Decks scan)',contacts:[{name:name||email,email:email}]});b.textContent='✓ Added';b.disabled=true;}
@@ -1677,6 +1681,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var save=$('decks-savetargets');if(save)save.onclick=function(){var ta=$('decks-targetlist');var list=(ta.value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);saveTargets(list);syncTargetsUI();toast('Saved '+list.length+' filename'+(list.length===1?'':'s'));};
   var reset=$('decks-resettargets');if(reset)reset.onclick=function(){saveTargets(DEFAULT_TARGETS.slice());syncTargetsUI();toast('Restored default list');};
   var filt=$('decks-filter');if(filt)filt.oninput=function(){filterText=filt.value;render();};
+  var filtClr=$('decks-filter-clear');if(filtClr)filtClr.onclick=function(){filterText='';if(filt){filt.value='';filt.focus();}render();};
 })();
 </script>
 </body>
