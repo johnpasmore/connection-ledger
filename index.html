@@ -7,65 +7,66 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async></script>
 <style>
   :root{
-    --paper:#FAF6EE;--paper-2:#F3ECDF;--ink:#1B1813;--ink-soft:#5A5347;--line:#E2D8C6;
-    --clay:#B4502E;--clay-dark:#8F3C20;--clay-bg:#F4E0D6;
-    --green:#3E6E4B;--green-bg:#E3EDE2;--amber:#A8782A;--amber-bg:#F4E9D2;
-    --blue:#2F5E8F;--blue-bg:#E1E9F2;--plum:#6B4A7A;--plum-bg:#ECE2F0;--red-bg:#F4DED6;--grey:#8A8273;--grey-bg:#ECE6DA;
-    --shadow:0 1px 2px rgba(27,24,19,.06),0 8px 24px rgba(27,24,19,.06);
+    --paper:#f0f0ee;--surface:#ffffff;--paper-2:#f6f6f3;--ink:#0f0f0e;--ink-soft:#55554f;--faint:#8a8a83;--line:#dcdcd7;--rule:#e7e7e2;
+    --clay:#d61f34;--clay-dark:#b0182b;--clay-bg:#fbe7ea;--accent:#d61f34;
+    --green:#0f0f0e;--green-bg:#f6f6f3;--amber:#55554f;--amber-bg:#f6f6f3;
+    --blue:#0f0f0e;--blue-bg:#f6f6f3;--plum:#55554f;--plum-bg:#f6f6f3;--red-bg:#fbe7ea;--grey:#8a8a83;--grey-bg:#f6f6f3;
+    --shadow:0 1px 2px rgba(15,15,14,.04),0 10px 30px rgba(15,15,14,.05);
+    --sans:'Inter',system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--paper);color:var(--ink);font-family:'Hanken Grotesk',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
-    background-image:radial-gradient(circle at 10% 4%, rgba(180,80,46,.05), transparent 42%),radial-gradient(circle at 92% 0%, rgba(62,110,75,.05), transparent 38%);min-height:100vh}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh}
   .wrap{max-width:1180px;margin:0 auto;padding:30px 24px 80px}
-  .brand{display:flex;align-items:center;gap:13px;margin-bottom:4px}
-  .brand .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--clay);font-weight:600}
-  h1{font-family:'Fraunces',serif;font-weight:600;font-size:27px;letter-spacing:-.01em;line-height:1.05}
+  .brand{display:flex;align-items:flex-start;gap:16px;margin-bottom:4px}
+  .brand .eyebrow{display:inline-block;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.16em;color:var(--accent);font-weight:600;border:1px solid var(--accent);border-radius:5px;padding:5px 9px;margin-bottom:12px}
+  h1{font-family:var(--sans);font-weight:800;font-size:33px;letter-spacing:-.025em;line-height:1.02;color:var(--ink)}
   .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:18px 0 26px}
   .tab{font-family:inherit;font-size:14px;font-weight:600;color:var(--ink-soft);background:none;border:none;padding:11px 16px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s}
   .tab:hover{color:var(--ink)}
-  .tab.active{color:var(--clay);border-bottom-color:var(--clay)}
+  .tab.active{color:var(--ink);border-bottom-color:var(--accent)}
   .panel{display:none} .panel.active{display:block;animation:fade .3s ease}
   @keyframes fade{from{opacity:0}to{opacity:1}}
   .lede{color:var(--ink-soft);font-size:13.5px;margin-bottom:6px;max-width:640px}
-  label.fld,.fld{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-soft);font-weight:700;margin-bottom:6px}
+  label.fld,.fld{display:block;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);font-weight:600;margin-bottom:6px}
   input,select,textarea{font-family:inherit;color:var(--ink)}
-  .btn{font-family:inherit;font-size:13px;font-weight:600;border-radius:9px;padding:9px 15px;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);transition:.15s}
-  .btn:hover{border-color:var(--ink);transform:translateY(-1px)}
-  .btn.primary{background:var(--clay);color:#fff;border-color:var(--clay)} .btn.primary:hover{background:var(--clay-dark);border-color:var(--clay-dark)}
-  .btn.ghost{background:transparent} .btn.sm{padding:6px 12px;font-size:12px} .btn:disabled{opacity:.5;cursor:wait;transform:none}
-  .pill{display:inline-block;font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;letter-spacing:.02em}
-  .pill.high{background:var(--green-bg);color:var(--green)} .pill.medium{background:var(--amber-bg);color:var(--amber)} .pill.low{background:var(--red-bg);color:var(--clay-dark)}
-  .pill.connected{background:var(--green-bg);color:var(--green)} .pill.pending{background:var(--amber-bg);color:var(--amber)} .pill.no_response{background:var(--red-bg);color:var(--clay-dark)}
-  .pill.type-Institution{background:var(--clay-bg);color:var(--clay-dark)} .pill.type-Commercial{background:var(--blue-bg);color:var(--blue)}
-  .pill.type-Investor{background:var(--green-bg);color:var(--green)} .pill.type-Partner{background:var(--plum-bg);color:var(--plum)} .pill.type-Unclear{background:var(--paper-2);color:var(--ink-soft)}
+  .btn{font-family:var(--sans);font-size:13px;font-weight:600;border-radius:6px;padding:9px 15px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);transition:.15s}
+  .btn:hover{border-color:var(--ink)}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)} .btn.primary:hover{background:var(--clay-dark);border-color:var(--clay-dark)}
+  .btn.ghost{background:transparent} .btn.sm{padding:6px 12px;font-size:12px} .btn:disabled{opacity:.5;cursor:wait}
+  .pill{display:inline-block;font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 8px;border-radius:5px;letter-spacing:.05em;text-transform:uppercase;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft)}
+  .pill.high{color:var(--ink);border-color:var(--ink)} .pill.medium{color:var(--ink-soft)} .pill.low{color:var(--accent);border-color:var(--accent)}
+  .pill.connected{color:var(--ink);border-color:var(--ink)} .pill.pending{color:var(--ink-soft);border-color:var(--line)} .pill.no_response{color:var(--accent);border-color:var(--accent)}
+  .pill.type-Institution{color:var(--accent);border-color:var(--accent)} .pill.type-Commercial{color:var(--ink);border-color:var(--line)}
+  .pill.type-Investor{color:var(--ink);border-color:var(--line)} .pill.type-Partner{color:var(--ink);border-color:var(--line)} .pill.type-Unclear{color:var(--faint);border-color:var(--line)}
   /* ledger */
   .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:22px}
-  .stat{background:var(--paper-2);border:1px solid var(--line);border-radius:12px;padding:14px 18px;min-width:120px;flex:1}
-  .stat .n{font-family:'Fraunces',serif;font-size:28px;font-weight:600;line-height:1}
-  .stat .l{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin-top:7px}
-  .stat.pending .n{color:var(--amber)} .stat.connected .n{color:var(--green)} .stat.cold .n{color:var(--clay)}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:15px 18px;min-width:120px;flex:1}
+  .stat .n{font-family:var(--sans);font-size:30px;font-weight:800;line-height:1;letter-spacing:-.02em}
+  .stat .l{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--faint);margin-top:9px}
+  .stat.pending .n{color:var(--ink)} .stat.connected .n{color:var(--ink)} .stat.cold .n{color:var(--accent)}
   .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
   .search{flex:1;min-width:180px} .search input{width:100%;font-size:13.5px;padding:9px 13px;border-radius:9px;border:1px solid var(--line);background:#fff}
   .search input:focus{outline:none;border-color:var(--clay)}
   select.filter{font-size:13px;padding:9px 12px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer}
   .thresh{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft)} .thresh input{width:48px;padding:6px 7px;border-radius:7px;border:1px solid var(--line);text-align:center}
-  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
-  thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-soft);font-weight:700;padding:13px 14px;background:var(--paper-2);border-bottom:1px solid var(--line);white-space:nowrap}
-  tbody td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top} tbody tr:last-child td{border-bottom:none}
+  table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  thead th{text-align:left;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);font-weight:600;padding:12px 14px;background:var(--surface);border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--rule);vertical-align:top} tbody tr:last-child td{border-bottom:none}
   tbody tr{cursor:pointer;transition:background .12s} tbody tr:hover{background:var(--paper-2)}
-  tr.stale{background:rgba(180,80,46,.045)} tr.stale:hover{background:rgba(180,80,46,.09)}
+  tr.stale{background:rgba(214,31,52,.035)} tr.stale:hover{background:rgba(214,31,52,.07)}
   .name{font-weight:600;font-size:14px} .sub{color:var(--ink-soft);font-size:12.5px;margin-top:2px} .inst{font-size:12.5px} .stagetag{font-size:11.5px;color:var(--ink-soft)}
-  .empty{text-align:center;padding:60px 20px;color:var(--ink-soft)} .empty .big{font-family:'Fraunces',serif;font-size:20px;color:var(--ink);margin-bottom:8px}
-  .hint{font-size:12px;color:var(--ink-soft);margin-bottom:18px;line-height:1.6;background:var(--paper-2);border:1px solid var(--line);border-left:3px solid var(--clay);border-radius:0 10px 10px 0;padding:11px 14px}
+  .empty{text-align:center;padding:60px 20px;color:var(--ink-soft)} .empty .big{font-family:var(--sans);font-size:20px;color:var(--ink);margin-bottom:8px}
+  .hint{font-size:12.5px;color:var(--ink-soft);margin-bottom:18px;line-height:1.6;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 14px}
   .hidden{display:none}
   .scrim{position:fixed;inset:0;background:rgba(27,24,19,.4);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:40px 18px;z-index:50;overflow:auto} .scrim.show{display:flex}
   .modal{background:var(--paper);border:1px solid var(--line);border-radius:16px;max-width:520px;width:100%;padding:26px;box-shadow:0 20px 60px rgba(27,24,19,.3)}
-  .modal h2{font-family:'Fraunces',serif;font-size:22px;font-weight:600;margin-bottom:3px} .modal .murl{font-size:12.5px;color:var(--clay);word-break:break-all;margin-bottom:18px}
+  .modal h2{font-family:var(--sans);font-size:22px;font-weight:800;margin-bottom:3px;letter-spacing:-.02em} .modal .murl{font-family:var(--mono);font-size:12px;color:var(--accent);word-break:break-all;margin-bottom:18px}
   .field{margin-bottom:14px} .field input,.field select,.field textarea{width:100%;font-size:13.5px;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:#fff}
   .field textarea{resize:vertical;min-height:70px} .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--clay)}
   .row2{display:flex;gap:12px} .row2>div{flex:1}
@@ -84,10 +85,10 @@
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
   .samples{font-size:12px;color:var(--ink-soft)} .chip{display:inline-block;font-size:12px;font-weight:600;color:var(--clay);background:var(--paper-2);border:1px solid var(--line);border-radius:20px;padding:5px 12px;cursor:pointer;margin:3px 3px 0 0} .chip:hover{border-color:var(--clay)}
   .status{font-size:12.5px;color:var(--ink-soft);margin-top:10px;min-height:18px}
-  .card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:24px;margin-top:24px;display:none;border-top:4px solid var(--line)} .card.show{display:block;animation:fade .35s ease}
-  .card.t-Institution{border-top-color:var(--clay)} .card.t-Commercial{border-top-color:var(--blue)} .card.t-Investor{border-top-color:var(--green)} .card.t-Partner{border-top-color:var(--plum)}
-  .typeline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px} .card h2{font-family:'Fraunces',serif;font-size:20px;font-weight:600}
-  .csub{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-soft);font-weight:700;margin:18px 0 10px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:24px;margin-top:24px;display:none;border-top:3px solid var(--line)} .card.show{display:block;animation:fade .35s ease}
+  .card.t-Institution{border-top-color:var(--accent)} .card.t-Commercial{border-top-color:var(--ink)} .card.t-Investor{border-top-color:var(--ink)} .card.t-Partner{border-top-color:var(--ink)}
+  .typeline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px} .card h2{font-family:var(--sans);font-size:20px;font-weight:800;letter-spacing:-.01em}
+  .csub{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);font-weight:600;margin:18px 0 10px}
   .reasoning{font-size:12.5px;color:var(--ink-soft);font-style:italic;margin:6px 0;padding-left:10px;border-left:2px solid var(--line)}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} .item.full{grid-column:1 / -1}
   .item input,.item select,.item textarea,.cc input,.cc select{width:100%;font-size:13.5px;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--paper)}
@@ -106,12 +107,12 @@
   @media(max-width:620px){.grid,.cc-grid{grid-template-columns:1fr}}
   /* ---------- Dashboard ---------- */
   .dash-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 8px}
-  .dash-kpi{background:var(--paper-2);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
-  .dash-kpi .n{font-family:'Fraunces',serif;font-size:26px;font-weight:600;line-height:1;color:var(--ink)}
-  .dash-kpi .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-soft);margin-top:8px;line-height:1.3}
+  .dash-kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .dash-kpi .n{font-family:var(--sans);font-size:28px;font-weight:800;line-height:1;color:var(--ink);letter-spacing:-.02em}
+  .dash-kpi .l{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);margin-top:9px;line-height:1.3}
   .dash-kpi .d{font-size:11px;color:var(--ink-soft);margin-top:4px}
-  .chartcard{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px 20px 12px;margin-top:18px}
-  .chartcard h3{font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-bottom:2px}
+  .chartcard{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:18px 20px 12px;margin-top:18px}
+  .chartcard h3{font-family:var(--sans);font-size:16px;font-weight:700;margin-bottom:2px;letter-spacing:-.01em}
   .chartcard .csub{font-size:12px;color:var(--ink-soft);margin-bottom:10px}
   .chartlegend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px;font-size:12px;color:var(--ink-soft)}
   .chartlegend .lg{display:inline-flex;align-items:center;gap:6px}
@@ -149,7 +150,7 @@
 <body>
 <div class="wrap">
   <div class="brand" style="justify-content:space-between"><div><div class="eyebrow">Latimer.AI · Sales Console</div><h1>Pipeline Workspace</h1></div>
-    <div style="text-align:right;font-family:'Hanken Grotesk',sans-serif">
+    <div style="text-align:right;font-family:var(--sans)">
       <div id="cloudStatus" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:5px">Cloud: starting…</div>
       <button class="btn ghost" id="cloudSaveBtn" style="font-size:12px;padding:5px 10px">☁ Save to cloud</button>
       <button class="btn ghost" id="cloudLoadBtn" style="font-size:12px;padding:5px 10px">⤓ Load from cloud</button>
@@ -158,8 +159,8 @@
   <div class="tabs">
     <button class="tab active" data-tab="ledger">Connection Ledger</button>
     <button class="tab" data-tab="router">Lead Router</button>
-    <button class="tab" data-tab="followup">Follow-ups <span id="fu-badge" style="display:none;background:#8F3C20;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
-    <button class="tab" data-tab="priority">★ Priority <span id="pr-badge" style="display:none;background:#C8881F;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
+    <button class="tab" data-tab="followup">Follow-ups <span id="fu-badge" style="display:none;background:#d61f34;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
+    <button class="tab" data-tab="priority">★ Priority <span id="pr-badge" style="display:none;background:#d61f34;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
     <button class="tab" data-tab="dashboard">Dashboard</button>
     <button class="tab" data-tab="decks">Decks</button>
   </div>
@@ -199,7 +200,7 @@
       <input type="file" id="fileBackup" accept=".json" class="hidden">
     </div>
     <table><thead><tr><th>Contact</th><th>Company / Title</th><th>Date</th><th>Status</th><th>Institution</th><th>Stage</th></tr></thead><tbody id="tbody"></tbody></table>
-    <div id="pager" style="display:flex;align-items:center;justify-content:center;gap:14px;padding:14px;font-family:'Hanken Grotesk',sans-serif;font-size:13px;color:var(--ink-soft)"></div>
+    <div id="pager" style="display:flex;align-items:center;justify-content:center;gap:14px;padding:14px;font-family:var(--sans);font-size:13px;color:var(--ink-soft)"></div>
     <div class="empty hidden" id="empty"><div class="big">Nothing tracked yet</div><div>Log a contact or import your LinkedIn export to begin.</div></div>
   </section>
 
@@ -518,7 +519,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   function hasLI(c){return !!(c.invitedDate||c.connected||c.messaged||c.replied||c.invitationMessage);}
   function hasEm(c){return !!c.hasEmail;}
   function channelDetail(c){const b=[];if(c.connected)b.push('Connected');else if(c.invitedDate||c.invitationMessage)b.push('Invited');if(c.messaged)b.push(c.replied?'Messaged · replied':'Messaged · no reply');if(c.hasEmail)b.push('Email');return b.join(' · ');}
-  function channelBadges(c){let h='';if(hasLI(c)){const dim=(c.messaged&&!c.replied&&!c.connected)?';opacity:.55':'';h+=`<span title="${esc(channelDetail(c))}" style="display:inline-block;font-size:9px;font-weight:800;background:#2F5E8F;color:#fff;border-radius:4px;padding:1px 4px;margin-right:4px${dim}">in</span>`;}if(hasEm(c)){h+=`<span title="Email conversation" style="display:inline-block;font-size:10px;background:var(--clay-bg);color:var(--clay-dark);border-radius:4px;padding:1px 5px">✉</span>`;}return h;}
+  function channelBadges(c){let h='';if(hasLI(c)){const dim=(c.messaged&&!c.replied&&!c.connected)?';opacity:.55':'';h+=`<span title="${esc(channelDetail(c))}" style="display:inline-block;font-size:9px;font-weight:800;background:#0f0f0e;color:#fff;border-radius:4px;padding:1px 4px;margin-right:4px${dim}">in</span>`;}if(hasEm(c)){h+=`<span title="Email conversation" style="display:inline-block;font-size:10px;background:var(--clay-bg);color:var(--clay-dark);border-radius:4px;padding:1px 5px">✉</span>`;}return h;}
 
   function findMatch(rec){
     var url=rec.profileUrl?norm(rec.profileUrl).replace(/\/$/,''):'';
@@ -623,7 +624,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     const shown=rows.slice(page*PAGE,page*PAGE+PAGE);
     tbody.innerHTML='';
     shown.forEach(({c,st})=>{const tr=document.createElement('tr');if(st==='no_response')tr.className='stale';const ds=daysSince(dateOf(c));
-      tr.innerHTML=`<td><div class="name"><button class="prio" data-star="${c.id}" title="${c.priority?'Priority — click to unstar':'Mark as priority'}" style="border:none;background:none;cursor:pointer;font-size:15px;padding:0 5px 0 0;color:${c.priority?'#C8881F':'#C9C2B4'}">${c.priority?'★':'☆'}</button>${esc(c.name)||'—'} ${channelBadges(c)}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
+      tr.innerHTML=`<td><div class="name"><button class="prio" data-star="${c.id}" title="${c.priority?'Priority — click to unstar':'Mark as priority'}" style="border:none;background:none;cursor:pointer;font-size:15px;padding:0 5px 0 0;color:${c.priority?'#d61f34':'#C9C2B4'}">${c.priority?'★':'☆'}</button>${esc(c.name)||'—'} ${channelBadges(c)}</div>${c.profileUrl?`<div class="sub">${esc(shortUrl(c.profileUrl))}</div>`:''}</td>
         <td>${c.company?`<div>${esc(c.company)}</div>`:''}${c.position?`<div class="sub">${esc(c.position)}</div>`:(c.company?'':'<span class="sub">—</span>')}</td>
         <td>${fmt(dateOf(c))}<div class="sub">${st==='connected'?'connected':(ds!==null?ds+'d ago':'')}</div></td>
         <td><span class="pill ${st}">${SL[st]}</span></td>
@@ -656,9 +657,9 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
     if(!list.length){box.innerHTML='<div style="color:var(--ink-soft);font-size:13px;padding:10px 0">Nothing starred yet. Tap the ☆ next to anyone in the Connection Ledger to add them here.</div>';return;}
     box.innerHTML=list.map(function(c){
       var st=status(c);
-      return '<div class="pr-item" data-id="'+c.id+'" style="border:1px solid var(--line);border-left:3px solid #C8881F;border-radius:9px;padding:10px 12px;margin-bottom:8px;cursor:pointer">'
+      return '<div class="pr-item" data-id="'+c.id+'" style="border:1px solid var(--line);border-left:3px solid #d61f34;border-radius:9px;padding:10px 12px;margin-bottom:8px;cursor:pointer">'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        +'<button class="pr-star" data-id="'+c.id+'" title="Remove from priority" style="border:none;background:none;cursor:pointer;font-size:15px;color:#C8881F;padding:0">★</button>'
+        +'<button class="pr-star" data-id="'+c.id+'" title="Remove from priority" style="border:none;background:none;cursor:pointer;font-size:15px;color:#d61f34;padding:0">★</button>'
         +'<span style="font-weight:700;font-size:14px">'+(esc(c.name)||'—')+'</span> '+channelBadges(c)
         +'<span class="pill '+st+'" style="margin-left:auto">'+SL[st]+'</span></div>'
         +'<div style="font-size:12px;color:var(--ink-soft);margin-top:3px">'
@@ -1078,7 +1079,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 /* ===== Dashboard tab — rolling 12-month volume & success rates ===== */
 (function(){
   var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var C={clay:'#B4502E',blue:'#2F5E8F',amber:'#A8782A',green:'#3E6E4B',ink:'#1B1813',soft:'#5A5347',line:'#E2D8C6'};
+  var C={clay:'#0f0f0e',blue:'#d61f34',amber:'#0f0f0e',green:'#d61f34',ink:'#0f0f0e',soft:'#55554f',line:'#dcdcd7'};
   function tip(){var t=document.getElementById('dash-tip');if(!t){t=document.createElement('div');t.id='dash-tip';t.className='dash-tip';document.body.appendChild(t);}return t;}
   function fmtNum(v){v=Math.round(v);return v>=1000?(v/1000).toFixed(v>=10000?0:1).replace(/\.0$/,'')+'k':''+v;}
   function niceMax(v){if(v<=0)return 1;var p=Math.pow(10,Math.floor(Math.log10(v))),n=v/p,k;if(n<=1)k=1;else if(n<=2)k=2;else if(n<=2.5)k=2.5;else if(n<=5)k=5;else k=10;return k*p;}
@@ -1338,8 +1339,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     h+='<a href="'+composeUrl(r.email)+'" target="_blank" rel="noopener" onclick="event.preventDefault();window.openCompose(\''+esc(r.email)+'\')">Email '+esc(r.email)+' →</a>';
     h+='<button data-fuadd="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">+ Add to Connections</button>';
     var isPri=(window.ledgerIsPriority&&window.ledgerIsPriority({name:r.name,email:r.email}));
-    if(isPri)h+='<span title="Already a priority" style="color:#C8881F;font-size:12px;font-weight:600">★ Priority</span>';
-    else h+='<button data-fupri="'+idx+'" title="Add (if needed) and mark as a priority" style="border:none;background:none;color:#C8881F;cursor:pointer;padding:0;font-size:12px">☆ Priority</button>';
+    if(isPri)h+='<span title="Already a priority" style="color:#d61f34;font-size:12px;font-weight:600">★ Priority</span>';
+    else h+='<button data-fupri="'+idx+'" title="Add (if needed) and mark as a priority" style="border:none;background:none;color:#d61f34;cursor:pointer;padding:0;font-size:12px">☆ Priority</button>';
     if(urgent){
       h+='<button data-fusch="'+idx+'" style="border:none;background:none;color:var(--clay);cursor:pointer;padding:0;font-size:12px">📅 Schedule</button>';
       h+='<button data-fublk="'+idx+'" title="Never show this person again" style="border:none;background:none;color:var(--ink-soft);cursor:pointer;padding:0;font-size:12px">⊘ Never</button>';
