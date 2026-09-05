@@ -179,6 +179,17 @@
   .hal-speak:hover{border-color:var(--accent);color:var(--accent)}
   .hal-speak.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
   .hal-pop-actions .hal-speak{padding:2px 8px;font-size:13px}
+  .hal-talk{border:1px solid var(--accent);background:var(--surface);color:var(--accent);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer;line-height:1;flex:0 0 auto;white-space:nowrap}
+  .hal-talk:hover{background:var(--accent);color:#fff}
+  /* Conversation mode overlay */
+  .hal-convo{position:fixed;inset:0;z-index:1000;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px}
+  .hal-convo[hidden]{display:none}
+  .orbwrap{position:relative;width:260px;height:260px;display:flex;align-items:center;justify-content:center}
+  .orbglow{position:absolute;width:230px;height:230px;border-radius:50%;background:radial-gradient(circle,rgba(214,31,52,.55) 0%,rgba(214,31,52,.16) 45%,rgba(214,31,52,0) 70%);will-change:transform,opacity}
+  .orbimg{position:relative;width:170px;height:auto;will-change:transform}
+  .hal-convo-status{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--faint)}
+  .hal-convo-cap{max-width:640px;text-align:center;font-size:16px;line-height:1.55;color:var(--ink);min-height:1.55em;padding:0 12px}
+  .hal-convo-ctrls{margin-top:6px}
   .hal-think{align-self:flex-start;font-size:13px;color:var(--faint);font-style:italic}
   #hal-setup{color:var(--accent);font-weight:600}
   /* Corrections */
@@ -295,8 +306,10 @@
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
-        <textarea id="hal-q" rows="1" placeholder="Ask Hal — or tap 🎤 and talk"></textarea>
-        <button type="button" class="hal-mic" title="Talk to Hal">🎤</button>
+        <textarea id="hal-q" rows="1" placeholder="Ask Hal — type, tap 🎤 to dictate, or 🎙 Talk"></textarea>
+        <button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊</button>
+        <button type="button" class="hal-mic" title="Dictate a message">🎤</button>
+        <button type="button" class="hal-talk" title="Hands-free conversation with Hal">🎙 Talk</button>
         <button class="btn primary" id="hal-send">Send</button>
       </div>
     </div>
@@ -1829,8 +1842,90 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function wireVoice(root){
     (root||document).querySelectorAll('.hal-mic').forEach(function(m){if(m._wired)return;m._wired=1;if(!SR){m.style.display='none';return;}m.onclick=function(){var bar=m.closest('.hal-bar,.hal-pop-bar');startVoice(bar&&bar.querySelector('textarea'));};});
     (root||document).querySelectorAll('.hal-speak').forEach(function(b){if(b._wired)return;b._wired=1;b.onclick=toggleSpeak;});
+    (root||document).querySelectorAll('.hal-talk').forEach(function(b){if(b._wired)return;b._wired=1;if(!SR){b.style.display='none';return;}b.onclick=convoStart;});
     updateSpeakUI();
   }
+  /* ===== Conversation mode — hands-free voice with an amplitude-reactive orb =====
+     Turn-taking loop: listen → Hal thinks → Hal speaks → listen again. The Latimer
+     star spins (speed scales with amplitude) and a glow pulses; while you speak the
+     amplitude is real (mic), while Hal speaks it's a synthetic envelope (browser TTS
+     doesn't expose an audio stream). Reuses hist/halSend so the transcript persists. */
+  var convo={open:false,ac:null,analyser:null,stream:null,raf:null,rec:null,state:'idle',amp:0,ang:0};
+  function convoBuild(){
+    if(document.getElementById('hal-convo'))return;
+    var o=document.createElement('div');o.id='hal-convo';o.className='hal-convo';o.hidden=true;
+    o.innerHTML='<div class="orbwrap"><div class="orbglow" id="hal-orbglow"></div><img class="orbimg" id="hal-orbimg" src="/assets/Latimer-Star-2026.png" alt="Latimer"></div>'
+      +'<div class="hal-convo-status" id="hal-convo-status">Starting…</div>'
+      +'<div class="hal-convo-cap" id="hal-convo-cap"></div>'
+      +'<div class="hal-convo-ctrls"><button type="button" class="btn" id="hal-convo-end">End conversation</button></div>';
+    document.body.appendChild(o);
+    o.querySelector('#hal-convo-end').onclick=convoStop;
+  }
+  function convoStatus(t){var e=document.getElementById('hal-convo-status');if(e)e.textContent=t;}
+  function convoCap(t){var e=document.getElementById('hal-convo-cap');if(e)e.textContent=t||'';}
+  function orbLoop(){
+    if(!convo.open)return;
+    var amp=0;
+    if(convo.state==='listening'&&convo.analyser){var buf=new Uint8Array(convo.analyser.fftSize);convo.analyser.getByteTimeDomainData(buf);var s=0;for(var i=0;i<buf.length;i++){var v=(buf[i]-128)/128;s+=v*v;}amp=Math.min(1,Math.sqrt(s/buf.length)*3.4);}
+    else if(convo.state==='speaking')amp=0.4+0.35*Math.abs(Math.sin(Date.now()/130));
+    else if(convo.state==='thinking')amp=0.14+0.07*Math.abs(Math.sin(Date.now()/320));
+    convo.amp+=(amp-convo.amp)*0.25; // smooth
+    convo.ang+=0.4+convo.amp*3.2;    // spin faster with amplitude
+    var img=document.getElementById('hal-orbimg'),glow=document.getElementById('hal-orbglow');
+    if(img)img.style.transform='rotate('+convo.ang+'deg) scale('+(1+convo.amp*0.14)+')';
+    if(glow){glow.style.transform='scale('+(1+convo.amp*0.9)+')';glow.style.opacity=(0.25+convo.amp*0.6).toFixed(3);}
+    convo.raf=requestAnimationFrame(orbLoop);
+  }
+  async function convoStart(){
+    if(!SR){if(window.toast)window.toast('Conversation mode needs Chrome (speech recognition).');return;}
+    if(!akey()){if(window.toast)window.toast(keyMsg());return;}
+    convoBuild();var o=document.getElementById('hal-convo');o.hidden=false;convo.open=true;convo.state='thinking';convoStatus('Warming up…');convoCap('');
+    try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
+    try{
+      convo.stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      var AC=window.AudioContext||window.webkitAudioContext;convo.ac=new AC();
+      var src=convo.ac.createMediaStreamSource(convo.stream);convo.analyser=convo.ac.createAnalyser();convo.analyser.fftSize=512;src.connect(convo.analyser);
+    }catch(e){convoStatus('Allow microphone access, then tap 🎙 Talk again.');}
+    orbLoop();
+    convoSay('Hi JP — what do you want to talk through?');
+  }
+  function convoListen(){
+    if(!convo.open)return;
+    convo.state='listening';convoStatus('Listening… speak now');
+    try{convo.rec=new SR();}catch(e){return;}
+    convo.rec.lang='en-US';convo.rec.interimResults=true;convo.rec.continuous=false;
+    var finalText='';
+    convo.rec.onresult=function(e){var f='',im='';for(var i=0;i<e.results.length;i++){var r=e.results[i];if(r.isFinal)f+=r[0].transcript;else im+=r[0].transcript;}finalText=f||finalText;convoCap('“'+(f||im)+'”');};
+    convo.rec.onerror=function(){};
+    convo.rec.onend=function(){if(!convo.open)return;var v=(finalText||'').trim();if(v)convoTurn(v);else convoListen();};
+    try{convo.rec.start();}catch(e){}
+  }
+  async function convoTurn(userText){
+    convo.state='thinking';convoStatus('Hal is thinking…');convoCap('You: '+userText);
+    hist.push({role:'user',content:userText});saveHist();paint();
+    var reply='';
+    try{var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});reply=await halSend(msgs);hist.push({role:'assistant',content:reply});}
+    catch(e){reply=String(e&&e.message).indexOf('NOKEY')>=0?('I’m not connected to an engine yet. '+keyMsg()):('Sorry, I hit an error. '+(e&&e.message||''));hist.push({role:'assistant',content:reply});}
+    saveHist();paint();
+    convoSay(reply);
+  }
+  function convoSay(text){
+    if(!convo.open)return;
+    convo.state='speaking';convoStatus('Hal is speaking…');convoCap('Hal: '+stripForSpeech(text).slice(0,180));
+    if(!window.speechSynthesis){setTimeout(convoListen,500);return;}
+    try{window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(stripForSpeech(text).slice(0,1400));u.rate=1.03;u.onend=function(){if(convo.open)convoListen();};u.onerror=function(){if(convo.open)convoListen();};window.speechSynthesis.speak(u);}
+    catch(e){setTimeout(convoListen,500);}
+  }
+  function convoStop(){
+    convo.open=false;convo.state='idle';
+    try{if(convo.rec){convo.rec.onend=null;convo.rec.abort?convo.rec.abort():convo.rec.stop();}}catch(e){}
+    try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
+    try{if(convo.stream)convo.stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
+    try{if(convo.ac)convo.ac.close();}catch(e){}
+    if(convo.raf)cancelAnimationFrame(convo.raf);
+    var o=document.getElementById('hal-convo');if(o)o.hidden=true;
+  }
+  window.halConvoStart=convoStart;
   var CHIPS=['What should I focus on today?','Who owes a reply — and what do I say?','Draft follow-ups for my urgent accounts','Prep me for my next campus visit'];
   function paintChips(){
     var c=document.getElementById('hal-chips');if(!c)return;
@@ -1858,7 +1953,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var w=document.createElement('div');w.id='hal-pop';w.className='hal-pop';w.hidden=true;
     w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><span class="hal-pop-actions"><button class="hal-speak" type="button" title="Read Hal’s replies aloud">🔊</button><button id="hal-pop-clear" type="button" title="Clear this conversation">Clear</button><button id="hal-pop-x" type="button" title="Close">×</button></span></div>'
       +'<div id="hal-pop-log" class="hal-log hal-pop-log"></div>'
-      +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct Hal… or tap 🎤"></textarea><button type="button" class="hal-mic" title="Talk to Hal">🎤</button><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
+      +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct Hal…"></textarea><button type="button" class="hal-mic" title="Dictate">🎤</button><button type="button" class="hal-talk" title="Hands-free conversation">🎙</button><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
     document.body.appendChild(w);
     fab.onclick=function(){toggle();};
     w.querySelector('#hal-pop-x').onclick=function(){toggle(false);};
