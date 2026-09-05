@@ -1332,8 +1332,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var key=latimerKey();if(!key)throw new Error('NOKEY');
       var last=messages[messages.length-1]||{content:''};
       var addl=[];for(var i=0;i<messages.length-1;i++){var m=messages[i];addl.push({role:(m.role==='assistant'?'assistant':'user'),content:m.content});}
-      var body={message:last.content||'',model:latimerModel(),additionalInstructions:system||'',additionalMessages:addl};
-      var r=await fetch('https://api.latimer.ai/v2/api/completion',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'Latimer-Version':'2026-01-02'},body:JSON.stringify(body)});
+      // Call our same-origin proxy (/api/latimer) so the browser never hits
+      // Latimer directly — avoids CORS. The proxy forwards the key server-side.
+      var body={key:key,latimerVersion:'2026-01-02',message:last.content||'',model:latimerModel(),additionalInstructions:system||'',additionalMessages:addl};
+      var r=await fetch('/api/latimer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error('Latimer '+r.status+' '+t.replace(/\s+/g,' ').slice(0,180));}
       var j=await r.json();var out=extractLatimer(j);
       if(!out)throw new Error('Latimer replied but I couldn’t find the text field — raw: '+JSON.stringify(j).slice(0,220));
