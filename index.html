@@ -382,6 +382,10 @@
         <select id="lr-latimermodel" style="font-family:var(--sans);font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink)">
           <option value="gpt-5">gpt-5</option><option value="gpt-5.6-sol">gpt-5.6-sol</option><option value="gpt-5.4">gpt-5.4</option><option value="gpt-5.1">gpt-5.1</option><option value="gpt-5-mini">gpt-5-mini</option><option value="gpt-4o">gpt-4o</option><option value="gpt-4o-mini">gpt-4o-mini</option><option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
         </select></div>
+      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal’s voice — ElevenLabs (optional; for a custom/cloned voice)</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);margin:2px 0 8px"><input type="checkbox" id="lr-elon"> Use my ElevenLabs voice for Hal (otherwise the browser voice is used)</label></div>
+      <div class="f" id="lr-elwrap" style="display:none"><label class="fld">ElevenLabs API key</label><input id="lr-elkey" type="password" placeholder="ElevenLabs API key"></div>
+      <div class="f" id="lr-elvoicewrap" style="display:none"><label class="fld">ElevenLabs voice ID</label><input id="lr-elvoice" placeholder="voice id"></div>
       <div class="f" style="flex-basis:100%"><label class="fld">Salesforce logging address (Email-to-Salesforce)</label><input id="lr-sfaddr" placeholder="emailtosalesforce@…"></div>
       <button class="btn sm primary" id="lr-savekey">Save settings</button>
       <div class="note">Stored only in this browser, never embedded in the page. Keys go straight to their provider (Anthropic or Latimer). Switching Hal’s engine keeps everything Hal remembers — briefs, corrections, chat. The Salesforce address is the To: line when you log an activity.</div>
@@ -1113,6 +1117,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function lsGet(k,d){try{const v=localStorage.getItem(k);return (v==null||v==='')?d:v;}catch(e){return d;}}
   function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
   const HALPROV='hal:provider',LKEY='hal:latimerkey',LMODEL='hal:latimermodel';
+  const ELON='hal:elevenon',ELKEY='hal:elevenkey',ELVOICE='hal:elevenvoice';
   g('lr-apikey').value=lsGet(AKEY,'');
   g('lr-model').value=lsGet(MKEY,'claude-sonnet-4-5');
   g('lr-sfaddr').value=lsGet(SFKEY,DEFAULT_SF);
@@ -1120,8 +1125,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   g('lr-latimerkey').value=lsGet(LKEY,'');
   g('lr-latimermodel').value=lsGet(LMODEL,'gpt-5');
   if(!g('lr-latimermodel').value){g('lr-latimermodel').value='gpt-5';lsSet(LMODEL,'gpt-5');} // coerce an unsupported stored model (e.g. an old gemini value) to a valid one
-  function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';}
+  g('lr-elon').checked=lsGet(ELON,'0')==='1';
+  g('lr-elkey').value=lsGet(ELKEY,'');
+  g('lr-elvoice').value=lsGet(ELVOICE,'6LeBM17xbqEhidO33ymI');
+  function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';
+    const el=g('lr-elon').checked;g('lr-elwrap').style.display=el?'':'none';g('lr-elvoicewrap').style.display=el?'':'none';}
   g('lr-halprovider').onchange=syncHalFields;
+  g('lr-elon').onchange=syncHalFields;
   syncHalFields();
   function refreshConn(){
     const prov=lsGet(HALPROV,'anthropic');
@@ -1140,6 +1150,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     lsSet(HALPROV,g('lr-halprovider').value);
     lsSet(LKEY,g('lr-latimerkey').value.trim());
     lsSet(LMODEL,g('lr-latimermodel').value.trim()||'gpt-5');
+    lsSet(ELON,g('lr-elon').checked?'1':'0');
+    lsSet(ELKEY,g('lr-elkey').value.trim());
+    lsSet(ELVOICE,g('lr-elvoice').value.trim());
     toast('Settings saved in this browser');refreshConn();
   };
   refreshConn();
@@ -1839,7 +1852,36 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!sel._wired){sel._wired=1;sel.onchange=function(){try{localStorage.setItem('hal:voice',sel.value);}catch(e){}try{if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('Hi JP — this is how I sound.');applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}populateVoices();};}
   });}
   try{if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=populateVoices;}catch(e){}
-  function speak(t){if(!speakOn()||!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var s=stripForSpeech(t);if(!s)return;var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);window.speechSynthesis.speak(u);}catch(e){}}
+  /* ---- ElevenLabs (custom/cloned voice) via same-origin /api/tts proxy ---- */
+  function elOn(){try{return localStorage.getItem('hal:elevenon')==='1'&&!!(localStorage.getItem('hal:elevenkey')||'')&&!!(localStorage.getItem('hal:elevenvoice')||'');}catch(e){return false;}}
+  var elCtx=null,elSrc=null;
+  // Speak via ElevenLabs. Returns a promise; opts.onAnalyser(analyser) gives real
+  // amplitude for the orb; opts.onEnd fires when playback finishes.
+  async function elSpeak(clean,opts){
+    opts=opts||{};
+    var cfg={key:localStorage.getItem('hal:elevenkey')||'',voiceId:localStorage.getItem('hal:elevenvoice')||'',model:localStorage.getItem('hal:elevenmodel')||'eleven_turbo_v2_5'};
+    var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:cfg.key,voiceId:cfg.voiceId,model:cfg.model,text:clean})});
+    if(!r.ok){var t='';try{t=(await r.json()).error;}catch(e){}throw new Error(t||('tts '+r.status));}
+    var arr=await r.arrayBuffer();
+    var AC=window.AudioContext||window.webkitAudioContext;elCtx=elCtx||new AC();
+    if(elCtx.state==='suspended'){try{await elCtx.resume();}catch(e){}}
+    var audio=await elCtx.decodeAudioData(arr);
+    try{if(elSrc)elSrc.stop();}catch(e){}
+    var src=elCtx.createBufferSource();src.buffer=audio;
+    var an=elCtx.createAnalyser();an.fftSize=512;src.connect(an);an.connect(elCtx.destination);
+    elSrc=src;
+    if(opts.onAnalyser)opts.onAnalyser(an);
+    src.onended=function(){if(opts.onEnd)opts.onEnd();};
+    src.start();
+    return {durationSec:audio.duration};
+  }
+  function elStop(){try{if(elSrc)elSrc.stop();}catch(e){}try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}}
+  function speak(t){
+    if(!speakOn())return;
+    var s=stripForSpeech(t);if(!s)return;
+    if(elOn()){elSpeak(s.slice(0,2000),{}).catch(function(){/* fall back silently to browser voice */try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}});return;}
+    if(!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var u2=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u2);window.speechSynthesis.speak(u2);}catch(e){}
+  }
   function setMicUI(on){document.querySelectorAll('.hal-mic').forEach(function(m){m.classList.toggle('listening',on);m.title=on?'Listening… tap to stop':'Talk to Hal';});}
   function stopVoice(){if(rec){try{rec.stop();}catch(e){}}}
   function startVoice(inputEl){
@@ -1883,7 +1925,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!convo.open)return;
     var amp=0;
     if(convo.state==='listening'&&convo.analyser){var buf=new Uint8Array(convo.analyser.fftSize);convo.analyser.getByteTimeDomainData(buf);var s=0;for(var i=0;i<buf.length;i++){var v=(buf[i]-128)/128;s+=v*v;}amp=Math.min(1,Math.sqrt(s/buf.length)*3.4);}
-    else if(convo.state==='speaking')amp=0.4+0.35*Math.abs(Math.sin(Date.now()/130));
+    else if(convo.state==='speaking'){
+      if(convo.elAnalyser){var b2=new Uint8Array(convo.elAnalyser.fftSize);convo.elAnalyser.getByteTimeDomainData(b2);var s2=0;for(var k=0;k<b2.length;k++){var v2=(b2[k]-128)/128;s2+=v2*v2;}amp=Math.min(1,Math.sqrt(s2/b2.length)*3.6);} // real amplitude from Hal's ElevenLabs voice
+      else amp=0.4+0.35*Math.abs(Math.sin(Date.now()/130)); // synthetic pulse for browser TTS
+    }
     else if(convo.state==='thinking')amp=0.14+0.07*Math.abs(Math.sin(Date.now()/320));
     convo.amp+=(amp-convo.amp)*0.25; // smooth
     convo.ang+=0.4+convo.amp*3.2;    // spin faster with amplitude
@@ -1930,7 +1975,26 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     convo.state='speaking';convoStatus('Hal is speaking…');
     var clean=stripForSpeech(text).slice(0,1400);
     var cap=document.getElementById('hal-convo-cap');if(cap)cap.textContent='';
+    convo.elAnalyser=null;
+    if(elOn()){
+      // Hal's real (cloned) voice: play ElevenLabs audio, drive the orb from its
+      // real amplitude, and reveal the caption over the clip's duration.
+      var capTimer=null;
+      elSpeak(clean.slice(0,2000),{
+        onAnalyser:function(an){convo.elAnalyser=an;},
+        onEnd:function(){convo.elAnalyser=null;if(capTimer)clearInterval(capTimer);if(cap)cap.textContent=clean;if(convo.open)convoListen();}
+      }).then(function(info){
+        var dur=(info&&info.durationSec)||Math.max(2,clean.length/14);var t0=Date.now();
+        capTimer=setInterval(function(){if(!cap)return;var frac=Math.min(1,(Date.now()-t0)/(dur*1000));var n=Math.floor(frac*clean.length);var end=clean.indexOf(' ',n);if(end<0)end=clean.length;cap.textContent=clean.slice(0,end);if(frac>=1)clearInterval(capTimer);},90);
+      }).catch(function(){ // fall back to browser voice
+        convo.elAnalyser=null;convoSayBrowser(clean,cap);
+      });
+      return;
+    }
     if(!window.speechSynthesis){if(cap)cap.textContent=clean;setTimeout(convoListen,600);return;}
+    convoSayBrowser(clean,cap);
+  }
+  function convoSayBrowser(clean,cap){
     try{
       window.speechSynthesis.cancel();
       var u=new SpeechSynthesisUtterance(clean);applyVoice(u);
@@ -1941,8 +2005,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     }catch(e){if(cap)cap.textContent=clean;setTimeout(convoListen,600);}
   }
   function convoStop(){
-    convo.open=false;convo.state='idle';
+    convo.open=false;convo.state='idle';convo.elAnalyser=null;
     try{if(convo.rec){convo.rec.onend=null;convo.rec.abort?convo.rec.abort():convo.rec.stop();}}catch(e){}
+    try{elStop();}catch(e){}
     try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
     try{if(convo.stream)convo.stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
     try{if(convo.ac)convo.ac.close();}catch(e){}
