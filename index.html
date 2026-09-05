@@ -162,6 +162,26 @@
   .hal-bar textarea:focus{outline:none;border-color:var(--accent)}
   .hal-think{align-self:flex-start;font-size:13px;color:var(--faint);font-style:italic}
   #hal-setup{color:var(--accent);font-weight:600}
+  /* Corrections */
+  .corr{margin-top:9px}
+  .corr-h{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px}
+  .corr-item{font-size:12.5px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-left:3px solid var(--ink);border-radius:6px;padding:6px 9px;margin-bottom:5px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;line-height:1.45}
+  .corr-del{border:none;background:none;color:var(--faint);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}.corr-del:hover{color:var(--accent)}
+  .corr-add{border:1px dashed var(--line);background:none;color:var(--ink-soft);cursor:pointer;font-size:12px;font-family:var(--sans);border-radius:6px;padding:5px 10px;margin-top:2px}.corr-add:hover{border-color:var(--accent);color:var(--accent)}
+  /* Pop-up Ask Hal */
+  .hal-fab{position:fixed;right:20px;bottom:20px;z-index:900;display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;border:none;border-radius:24px;padding:11px 18px;font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.22)}
+  .hal-fab:hover{filter:brightness(1.05)}
+  .hal-fab span{letter-spacing:.01em}
+  .hal-pop{position:fixed;right:20px;bottom:20px;z-index:901;width:380px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 40px);background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden}
+  .hal-pop[hidden]{display:none}
+  .hal-pop-head{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid var(--line);font-weight:700;font-size:14px}
+  .hal-pop-head button{border:none;background:none;font-size:22px;line-height:1;color:var(--ink-soft);cursor:pointer;padding:0 2px}
+  .hal-pop-log{flex:1;min-height:0;overflow-y:auto;padding:14px 15px}
+  .hal-pop-log .hal-msg{max-width:100%}
+  .hal-pop-bar{display:flex;gap:8px;align-items:flex-end;padding:11px 13px;border-top:1px solid var(--line)}
+  .hal-pop-bar textarea{flex:1;resize:none;font-family:var(--sans);font-size:13.5px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:9px 11px;line-height:1.5;max-height:140px;box-sizing:border-box}
+  .hal-pop-bar textarea:focus{outline:none;border-color:var(--accent)}
+  @media (max-width:520px){.hal-pop{right:8px;bottom:8px;height:calc(100vh - 16px)}.hal-fab{right:12px;bottom:12px}}
   .pill.paying{color:var(--ink);border-color:var(--ink)} .pill.trial{color:var(--accent);border-color:var(--accent)} .pill.prospect{color:var(--ink-soft);border-color:var(--line)} .pill.partner{color:var(--ink-soft);border-color:var(--line)}
   /* ---------- Dashboard ---------- */
   .dash-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 8px}
@@ -1338,6 +1358,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'<div class="why">'+whyline+'</div>'
       +(a.note?'<div class="note">'+esc(a.note)+'</div>':'')+ns
       +halBrief(a.brief)
+      +corrHtml(a)
       +'<div class="ctl">'
       +'<select data-f="stage">'+opt('paying',a.stage,'Paying')+opt('trial',a.stage,'Trial')+opt('prospect',a.stage,'Prospect')+opt('partner',a.stage,'Partner')+'</select>'
       +'<select data-f="tier">'+opt('flagship',a.tier,'Flagship')+opt('high',a.tier,'High')+opt('standard',a.tier,'Standard')+'</select>'
@@ -1363,6 +1384,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       el.querySelectorAll('[data-f]').forEach(function(inp){inp.onchange=function(){var f=inp.getAttribute('data-f');if(f==='cadence')a.cadence=(+inp.value||14);else if(f==='domainsStr')a.domains=inp.value.split(',').map(function(s){return s.trim();}).filter(Boolean);else a[f]=inp.value;save();if(f==='stage'||f==='cadence')window.renderAccounts();};});
       var t=el.querySelector('[data-act="touch"]');if(t)t.onclick=function(){a.lastTouch=today();save();window.renderAccounts();if(window.toast)window.toast('Logged a touch with '+a.name);};
       var br=el.querySelector('[data-act="brief"]');if(br)br.onclick=function(){br.disabled=true;br.textContent='🧠 reading…';briefOne(a);};
+      var cor=el.querySelector('[data-act="correct"]');if(cor)cor.onclick=function(){var t=prompt('What should Hal get right about '+a.name+'?\n\nExamples:\n• "Budget is NOT confirmed yet"\n• "Main contact is the CIO, not the provost"\n• "They pushed the decision to next semester"\n\nHal treats this as ground truth over what he read.');if(!t||!t.trim())return;a.corrections=a.corrections||[];a.corrections.push({text:t.trim(),at:new Date().toISOString()});save();window.renderAccounts();if(window.toast)window.toast('Noted — Hal will use that from now on.');};
+      el.querySelectorAll('.corr-del').forEach(function(bd){bd.onclick=function(){var i=+bd.getAttribute('data-corr');if(a.corrections)a.corrections.splice(i,1);save();window.renderAccounts();};});
       var d=el.querySelector('[data-act="del"]');if(d)d.onclick=function(){if(!confirm('Remove '+a.name+' from the funnel?'))return;accts=accts.filter(function(x){return x.id!==id;});save();window.renderAccounts();};
     });
   };
@@ -1415,7 +1438,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var me=(window.gMyEmail&&window.gMyEmail())||'JP';
     var convo=res.messages.map(function(m){var who=m.fromMe?'ME':(m.from||'them');return '['+(m.dateISO||'').slice(0,10)+'] '+who+' — '+m.subject+'\n'+(m.body||'').slice(0,1500);}).join('\n\n---\n\n');
     var system='You are Hal, an AI sales partner for Latimer.AI, which sells AI software to colleges and universities. You read the recent email thread with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts that are not in the thread.';
-    var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
+    var corr=(a.corrections&&a.corrections.length)?('\n\nGROUND TRUTH from JP — trust these over anything the email implies, and reflect them in your brief:\n- '+a.corrections.map(function(c){return c.text;}).join('\n- ')):'';
+    var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+corr+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
     var txt=(await halComplete(system,user,800)).replace(/```json|```/g,'').trim();
     var b=JSON.parse(txt);
     b.updatedAt=new Date().toISOString();b.lastMsgId=res.latestId;b.msgCount=res.messages.length;
@@ -1462,6 +1486,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +(b.draftHint?'<div class="hal-row"><span>Angle</span> '+esc(b.draftHint)+'</div>':'')
       +'</div>';
   }
+  // Persistent corrections — JP's ground truth that overrides what Hal read.
+  function corrHtml(a){
+    var items=(a.corrections||[]).map(function(c,i){return '<div class="corr-item">“'+esc(c.text)+'”<button class="corr-del" data-corr="'+i+'" title="Remove">×</button></div>';}).join('');
+    return '<div class="corr">'+(items?'<div class="corr-h">Your corrections — Hal treats these as ground truth</div>'+items:'')
+      +'<button class="corr-add" data-act="correct">✎ Correct Hal'+(a.brief?'':' about this account')+'</button></div>';
+  }
   function gbadge(){var el=document.getElementById('acct-gstatus');if(!el)return;var on=!!(window.gConnected&&window.gConnected());if(on){var me=(window.gMyEmail&&window.gMyEmail())||'';el.innerHTML='<span style="color:var(--ink)">●</span> <span style="color:var(--ink-soft)">Google connected'+(me?' — '+esc(me):'')+'</span>';}else{el.innerHTML='<span style="color:var(--accent)">●</span> <a href="#" id="acct-gc" style="color:var(--accent)">Connect Google</a>';var c=document.getElementById('acct-gc');if(c)c.onclick=function(e){e.preventDefault();if(window.gConnect)window.gConnect();setTimeout(gbadge,1800);};}}
   setTimeout(gbadge,1600);setTimeout(gbadge,4200);
   var syncBtn=document.getElementById('acct-sync');
@@ -1500,6 +1530,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
         if(b.nextMove)L.push('     suggested next move: '+b.nextMove);
         if(b.draftHint)L.push('     angle: '+b.draftHint);
       }else{L.push('   (Hal hasn’t read this account’s email yet — say so if asked for specifics)');}
+      if(a.corrections&&a.corrections.length)L.push('   JP’S CORRECTIONS (ground truth — override the brief): '+a.corrections.map(function(c){return c.text;}).join(' | '));
       return L.join('\n');
     }).join('\n\n');
   }
@@ -1507,6 +1538,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var me=(window.gMyEmail&&window.gMyEmail())||'john@latimer.ai';
     return 'You are Hal, the AI sales partner inside Latimer.AI’s sales console. Latimer.AI sells AI software to colleges and universities (with a focus on HBCUs and access-minded institutions). You work side by side with JP ('+me+'), the founder and seller. Today is '+new Date().toDateString()+'.\n\n'
       +'You already know the pipeline from the account briefs below — never ask JP to paste email in; reason from what you have, and say plainly when something is not in your notes. Be concise, warm, and specific. Rank by importance, urgency, and who owes a reply. Give concrete next actions, not generic advice.\n\n'
+      +'If an account lists JP’S CORRECTIONS, they are ground truth: trust them over the brief, and if JP corrects you in this chat, accept it gracefully and use it for the rest of the conversation.\n\n'
       +'When JP asks you to draft or revise an email, write the whole thing and format it EXACTLY like this so the app can add send buttons:\n```email\nTo: <recipient email if you know it, otherwise leave blank>\nSubject: <subject line>\n\n<the email body>\n```\n'
       +'Keep drafts short, human, and tailored to that account’s real situation — something JP can send after one quick read. You may include a short line of context before or after a draft.\n\n'
       +'=== CURRENT PIPELINE (your briefs on file) ===\n'+ctxBlock();
@@ -1550,7 +1582,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'</div>';
   }
   function fmtBot(text){
-    drafts=[];var parts=[],re=/```email\s*([\s\S]*?)```/gi,last=0,m;
+    var parts=[],re=/```email\s*([\s\S]*?)```/gi,last=0,m;
     while((m=re.exec(text))){if(m.index>last)parts.push(md(text.slice(last,m.index)));parts.push(draftCard(m[1].trim()));last=re.lastIndex;}
     if(last<text.length)parts.push(md(text.slice(last)));
     return parts.join('');
@@ -1559,15 +1591,18 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(role==='user')return '<div class="hal-msg user">'+html+'</div>';
     return '<div class="hal-msg bot"><div class="who">Hal</div><div class="body">'+html+'</div></div>';
   }
+  var thinking=false;
+  function buildHtml(){
+    drafts=[]; // reset once per full paint so data-draft indices stay in sync across mounts
+    var h=hist.length
+      ? hist.map(function(t){return t.role==='user'?bubble('user',esc(t.content).replace(/\n/g,'<br>')):bubble('bot',fmtBot(t.content));}).join('')
+      : bubble('bot',md(greeting()));
+    if(thinking)h+='<div class="hal-think">Hal is thinking…</div>';
+    return h;
+  }
   function paint(){
-    var log=document.getElementById('hal-log');if(!log)return;
-    if(!hist.length){
-      log.innerHTML=bubble('bot',md(greeting()));
-    }else{
-      log.innerHTML=hist.map(function(t){return t.role==='user'?bubble('user',esc(t.content).replace(/\n/g,'<br>')):bubble('bot',fmtBot(t.content));}).join('');
-    }
-    wireDrafts(log);
-    log.scrollTop=log.scrollHeight;
+    var html=buildHtml();
+    ['hal-log','hal-pop-log'].forEach(function(id){var log=document.getElementById(id);if(log){log.innerHTML=html;wireDrafts(log);log.scrollTop=log.scrollHeight;}});
   }
   function wireDrafts(root){
     root.querySelectorAll('.hal-draft').forEach(function(el){
@@ -1607,17 +1642,16 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     q=(q||'').trim();if(!q||busy)return;
     if(!akey()){if(window.toast)window.toast('Add your Anthropic API key on the Lead Router tab first');setup();return;}
     busy=true;
-    hist.push({role:'user',content:q});saveHist();paint();
-    var log=document.getElementById('hal-log');
-    var think=document.createElement('div');think.className='hal-think';think.textContent='Hal is thinking…';if(log){log.appendChild(think);log.scrollTop=log.scrollHeight;}
+    hist.push({role:'user',content:q});saveHist();thinking=true;paint();
     try{
       var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});
       var reply=await halSend(msgs);
-      hist.push({role:'assistant',content:reply});saveHist();paint();
+      hist.push({role:'assistant',content:reply});
     }catch(e){
       var msg=String(e&&e.message).indexOf('NOKEY')>=0?'I need your Anthropic API key — add it on the Lead Router tab.':('Sorry — I hit an error: '+(e&&e.message?e.message:e));
-      hist.push({role:'assistant',content:msg});saveHist();paint();
+      hist.push({role:'assistant',content:msg});
     }
+    thinking=false;saveHist();paint();
     busy=false;
   }
   var CHIPS=['What should I focus on today?','Who owes a reply — and what do I say?','Draft follow-ups for my urgent accounts','Prep me for my next campus visit'];
@@ -1635,8 +1669,38 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     }
     if(btn&&!btn._wired){btn._wired=1;btn.onclick=function(){var v=q.value;q.value='';if(q)q.style.height='auto';send(v);};}
   };
+  /* ---- Pop-up "Ask Hal" launcher — same Hal, available on every tab ---- */
+  function buildPopup(){
+    if(document.getElementById('hal-pop'))return;
+    var fab=document.createElement('button');
+    fab.id='hal-fab';fab.className='hal-fab';fab.type='button';fab.title='Ask Hal';
+    fab.innerHTML='<span>Hal</span>';
+    document.body.appendChild(fab);
+    var w=document.createElement('div');w.id='hal-pop';w.className='hal-pop';w.hidden=true;
+    w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><button id="hal-pop-x" type="button" title="Close">×</button></div>'
+      +'<div id="hal-pop-log" class="hal-log hal-pop-log"></div>'
+      +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct Hal…"></textarea><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
+    document.body.appendChild(w);
+    fab.onclick=function(){toggle();};
+    w.querySelector('#hal-pop-x').onclick=function(){toggle(false);};
+    var pq=document.getElementById('hal-pop-q'),ps=document.getElementById('hal-pop-send');
+    pq.addEventListener('input',function(){pq.style.height='auto';pq.style.height=Math.min(pq.scrollHeight,140)+'px';});
+    pq.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();var v=pq.value;pq.value='';pq.style.height='auto';send(v);}});
+    ps.onclick=function(){var v=pq.value;pq.value='';pq.style.height='auto';send(v);};
+    document.addEventListener('keydown',function(e){if(e.key==='Escape'){var pp=document.getElementById('hal-pop');if(pp&&!pp.hidden)toggle(false);}});
+    document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){setTimeout(updateFab,0);});});
+    updateFab();
+  }
+  function halActive(){var p=document.getElementById('panel-hal');return !!(p&&p.classList.contains('active'));}
+  function updateFab(){var fab=document.getElementById('hal-fab');if(!fab)return;var on=halActive();fab.style.display=on?'none':'flex';if(on)toggle(false);}
+  function toggle(force){
+    var w=document.getElementById('hal-pop');if(!w)return;
+    var show=(force===undefined)?w.hidden:force;
+    w.hidden=!show;
+    if(show){loadHist();paint();setTimeout(function(){var q=document.getElementById('hal-pop-q');if(q)q.focus();},40);}
+  }
   // Render on first load (Hal is the default tab).
-  if(document.getElementById('hal-log'))window.renderHal();
+  if(document.getElementById('hal-log')){window.renderHal();buildPopup();}
 })();
 
 /* ===== Cloudflare D1 cloud sync (localStorage-first, graceful fallback) ===== */
