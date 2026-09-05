@@ -291,7 +291,7 @@
   <section class="panel active" id="panel-hal">
     <p class="lede">Hal is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
     <div class="hal-chat">
-      <div class="hal-tools"><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear">＋ New chat</button></div>
+      <div class="hal-tools"><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
@@ -1778,7 +1778,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     thinking=false;saveHist();paint();
     busy=false;
   }
-  function clearChat(){if(hist.length&&!confirm('Start a new chat? This clears the current Hal conversation. Your accounts, briefs and corrections are kept.'))return;hist=[];saveHist();paint();}
+  function clearChat(){hist=[];saveHist();try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}paint();}
   /* ---- Voice: talk to Hal + hear replies (Web Speech API, no external service) ---- */
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   var rec=null,listening=false,voiceInput=null;
@@ -1829,7 +1829,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     fab.innerHTML='<span>Hal</span>';
     document.body.appendChild(fab);
     var w=document.createElement('div');w.id='hal-pop';w.className='hal-pop';w.hidden=true;
-    w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><span class="hal-pop-actions"><button class="hal-speak" type="button" title="Read Hal’s replies aloud">🔊</button><button id="hal-pop-clear" type="button" title="Start a new chat">New chat</button><button id="hal-pop-x" type="button" title="Close">×</button></span></div>'
+    w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><span class="hal-pop-actions"><button class="hal-speak" type="button" title="Read Hal’s replies aloud">🔊</button><button id="hal-pop-clear" type="button" title="Clear this conversation">Clear</button><button id="hal-pop-x" type="button" title="Close">×</button></span></div>'
       +'<div id="hal-pop-log" class="hal-log hal-pop-log"></div>'
       +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct Hal… or tap 🎤"></textarea><button type="button" class="hal-mic" title="Talk to Hal">🎤</button><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
     document.body.appendChild(w);
