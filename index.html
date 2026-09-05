@@ -337,7 +337,8 @@
     <div class="acct-sum" id="acct-sum"></div>
     <div class="acct-bar">
       <button class="btn sm" id="acct-add">+ Add account</button>
-      <span style="font-size:12px;color:var(--faint)">Adjust stage, cadence, and next step inline · click <b>Log touch</b> when you reach out</span>
+      <button class="btn sm" id="acct-sync">↻ Refresh from Gmail</button>
+      <span id="acct-syncnote" style="font-size:12px;color:var(--faint)">Refresh pulls last-touch &amp; who-owes-a-reply from your Gmail (dates &amp; senders only, no message text). Connect Google on the Follow-ups tab first.</span>
     </div>
     <div id="acct-list"></div>
   </section>
@@ -1232,7 +1233,34 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function uid(){return 'a_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
   function loadRaw(){try{var v=localStorage.getItem(KEY);if(v){var a=JSON.parse(v);if(Array.isArray(a))return a;}}catch(e){}return null;}
   function save(){try{localStorage.setItem(KEY,JSON.stringify(accts));}catch(e){}}
-  function ensure(){var a=loadRaw();if(a&&a.length){accts=a;}else{accts=SEED.map(function(s){return Object.assign({id:uid(),lastTouch:'',nextStep:'',createdAt:new Date().toISOString()},s);});save();}}
+  var DOMAINS={
+    'Southern New Hampshire University (SNHU)':['snhu.edu'],
+    'Student Freedom Initiative':['studentfreedominitiative.org'],
+    'Tennessee State University':['tnstate.edu'],
+    'Atlanta University Consortium — Data Analytics Initiative':['aucenter.edu'],
+    'Howard University Law — AI Initiative':['howard.edu'],
+    'UNC Greensboro':['uncg.edu'],
+    'California Community Colleges — Foothill College':['foothill.edu','fhda.edu'],
+    'Arizona State University':['asu.edu'],
+    'Miles College (AL)':['miles.edu'],
+    'North Carolina A&T':['ncat.edu'],
+    'LaGuardia College, CUNY':['lagcc.cuny.edu','cuny.edu'],
+    'North Carolina Central University (NCCU)':['nccu.edu'],
+    'Hampton University':['hamptonu.edu'],
+    'Rutgers University':['rutgers.edu'],
+    'Huston-Tillotson University':['htu.edu'],
+    'Claflin University':['claflin.edu'],
+    'Patten University':['patten.edu'],
+    'Spelman College':['spelman.edu']
+  };
+  function ensure(){
+    var a=loadRaw();
+    if(a&&a.length)accts=a;
+    else accts=SEED.map(function(s){return Object.assign({id:uid(),lastTouch:'',nextStep:'',replyOwed:'',domains:[],createdAt:new Date().toISOString()},s);});
+    var ch=false;
+    accts.forEach(function(x){if(!Array.isArray(x.domains)||!x.domains.length){var d=DOMAINS[x.name];x.domains=d?d.slice():(x.domains||[]);ch=true;}if(x.replyOwed===undefined){x.replyOwed='';ch=true;}});
+    if(!a||!a.length||ch)save();
+  }
   function daysSince(d){if(!d)return null;var t=new Date(d);if(isNaN(t))return null;return Math.floor((Date.now()-t)/86400000);}
   function fmt(d){if(!d)return '—';var t=new Date(d);if(isNaN(t))return d;return t.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'2-digit'});}
   function today(){return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);}
@@ -1240,13 +1268,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function tierW(t){return t==='flagship'?100:t==='high'?60:30;}
   function stageW(s){return s==='trial'?40:s==='prospect'?25:s==='partner'?18:12;}
   function overdue(a){var d=daysSince(a.lastTouch);if(d==null)return null;return d-(+a.cadence||14);}
-  function score(a){var s=tierW(a.tier)+stageW(a.stage);if(a.urgent)s+=50;var o=overdue(a);if(o==null)s+=25;else if(o>0)s+=Math.min(o,30)*3;return s;}
+  function score(a){var s=tierW(a.tier)+stageW(a.stage);if(a.urgent)s+=50;if(a.replyOwed==='you')s+=40;var o=overdue(a);if(o==null)s+=25;else if(o>0)s+=Math.min(o,30)*3;return s;}
   function stageLabel(s){return STAGE[s]||s;}
   function cardSum(n,l){return '<div class="c"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>';}
   function card(a,rank){
     var o=overdue(a);
     var touch=(!a.lastTouch)?'<b>no contact logged yet</b>':(o>0?'<b>overdue '+o+'d</b> — last touch '+fmt(a.lastTouch):'on track — last touch '+fmt(a.lastTouch));
-    var whyline=stageLabel(a.stage)+' · target every '+(+a.cadence||14)+'d · '+touch;
+    var reply=a.replyOwed==='you'?' · <b>you owe a reply</b>':(a.replyOwed==='them'?' · awaiting their reply':'');
+    var whyline=stageLabel(a.stage)+' · target every '+(+a.cadence||14)+'d · '+touch+reply;
     var flag=a.urgent?'<span class="flag">Don’t drop</span>':'';
     var ns=a.nextStep?('<div class="note"><b style="color:var(--ink)">Next:</b> '+esc(a.nextStep)+'</div>'):'';
     function opt(v,cur,lbl){return '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+lbl+'</option>';}
@@ -1258,7 +1287,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'<div class="ctl">'
       +'<select data-f="stage">'+opt('paying',a.stage,'Paying')+opt('trial',a.stage,'Trial')+opt('prospect',a.stage,'Prospect')+opt('partner',a.stage,'Partner')+'</select>'
       +'<select data-f="tier">'+opt('flagship',a.tier,'Flagship')+opt('high',a.tier,'High')+opt('standard',a.tier,'Standard')+'</select>'
-      +'<input data-f="cadence" type="number" min="1" style="width:62px" value="'+(+a.cadence||14)+'" title="Follow-up cadence (days)">'
+      +'<input data-f="cadence" type="number" min="1" style="width:56px" value="'+(+a.cadence||14)+'" title="Follow-up cadence (days)">'
+      +'<input data-f="domainsStr" style="width:150px" value="'+esc((a.domains||[]).join(', '))+'" title="Email domains (comma-separated) — used to match Gmail">'
       +'<input class="ns" data-f="nextStep" placeholder="Next step…" value="'+esc(a.nextStep||'')+'">'
       +'<button class="btn sm" data-act="touch">Log touch</button>'
       +'<button class="del" data-act="del" title="Remove">×</button>'
@@ -1275,11 +1305,37 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     host.innerHTML=sorted.length?sorted.map(function(a,i){return card(a,i+1);}).join(''):'<div class="empty"><div class="big">No accounts yet</div><div>Add your key institutions to start the funnel.</div></div>';
     host.querySelectorAll('.acct').forEach(function(el){
       var id=el.getAttribute('data-id');var a=accts.find(function(x){return x.id===id;});if(!a)return;
-      el.querySelectorAll('[data-f]').forEach(function(inp){inp.onchange=function(){var f=inp.getAttribute('data-f');a[f]=(f==='cadence')?(+inp.value||14):inp.value;save();if(f==='stage'||f==='cadence')window.renderAccounts();};});
+      el.querySelectorAll('[data-f]').forEach(function(inp){inp.onchange=function(){var f=inp.getAttribute('data-f');if(f==='cadence')a.cadence=(+inp.value||14);else if(f==='domainsStr')a.domains=inp.value.split(',').map(function(s){return s.trim();}).filter(Boolean);else a[f]=inp.value;save();if(f==='stage'||f==='cadence')window.renderAccounts();};});
       var t=el.querySelector('[data-act="touch"]');if(t)t.onclick=function(){a.lastTouch=today();save();window.renderAccounts();if(window.toast)window.toast('Logged a touch with '+a.name);};
       var d=el.querySelector('[data-act="del"]');if(d)d.onclick=function(){if(!confirm('Remove '+a.name+' from the funnel?'))return;accts=accts.filter(function(x){return x.id!==id;});save();window.renderAccounts();};
     });
   };
+  // Pull last-touch + who-owes-a-reply from Gmail metadata (dates + sender only; no bodies).
+  async function refreshOne(a){
+    if(!a.domains||!a.domains.length)return false;
+    var terms=a.domains.map(function(d){return 'from:'+d+' OR to:'+d;}).join(' OR ');
+    var q='newer_than:1y ('+terms+')';
+    var list=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q='+encodeURIComponent(q));
+    if(!list.messages||!list.messages.length)return false;
+    var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+list.messages[0].id+'?format=metadata&metadataHeaders=From');
+    var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
+    var when=full.internalDate?new Date(+full.internalDate):null;
+    if(when&&!isNaN(when))a.lastTouch=when.toISOString().slice(0,10);
+    var me=(window.gMyEmail&&window.gMyEmail())||'';
+    var fromMe=!!(me&&(H.from||'').toLowerCase().indexOf(me)>=0);
+    a.replyOwed=fromMe?'them':'you';
+    return true;
+  }
+  async function syncGmail(){
+    var note=document.getElementById('acct-syncnote');
+    if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(note)note.textContent='Sign in on the Follow-ups tab, then Refresh again.';if(window.toast)window.toast('Connect Google on the Follow-ups tab, then Refresh again');return;}
+    ensure();var matched=0;
+    for(var i=0;i<accts.length;i++){if(note)note.textContent='Checking Gmail '+(i+1)+'/'+accts.length+'…';try{if(await refreshOne(accts[i]))matched++;}catch(e){}}
+    save();window.renderAccounts();
+    var n2=document.getElementById('acct-syncnote');if(n2)n2.textContent='Updated from Gmail · '+matched+' of '+accts.length+' had recent threads';
+  }
+  var syncBtn=document.getElementById('acct-sync');
+  if(syncBtn)syncBtn.onclick=syncGmail;
   var addBtn=document.getElementById('acct-add');
   if(addBtn)addBtn.onclick=function(){var nm=prompt('Institution / account name:');if(!nm||!nm.trim())return;accts.push({id:uid(),name:nm.trim(),stage:'prospect',tier:'standard',cadence:14,urgent:false,note:'',nextStep:'',lastTouch:'',createdAt:new Date().toISOString()});save();window.renderAccounts();};
 })();
@@ -1332,6 +1388,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function connect(silent){silentMode=!!silent;if(ensureClient()){if(!silent)status('Opening Google sign-in…');try{tokenClient.requestAccessToken(silent?{prompt:''}:{});}catch(e){if(!silent)status('Could not start sign-in.');}}}
   if($('fu-connect'))$('fu-connect').onclick=function(){connect(false);};
   function authFetch(url){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){if(!r.ok){return r.text().then(function(t){throw new Error(r.status+': '+t.replace(/\s+/g,' ').slice(0,300));});}return r.json();});}
+  /* Shared Google/Gmail access for other tabs (e.g. Accounts). Reuses this one session. */
+  window.gConnected=function(){return !!token;};
+  window.gMyEmail=function(){return myEmail;};
+  window.gAuthFetch=function(url){return authFetch(url);};
+  window.gConnect=function(){try{connect(false);}catch(e){}};
   /* ----- Read actual reply bodies from Gmail (read-only scope already granted) ----- */
   function b64urlDecode(data){
     if(!data)return '';
