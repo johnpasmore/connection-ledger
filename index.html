@@ -176,6 +176,12 @@
   .hal-pop[hidden]{display:none}
   .hal-pop-head{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid var(--line);font-weight:700;font-size:14px}
   .hal-pop-head button{border:none;background:none;font-size:22px;line-height:1;color:var(--ink-soft);cursor:pointer;padding:0 2px}
+  .hal-pop-actions{display:flex;align-items:center;gap:10px}
+  .hal-pop-actions #hal-pop-clear{font-size:12px;font-weight:600;color:var(--ink-soft)}
+  .hal-pop-actions #hal-pop-clear:hover{color:var(--accent)}
+  .hal-tools{display:flex;justify-content:flex-end;margin-bottom:2px}
+  .hal-clear{border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);border-radius:16px;padding:4px 12px;font-size:12px;font-family:var(--sans);cursor:pointer}
+  .hal-clear:hover{border-color:var(--accent);color:var(--accent)}
   .hal-pop-log{flex:1;min-height:0;overflow-y:auto;padding:14px 15px}
   .hal-pop-log .hal-msg{max-width:100%}
   .hal-pop-bar{display:flex;gap:8px;align-items:flex-end;padding:11px 13px;border-top:1px solid var(--line)}
@@ -249,6 +255,7 @@
   <section class="panel active" id="panel-hal">
     <p class="lede">Hal is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
     <div class="hal-chat">
+      <div class="hal-tools"><button type="button" id="hal-clear" class="hal-clear">＋ New chat</button></div>
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
@@ -316,7 +323,7 @@
       <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal engine — which model powers Hal (briefs + chat)</label>
         <select id="lr-halprovider" style="font-family:var(--sans);font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink)">
           <option value="anthropic">Claude (Anthropic key above)</option>
-          <option value="latimer">Latimer (uses Gemini)</option>
+          <option value="latimer">Latimer (GPT models)</option>
         </select></div>
       <div class="f" id="lr-latimerwrap" style="display:none"><label class="fld">Latimer API key</label><input id="lr-latimerkey" type="password" placeholder="Bearer token — LATIMER_API_KEY"></div>
       <div class="f" id="lr-latimermodelwrap" style="display:none"><label class="fld">Latimer model</label>
@@ -1722,6 +1729,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     thinking=false;saveHist();paint();
     busy=false;
   }
+  function clearChat(){if(hist.length&&!confirm('Start a new chat? This clears the current Hal conversation. Your accounts, briefs and corrections are kept.'))return;hist=[];saveHist();paint();}
   var CHIPS=['What should I focus on today?','Who owes a reply — and what do I say?','Draft follow-ups for my urgent accounts','Prep me for my next campus visit'];
   function paintChips(){
     var c=document.getElementById('hal-chips');if(!c)return;
@@ -1736,6 +1744,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       q.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();var v=q.value;q.value='';q.style.height='auto';send(v);}});
     }
     if(btn&&!btn._wired){btn._wired=1;btn.onclick=function(){var v=q.value;q.value='';if(q)q.style.height='auto';send(v);};}
+    var cc=document.getElementById('hal-clear');if(cc&&!cc._wired){cc._wired=1;cc.onclick=clearChat;}
   };
   /* ---- Pop-up "Ask Hal" launcher — same Hal, available on every tab ---- */
   function buildPopup(){
@@ -1745,12 +1754,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     fab.innerHTML='<span>Hal</span>';
     document.body.appendChild(fab);
     var w=document.createElement('div');w.id='hal-pop';w.className='hal-pop';w.hidden=true;
-    w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><button id="hal-pop-x" type="button" title="Close">×</button></div>'
+    w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><span class="hal-pop-actions"><button id="hal-pop-clear" type="button" title="Start a new chat">New chat</button><button id="hal-pop-x" type="button" title="Close">×</button></span></div>'
       +'<div id="hal-pop-log" class="hal-log hal-pop-log"></div>'
       +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct Hal…"></textarea><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
     document.body.appendChild(w);
     fab.onclick=function(){toggle();};
     w.querySelector('#hal-pop-x').onclick=function(){toggle(false);};
+    var pc=w.querySelector('#hal-pop-clear');if(pc)pc.onclick=clearChat;
     var pq=document.getElementById('hal-pop-q'),ps=document.getElementById('hal-pop-send');
     pq.addEventListener('input',function(){pq.style.height='auto';pq.style.height=Math.min(pq.scrollHeight,140)+'px';});
     pq.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();var v=pq.value;pq.value='';pq.style.height='auto';send(v);}});
