@@ -402,6 +402,7 @@
       <div class="f"><label class="fld">ElevenLabs voice ID</label><input id="lr-elvoice" placeholder="voice id"></div>
       <div class="f" style="flex-basis:100%"><button type="button" class="btn sm" id="lr-eltest">🔊 Test voice</button> <span id="lr-elteststatus" style="font-size:12.5px;color:var(--ink-soft);margin-left:8px"></span></div>
       <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal’s context — company facts Hal always knows (used in chat, briefs &amp; recaps)</label><textarea id="lr-company" rows="4" style="width:100%;box-sizing:border-box;font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;resize:vertical"></textarea></div>
+      <div class="f" style="flex-basis:100%"><label class="fld">Off-limits — Hal always refuses these &amp; excludes them from email lookups (domains, emails, or keywords, comma/newline separated)</label><textarea id="lr-offlimits" rows="2" placeholder="e.g. myinvestor.com, family, mychildname, drsmith@…, personal" style="width:100%;box-sizing:border-box;font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;resize:vertical"></textarea><div class="note" style="margin-top:4px">Personal life, family, medical, investors, and vendors are always off-limits regardless of this list. Add specific domains/addresses here to be sure.</div></div>
       <div class="f" style="flex-basis:100%"><label class="fld">Salesforce logging address (Email-to-Salesforce)</label><input id="lr-sfaddr" placeholder="emailtosalesforce@…"></div>
       <button class="btn sm primary" id="lr-savekey">Save settings</button>
       <div class="note">Stored only in this browser, never embedded in the page. Keys go straight to their provider (Anthropic or Latimer). Switching Hal’s engine keeps everything Hal remembers — briefs, corrections, chat. The Salesforce address is the To: line when you log an activity.</div>
@@ -1162,6 +1163,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   g('lr-elkey').value=lsGet(ELKEY,'');
   g('lr-elvoice').value=lsGet(ELVOICE,'6LeBM17xbqEhidO33ymI');
   g('lr-company').value=lsGet('hal:company',(window.halCompanyDefault||''));
+  g('lr-offlimits').value=lsGet('hal:offlimits','');
   function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';}
   g('lr-eltest').onclick=function(){
     var st=g('lr-elteststatus');st.textContent='Checking voice…';st.style.color='var(--ink-soft)';
@@ -1195,6 +1197,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     lsSet(ELKEY,g('lr-elkey').value.trim());
     lsSet(ELVOICE,g('lr-elvoice').value.trim());
     lsSet('hal:company',g('lr-company').value.trim());
+    lsSet('hal:offlimits',g('lr-offlimits').value.trim());
     if(window.halRefreshVoices)window.halRefreshVoices();
     toast('Settings saved in this browser');refreshConn();
   };
@@ -1443,6 +1446,18 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var COMPANY_DEFAULT="You work for Latimer.AI and always operate from JP's sales perspective — every conversation is about selling and expanding Latimer.AI. Latimer.AI sells AI software to colleges and universities, with a focus on HBCUs and access-minded institutions. Typical deal motion: an institution starts on a trial, and the goal is to convert that trial into a PAID account priced at $3 per student per month. Keep guidance practical, specific, and oriented toward moving each account toward that paid conversion.";
   window.halCompanyDefault=COMPANY_DEFAULT;
   window.halCompanyContext=function(){try{var v=localStorage.getItem('hal:company');return (v&&v.trim())?v.trim():COMPANY_DEFAULT;}catch(e){return COMPANY_DEFAULT;}};
+  // Off-limits list (domains/emails/keywords) JP maintains; used both to filter
+  // Gmail lookups and to name hard boundaries in the guardrails.
+  window.halOffLimits=function(){try{return (localStorage.getItem('hal:offlimits')||'').split(/[\n,]/).map(function(s){return s.trim();}).filter(Boolean);}catch(e){return [];}};
+  // Always-on scope/privacy guardrails, appended to every Hal prompt.
+  window.halGuardrails=function(){
+    var ol=window.halOffLimits();
+    return '\n\n=== SCOPE & PRIVACY GUARDRAILS (always follow, no exceptions) ===\n'
+      +'You are strictly a SALES assistant. You may discuss tracked accounts, sales prospects, and business/work contacts JP has corresponded with. '
+      +'You must NOT discuss, summarize, quote, or surface anything about JP’s personal life, family, health or medical matters, investors, or vendors — even if such email appears in your context, ignore it. '
+      +'If asked about any of those, briefly decline ("That’s outside what I cover — I focus on sales accounts and contacts") and offer to help with the pipeline instead. Do not confirm or deny specifics about those topics.'
+      +(ol.length?('\n Additional hard off-limits (never discuss or reveal; treat any matching sender/domain/keyword as private): '+ol.join(', ')+'.'):'');
+  };
   window.halProvider=function(){return provider();};
   window.halConfigured=function(){return provider()==='latimer'?!!latimerKey():!!anthroKey();};
   window.halEngineLabel=function(){return provider()==='latimer'?('Latimer · '+latimerModel()):('Claude · '+anthroModel());};
@@ -1640,7 +1655,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!force&&a.brief&&a.brief.lastMsgId&&a.brief.lastMsgId===res.latestId)return {cached:true};
     var me=(window.gMyEmail&&window.gMyEmail())||'JP';
     var convo=res.messages.map(function(m){var who=m.fromMe?'ME':(m.from||'them');return '['+(m.dateISO||'').slice(0,10)+'] '+who+' — '+m.subject+'\n'+(m.body||'').slice(0,1500);}).join('\n\n---\n\n');
-    var system='You are Hal, an AI sales partner for Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' You read the recent email thread with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts that are not in the thread.';
+    var system='You are Hal, an AI sales partner for Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' You read the recent email thread with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts that are not in the thread.'+(window.halGuardrails?window.halGuardrails():'');
     var corr=(a.corrections&&a.corrections.length)?('\n\nGROUND TRUTH from JP — trust these over anything the email implies, and reflect them in your brief:\n- '+a.corrections.map(function(c){return c.text;}).join('\n- ')):'';
     var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+corr+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
     var txt=(await halComplete(system,user,800)).replace(/```json|```/g,'').trim();
@@ -1771,7 +1786,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'If an account lists JP’S CORRECTIONS, they are ground truth: trust them over the brief, and if JP corrects you in this chat, accept it gracefully and use it for the rest of the conversation.\n\n'
       +'When JP asks you to draft or revise an email, write the whole thing and format it EXACTLY like this so the app can add send buttons:\n```email\nTo: <recipient email if you know it, otherwise leave blank>\nSubject: <subject line>\n\n<the email body>\n```\n'
       +'Keep drafts short, human, and tailored to that account’s real situation — something JP can send after one quick read. You may include a short line of context before or after a draft.\n\n'
-      +'=== CURRENT PIPELINE (your briefs on file) ===\n'+ctxBlock();
+      +'=== CURRENT PIPELINE (your briefs on file) ===\n'+ctxBlock()
+      +(window.halGuardrails?window.halGuardrails():'');
   }
   /* ---- routes through the shared, swappable engine (Claude ⇄ Latimer/Gemini) ---- */
   async function halSend(messages){
@@ -1887,12 +1903,17 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   /* ---- Ask about ANY org/person in your email (not just tracked accounts) ---- */
   // Gather recent Gmail about a free-text term → formatted string (or '' if none).
+  function offLimitsExclusions(){ // Gmail exclusions so off-limits senders/keywords never enter a lookup
+    var ol=(window.halOffLimits&&window.halOffLimits())||[];
+    return ol.map(function(e){return /@|\./.test(e)?('-from:'+e.replace(/^@/,'')+' -to:'+e.replace(/^@/,'')):('-"'+e+'"');}).join(' ');
+  }
   async function lookupEmail(term){
     term=(term||'').trim();if(!term)return '';
     if(!(window.gConnected&&window.gConnected()))return '';
+    var ex=offLimitsExclusions();ex=ex?(' '+ex):'';
     var ids=[];
-    try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:2y ("'+term+'")'));ids=(l1&&l1.messages)||[];}catch(e){}
-    if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:3y ('+term+')'));ids=(l2&&l2.messages)||[];}catch(e){}}
+    try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:2y ("'+term+'")'+ex));ids=(l1&&l1.messages)||[];}catch(e){}
+    if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:3y ('+term+')'+ex));ids=(l2&&l2.messages)||[];}catch(e){}}
     var msgs=[];
     for(var j=0;j<ids.length&&j<8;j++){
       try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date');
@@ -1927,7 +1948,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var A=loadAccts(),names=A.map(function(a){return a.name;});
     var ent='';
     try{
-      var cls=await window.halLLM('Decide if this message is asking about a SPECIFIC external organization or person that JP would look up in email. These are already-tracked accounts — do NOT return any of them: '+names.join('; ')+'. Respond ONLY with JSON: {"entity":"<name to search, or empty string if none / general question / a tracked account>"}.',[{role:'user',content:q}],60);
+      var cls=await window.halLLM('Decide if this message is asking about a SPECIFIC external SALES organization or business contact that JP would look up in email. These are already-tracked accounts — do NOT return any of them: '+names.join('; ')+'. Also return empty for anything personal, family, medical/health, investors, or vendors. Respond ONLY with JSON: {"entity":"<sales org/contact name to search, or empty string>"}.',[{role:'user',content:q}],60);
       ent=(JSON.parse(String(cls).replace(/```json|```/g,'').trim()).entity||'').trim();
     }catch(e){}
     if(!ent)return '';
@@ -2274,7 +2295,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var data=await gather(status);
       if(!data.length){status('No prospect email activity found in '+periodLabel()+'.');return;}
       status('Hal is writing the recap…');
-      var sys='You are Hal, sales partner at Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering '+periodLabel()+'. Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: for each account with activity, a couple of tight bullet lines on what happened and where it stands.\nSection 2: list ONLY threads whose messages are tagged {scott}, grouped by account. IF AND ONLY IF there are zero such threads, write exactly this one line and nothing else in the section: "No threads involved Scott in this period." If you list any threads, do NOT include that sentence.\nSection 3: same rule for threads tagged {barika}, using "No threads involved Barika in this period." only when there are none.\nNever both list threads and say there were none. Keep sections 2 and 3 self-contained so JP can copy each to that person. Do not invent anything not in the data.';
+      var sys='You are Hal, sales partner at Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering '+periodLabel()+'. Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: for each account with activity, a couple of tight bullet lines on what happened and where it stands.\nSection 2: list ONLY threads whose messages are tagged {scott}, grouped by account. IF AND ONLY IF there are zero such threads, write exactly this one line and nothing else in the section: "No threads involved Scott in this period." If you list any threads, do NOT include that sentence.\nSection 3: same rule for threads tagged {barika}, using "No threads involved Barika in this period." only when there are none.\nNever both list threads and say there were none. Keep sections 2 and 3 self-contained so JP can copy each to that person. Do not invent anything not in the data.'+(window.halGuardrails?window.halGuardrails():'');
       var user='Here is the email activity with prospect accounts over '+periodLabel()+' (metadata + snippets; {scott}/{barika} mark who was on the thread):\n\n'+fmtData(data);
       var body=await window.halLLM(sys,[{role:'user',content:user}],3000);
       lastBody=body;lastSubject='Latimer prospect recap — '+periodLabel();
