@@ -318,7 +318,7 @@
   <section class="panel active" id="panel-hal">
     <p class="lede">Hal is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
     <div class="hal-chat">
-      <div class="hal-tools"><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
+      <div class="hal-tools"><button type="button" id="hal-lookup" class="hal-clear" title="Ask Hal about any org or person in your email">🔎 Look up</button><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
@@ -1868,6 +1868,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function send(q){
     q=(q||'').trim();if(!q||busy)return;
     if(!akey()){if(window.toast)window.toast(keyMsg());setup();return;}
+    var lu=q.match(/^(?:look up|what do we have on|what'?s the latest on)\s+(.+)/i);
+    if(lu){return halLookup(lu[1].replace(/[?.!]+$/,'').trim());}
     busy=true;
     hist.push({role:'user',content:q});saveHist();thinking=true;paint();
     try{
@@ -1882,6 +1884,37 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     thinking=false;saveHist();paint();
     busy=false;
   }
+  /* ---- Ask about ANY org/person in your email (not just tracked accounts) ---- */
+  async function halLookup(term){
+    term=(term||'').trim();if(!term||busy)return;
+    if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(window.toast)window.toast('Connect Google on the Follow-ups tab first');return;}
+    if(!akey()){if(window.toast)window.toast(keyMsg());return;}
+    busy=true;
+    hist.push({role:'user',content:'Look up: '+term});saveHist();thinking=true;paint();
+    try{
+      var ids=[];
+      try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:2y ("'+term+'")'));ids=(l1&&l1.messages)||[];}catch(e){}
+      if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:3y ('+term+')'));ids=(l2&&l2.messages)||[];}catch(e){}}
+      var msgs=[];
+      for(var j=0;j<ids.length&&j<8;j++){
+        try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date');
+          var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
+          var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
+          msgs.push({date:(when&&!isNaN(when))?when.toISOString().slice(0,10):'',from:H.from||'',subject:H.subject||'',snippet:(full.snippet||'').slice(0,240)});
+        }catch(e){}
+      }
+      var reply;
+      if(!msgs.length){reply='I don’t see recent email mentioning “'+term+'” in your inbox. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
+      else{
+        var data=msgs.map(function(m){return '['+m.date+'] '+m.from+' — '+m.subject+'\n  '+m.snippet;}).join('\n');
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. Using only the email below, give a short brief: what it is / who is involved, where any relationship stands, and the single best next move. If the email is thin or ambiguous, say so plainly. Keep it tight and sendable.';
+        reply=await window.halLLM(sysL,[{role:'user',content:'Recent email mentioning “'+term+'”:\n\n'+data}],1100);
+      }
+      hist.push({role:'assistant',content:reply});speak(reply);
+    }catch(e){hist.push({role:'assistant',content:'Sorry — the lookup failed: '+(e&&e.message?e.message:e)});}
+    thinking=false;saveHist();paint();busy=false;
+  }
+  window.halLookup=halLookup;
   function clearChat(){hist=[];saveHist();try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}paint();}
   /* ---- Voice: talk to Hal + hear replies (Web Speech API, no external service) ---- */
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -2136,6 +2169,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     }
     if(btn&&!btn._wired){btn._wired=1;btn.onclick=function(){var v=q.value;q.value='';if(q)q.style.height='auto';send(v);};}
     var cc=document.getElementById('hal-clear');if(cc&&!cc._wired){cc._wired=1;cc.onclick=clearChat;}
+    var lu=document.getElementById('hal-lookup');if(lu&&!lu._wired){lu._wired=1;lu.onclick=function(){var t=prompt('Ask Hal about any org or person in your email (searches Gmail):');if(t&&t.trim())halLookup(t.trim());};}
     wireVoice(document.getElementById('panel-hal'));
   };
   /* ---- Pop-up "Ask Hal" launcher — same Hal, available on every tab ---- */
