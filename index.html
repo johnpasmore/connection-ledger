@@ -26,10 +26,21 @@
   .brand{display:flex;align-items:flex-start;gap:16px;margin-bottom:4px}
   .brand .eyebrow{display:inline-block;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.16em;color:var(--accent);font-weight:600;border:1px solid var(--accent);border-radius:5px;padding:5px 9px;margin-bottom:12px}
   h1{font-family:var(--sans);font-weight:800;font-size:33px;letter-spacing:-.025em;line-height:1.02;color:var(--ink)}
-  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:18px 0 26px}
-  .tab{font-family:inherit;font-size:14px;font-weight:600;color:var(--ink-soft);background:none;border:none;padding:11px 16px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s}
-  .tab:hover{color:var(--ink)}
-  .tab.active{color:var(--ink);border-bottom-color:var(--accent)}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:18px 0 26px}
+  .navgroup{position:relative}
+  .navtop{font-family:inherit;font-size:14px;font-weight:600;color:var(--ink-soft);background:none;border:none;padding:11px 16px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s;display:flex;align-items:center;gap:5px}
+  .navtop:hover{color:var(--ink)}
+  .navtop.active{color:var(--ink);border-bottom-color:var(--accent)}
+  .navtop .caret{font-size:9px;color:var(--faint);transition:transform .15s}
+  .navgroup:hover .navtop .caret{transform:rotate(180deg)}
+  .navmenu{position:absolute;top:100%;left:0;min-width:190px;background:var(--surface);border:1px solid var(--line);border-radius:9px;box-shadow:0 12px 34px rgba(0,0,0,.14);padding:6px;z-index:200;display:none;flex-direction:column;gap:2px}
+  .navgroup:hover .navmenu{display:flex}
+  .navmenu.open{display:flex}
+  .navitem{font-family:inherit;font-size:13.5px;font-weight:500;color:var(--ink-soft);background:none;border:none;text-align:left;padding:8px 11px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap}
+  .navitem:hover{background:var(--paper);color:var(--ink)}
+  .navitem.active{color:var(--accent);font-weight:700}
+  .navbadge{background:#d61f34;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;font-weight:600}
+  @media (max-width:640px){.tabs{flex-wrap:wrap}.navmenu{position:static;box-shadow:none;border:none;padding:0 0 4px 14px;min-width:0}.navgroup:hover .navmenu{display:none}.navmenu.open{display:flex}}
   .panel{display:none} .panel.active{display:block;animation:fade .3s ease}
   @keyframes fade{from{opacity:0}to{opacity:1}}
   .lede{color:var(--ink-soft);font-size:13.5px;margin-bottom:6px;max-width:640px}
@@ -240,16 +251,33 @@
       <button class="btn ghost" id="cloudLoadBtn" style="font-size:12px;padding:5px 10px">⤓ Load from cloud</button>
     </div>
   </div>
-  <div class="tabs">
-    <button class="tab active" data-tab="hal">Hal</button>
-    <button class="tab" data-tab="ledger">Connection Ledger</button>
-    <button class="tab" data-tab="router">Lead Router</button>
-    <button class="tab" data-tab="followup">Follow-ups <span id="fu-badge" style="display:none;background:#d61f34;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
-    <button class="tab" data-tab="priority">★ Priority <span id="pr-badge" style="display:none;background:#d61f34;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
-    <button class="tab" data-tab="dashboard">Dashboard</button>
-    <button class="tab" data-tab="decks">Decks</button>
-    <button class="tab" data-tab="accounts">Accounts</button>
-  </div>
+  <nav class="tabs">
+    <div class="navgroup">
+      <button class="navtop active" data-tab="hal">Hal <span class="caret">▾</span></button>
+      <div class="navmenu">
+        <button class="navitem" data-tab="hal">Chat with Hal</button>
+        <button class="navitem" data-tab="accounts">Accounts</button>
+      </div>
+    </div>
+    <div class="navgroup">
+      <button class="navtop" data-tab="ledger">Connections <span class="caret">▾</span></button>
+      <div class="navmenu">
+        <button class="navitem" data-tab="ledger">Connection Ledger</button>
+        <button class="navitem" data-tab="decks">Decks</button>
+      </div>
+    </div>
+    <div class="navgroup">
+      <button class="navtop" data-tab="router">Conversations <span class="caret">▾</span></button>
+      <div class="navmenu">
+        <button class="navitem" data-tab="router">Lead Router</button>
+        <button class="navitem" data-tab="followup">Follow-ups <span id="fu-badge" class="navbadge" style="display:none"></span></button>
+        <button class="navitem" data-tab="priority">Priority <span id="pr-badge" class="navbadge" style="display:none"></span></button>
+      </div>
+    </div>
+    <div class="navgroup">
+      <button class="navtop" data-tab="dashboard">Analytics</button>
+    </div>
+  </nav>
 
   <!-- ============ HAL TAB ============ -->
   <section class="panel active" id="panel-hal">
@@ -578,17 +606,28 @@ function composeUrl(to,subject,body){
 function openCompose(to,subject,body){var url=composeUrl(to,subject,body);if(url.indexOf('mailto:')===0){window.location.href=url;return;}window.open(url,'_blank','noopener');}
 window.openCompose=openCompose;window.composeUrl=composeUrl;window.mailApp=mailApp;
 /* tabs */
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+function activateTab(tab){
   document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  document.getElementById('panel-'+b.dataset.tab).classList.add('active');
-  if(b.dataset.tab==='priority'&&window.renderPriority)window.renderPriority();
-  if(b.dataset.tab==='dashboard'&&window.renderDashboard)window.renderDashboard();
-  if(b.dataset.tab==='decks'&&window.renderDecks)window.renderDecks();
-  if(b.dataset.tab==='accounts'&&window.renderAccounts)window.renderAccounts();
-  if(b.dataset.tab==='hal'&&window.renderHal)window.renderHal();
-});
+  var panel=document.getElementById('panel-'+tab);if(panel)panel.classList.add('active');
+  document.querySelectorAll('.navtop,.navitem').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.navgroup').forEach(function(g){
+    if(g.querySelector('[data-tab="'+tab+'"]')){var top=g.querySelector('.navtop');if(top)top.classList.add('active');var it=g.querySelector('.navitem[data-tab="'+tab+'"]');if(it)it.classList.add('active');}
+  });
+  if(tab==='priority'&&window.renderPriority)window.renderPriority();
+  if(tab==='dashboard'&&window.renderDashboard)window.renderDashboard();
+  if(tab==='decks'&&window.renderDecks)window.renderDecks();
+  if(tab==='accounts'&&window.renderAccounts)window.renderAccounts();
+  if(tab==='hal'&&window.renderHal)window.renderHal();
+  if(window.halSyncFab)window.halSyncFab();
+}
+window.activateTab=activateTab;
+function closeMenus(except){document.querySelectorAll('.navmenu.open').forEach(function(m){if(m!==except)m.classList.remove('open');});}
+document.querySelectorAll('.navitem').forEach(function(b){b.addEventListener('click',function(){activateTab(b.dataset.tab);closeMenus();b.blur();});});
+document.querySelectorAll('.navtop').forEach(function(b){b.addEventListener('click',function(){
+  activateTab(b.dataset.tab);
+  var menu=b.parentNode.querySelector('.navmenu');closeMenus(menu);if(menu)menu.classList.toggle('open');
+});});
+document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))closeMenus();});
 
 /* =================== CONNECTION LEDGER =================== */
 (function(){
@@ -1771,6 +1810,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function halActive(){var p=document.getElementById('panel-hal');return !!(p&&p.classList.contains('active'));}
   function updateFab(){var fab=document.getElementById('hal-fab');if(!fab)return;var on=halActive();fab.style.display=on?'none':'flex';if(on)toggle(false);}
+  window.halSyncFab=updateFab; // let the nav handler hide/show the FAB on tab changes
   function toggle(force){
     var w=document.getElementById('hal-pop');if(!w)return;
     var show=(force===undefined)?w.hidden:force;
