@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Latimer">
+  <!-- Recreation of the Latimer pinwheel mark. Replace this file with the exact
+       logo (same path/name) to use the real asset everywhere. -->
+  <g fill="#332f30">
+    <path id="lat-blade" d="M60 60 C41 45 39 21 59 13 C66 33 61 49 60 60 Z"/>
+    <use href="#lat-blade" transform="rotate(90 60 60)"/>
+    <use href="#lat-blade" transform="rotate(180 60 60)"/>
+    <use href="#lat-blade" transform="rotate(270 60 60)"/>
+  </g>
+  <rect x="50" y="50" width="20" height="20" rx="3" transform="rotate(45 60 60)" fill="#a89b8f"/>
+</svg>
