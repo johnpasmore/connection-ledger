@@ -383,9 +383,10 @@
           <option value="gpt-5">gpt-5</option><option value="gpt-5.6-sol">gpt-5.6-sol</option><option value="gpt-5.4">gpt-5.4</option><option value="gpt-5.1">gpt-5.1</option><option value="gpt-5-mini">gpt-5-mini</option><option value="gpt-4o">gpt-4o</option><option value="gpt-4o-mini">gpt-4o-mini</option><option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
         </select></div>
       <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal’s voice — ElevenLabs (optional; for a custom/cloned voice)</label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);margin:2px 0 8px"><input type="checkbox" id="lr-elon"> Use my ElevenLabs voice for Hal (otherwise the browser voice is used)</label></div>
-      <div class="f" id="lr-elwrap" style="display:none"><label class="fld">ElevenLabs API key</label><input id="lr-elkey" type="password" placeholder="ElevenLabs API key"></div>
-      <div class="f" id="lr-elvoicewrap" style="display:none"><label class="fld">ElevenLabs voice ID</label><input id="lr-elvoice" placeholder="voice id"></div>
+        <div class="note" style="margin:2px 0 6px">Add your key + voice ID, then pick <b>“My ElevenLabs voice”</b> from the voice selector next to the chat. Leave blank to use a browser voice.</div></div>
+      <div class="f"><label class="fld">ElevenLabs API key</label><input id="lr-elkey" type="password" placeholder="ElevenLabs API key"></div>
+      <div class="f"><label class="fld">ElevenLabs voice ID</label><input id="lr-elvoice" placeholder="voice id"></div>
+      <div class="f" style="flex-basis:100%"><button type="button" class="btn sm" id="lr-eltest">🔊 Test voice</button> <span id="lr-elteststatus" style="font-size:12.5px;color:var(--ink-soft);margin-left:8px"></span></div>
       <div class="f" style="flex-basis:100%"><label class="fld">Salesforce logging address (Email-to-Salesforce)</label><input id="lr-sfaddr" placeholder="emailtosalesforce@…"></div>
       <button class="btn sm primary" id="lr-savekey">Save settings</button>
       <div class="note">Stored only in this browser, never embedded in the page. Keys go straight to their provider (Anthropic or Latimer). Switching Hal’s engine keeps everything Hal remembers — briefs, corrections, chat. The Salesforce address is the To: line when you log an activity.</div>
@@ -1125,13 +1126,18 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   g('lr-latimerkey').value=lsGet(LKEY,'');
   g('lr-latimermodel').value=lsGet(LMODEL,'gpt-5');
   if(!g('lr-latimermodel').value){g('lr-latimermodel').value='gpt-5';lsSet(LMODEL,'gpt-5');} // coerce an unsupported stored model (e.g. an old gemini value) to a valid one
-  g('lr-elon').checked=lsGet(ELON,'0')==='1';
   g('lr-elkey').value=lsGet(ELKEY,'');
   g('lr-elvoice').value=lsGet(ELVOICE,'6LeBM17xbqEhidO33ymI');
-  function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';
-    const el=g('lr-elon').checked;g('lr-elwrap').style.display=el?'':'none';g('lr-elvoicewrap').style.display=el?'':'none';}
+  function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';}
+  g('lr-eltest').onclick=function(){
+    var st=g('lr-elteststatus');st.textContent='Playing…';st.style.color='var(--ink-soft)';
+    var cfg={key:g('lr-elkey').value.trim(),voiceId:g('lr-elvoice').value.trim(),model:'eleven_turbo_v2_5'};
+    if(!cfg.key||!cfg.voiceId){st.textContent='Add the key and voice ID first.';return;}
+    (window.halSpeakSample?window.halSpeakSample(cfg):Promise.reject(new Error('not ready')))
+      .then(function(){st.textContent='✓ That’s your ElevenLabs voice.';st.style.color='var(--ink)';})
+      .catch(function(e){st.textContent='Error: '+(e&&e.message?e.message:e);st.style.color='var(--accent)';});
+  };
   g('lr-halprovider').onchange=syncHalFields;
-  g('lr-elon').onchange=syncHalFields;
   syncHalFields();
   function refreshConn(){
     const prov=lsGet(HALPROV,'anthropic');
@@ -1150,9 +1156,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     lsSet(HALPROV,g('lr-halprovider').value);
     lsSet(LKEY,g('lr-latimerkey').value.trim());
     lsSet(LMODEL,g('lr-latimermodel').value.trim()||'gpt-5');
-    lsSet(ELON,g('lr-elon').checked?'1':'0');
     lsSet(ELKEY,g('lr-elkey').value.trim());
     lsSet(ELVOICE,g('lr-elvoice').value.trim());
+    if(window.halRefreshVoices)window.halRefreshVoices();
     toast('Settings saved in this browser');refreshConn();
   };
   refreshConn();
@@ -1845,15 +1851,28 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     for(i=0;i<vs.length;i++)if(/en[-_]US/i.test(vs[i].lang)&&/(natural|google|samantha|aria|jenny|serena|allison)/i.test(vs[i].name))return vs[i];
     for(i=0;i<vs.length;i++)if(/^en/i.test(vs[i].lang))return vs[i];return vs[0]||null;}
   function applyVoice(u){try{var v=chosenVoice();if(v)u.voice=v;}catch(e){}u.rate=1.03;}
+  function elConfigured(){try{return !!(localStorage.getItem('hal:elevenkey')||'')&&!!(localStorage.getItem('hal:elevenvoice')||'');}catch(e){return false;}}
   function populateVoices(){var vs=ttsVoices();document.querySelectorAll('.hal-voice').forEach(function(sel){
-    if(!vs.length){sel.style.display='none';return;}sel.style.display='';
-    var cur='';try{cur=localStorage.getItem('hal:voice')||'';}catch(e){}if(!cur){var cv=chosenVoice();cur=cv?cv.voiceURI:'';}
-    sel.innerHTML=vs.map(function(v){return '<option value="'+esc(v.voiceURI)+'"'+(v.voiceURI===cur?' selected':'')+'>'+esc(v.name.replace(/\s*\(.*\)$/,''))+'</option>';}).join('');
-    if(!sel._wired){sel._wired=1;sel.onchange=function(){try{localStorage.setItem('hal:voice',sel.value);}catch(e){}try{if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('Hi JP — this is how I sound.');applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}populateVoices();};}
+    var hasEl=elConfigured();
+    if(!vs.length&&!hasEl){sel.style.display='none';return;}sel.style.display='';
+    var cur='';try{cur=localStorage.getItem('hal:voice')||'';}catch(e){}
+    var html='';
+    if(hasEl)html+='<option value="elevenlabs"'+(cur==='elevenlabs'?' selected':'')+'>🎙 My ElevenLabs voice</option>';
+    html+=vs.map(function(v){return '<option value="'+esc(v.voiceURI)+'"'+(v.voiceURI===cur?' selected':'')+'>'+esc(v.name.replace(/\s*\(.*\)$/,''))+'</option>';}).join('');
+    sel.innerHTML=html;
+    // keep a valid selection if the stored one isn't in the list
+    if(cur&&sel.value!==cur){sel.value=hasEl?'elevenlabs':(vs[0]?vs[0].voiceURI:'');}
+    if(!sel._wired){sel._wired=1;sel.onchange=function(){
+      try{localStorage.setItem('hal:voice',sel.value);}catch(e){}
+      if(sel.value==='elevenlabs'){try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}try{window.halSpeakSample&&window.halSpeakSample({key:localStorage.getItem('hal:elevenkey'),voiceId:localStorage.getItem('hal:elevenvoice')}).catch(function(err){if(window.toast)window.toast('ElevenLabs: '+(err&&err.message||err));});}catch(e){}}
+      else{try{if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('Hi JP — this is how I sound.');applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}}
+      populateVoices();
+    };}
   });}
+  window.halRefreshVoices=populateVoices;
   try{if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=populateVoices;}catch(e){}
   /* ---- ElevenLabs (custom/cloned voice) via same-origin /api/tts proxy ---- */
-  function elOn(){try{return localStorage.getItem('hal:elevenon')==='1'&&!!(localStorage.getItem('hal:elevenkey')||'')&&!!(localStorage.getItem('hal:elevenvoice')||'');}catch(e){return false;}}
+  function elOn(){try{return localStorage.getItem('hal:voice')==='elevenlabs'&&elConfigured();}catch(e){return false;}}
   var elCtx=null,elSrc=null;
   // Speak via ElevenLabs. Returns a promise; opts.onAnalyser(analyser) gives real
   // amplitude for the orb; opts.onEnd fires when playback finishes.
@@ -1876,10 +1895,21 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return {durationSec:audio.duration};
   }
   function elStop(){try{if(elSrc)elSrc.stop();}catch(e){}try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}}
+  // Test/sample playback for the settings "Test voice" button (uses form values).
+  window.halSpeakSample=async function(cfg){
+    var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:cfg.key,voiceId:cfg.voiceId,model:cfg.model||'eleven_turbo_v2_5',text:'Hi JP — this is Hal, speaking in your ElevenLabs voice.'})});
+    if(!r.ok){var t='';try{t=(await r.json()).error;}catch(e){}throw new Error(t||('tts '+r.status));}
+    var arr=await r.arrayBuffer();var AC=window.AudioContext||window.webkitAudioContext;var ctx=new AC();if(ctx.state==='suspended'){try{await ctx.resume();}catch(e){}}
+    var audio=await ctx.decodeAudioData(arr);var src=ctx.createBufferSource();src.buffer=audio;src.connect(ctx.destination);src.start();return true;
+  };
+  var elWarned=false;
   function speak(t){
     if(!speakOn())return;
     var s=stripForSpeech(t);if(!s)return;
-    if(elOn()){elSpeak(s.slice(0,2000),{}).catch(function(){/* fall back silently to browser voice */try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}});return;}
+    if(elOn()){elSpeak(s.slice(0,2000),{}).catch(function(err){ // surface the reason once, then fall back to the browser voice so Hal never goes silent
+      if(!elWarned){elWarned=true;if(window.toast)window.toast('ElevenLabs voice failed ('+(err&&err.message?err.message:err)+') — using the browser voice. Check the key/voice on Lead Router.');}
+      try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}
+    });return;}
     if(!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var u2=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u2);window.speechSynthesis.speak(u2);}catch(e){}
   }
   function setMicUI(on){document.querySelectorAll('.hal-mic').forEach(function(m){m.classList.toggle('listening',on);m.title=on?'Listening… tap to stop':'Talk to Hal';});}
