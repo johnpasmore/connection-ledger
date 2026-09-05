@@ -105,6 +105,28 @@
   .spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--clay);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px} @keyframes spin{to{transform:rotate(360deg)}}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:var(--paper);padding:11px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:80;opacity:0;transition:.3s} .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
   @media(max-width:620px){.grid,.cc-grid{grid-template-columns:1fr}}
+  /* ---------- Accounts (funnel / Act now) ---------- */
+  .acct-sum{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0 10px}
+  .acct-sum .c{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 16px;min-width:104px;flex:1}
+  .acct-sum .n{font-family:var(--sans);font-weight:800;font-size:24px;letter-spacing:-.02em;line-height:1}
+  .acct-sum .l{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);margin-top:7px}
+  .acct-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 14px}
+  .acct{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:15px 17px;margin-bottom:11px;display:flex;gap:15px;align-items:flex-start}
+  .acct.urgent{border-left:3px solid var(--accent)}
+  .acct .rank{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--faint);min-width:24px;padding-top:2px}
+  .acct .body{flex:1;min-width:0}
+  .acct .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .acct .nm{font-weight:700;font-size:15px;letter-spacing:-.01em}
+  .acct .tier{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
+  .acct .flag{font-family:var(--mono);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);border:1px solid var(--accent);border-radius:5px;padding:2px 6px}
+  .acct .why{font-size:13px;color:var(--ink-soft);margin-top:7px;line-height:1.5}
+  .acct .why b{color:var(--ink);font-weight:600}
+  .acct .note{font-size:12.5px;color:var(--faint);margin-top:5px;line-height:1.5}
+  .acct .ctl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:11px}
+  .acct .ctl select,.acct .ctl input{font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-family:var(--sans);color:var(--ink)}
+  .acct .ctl .ns{flex:1;min-width:180px}
+  .acct .ctl .del{margin-left:auto;background:none;border:none;color:var(--faint);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:5px} .acct .ctl .del:hover{color:var(--accent)}
+  .pill.paying{color:var(--ink);border-color:var(--ink)} .pill.trial{color:var(--accent);border-color:var(--accent)} .pill.prospect{color:var(--ink-soft);border-color:var(--line)} .pill.partner{color:var(--ink-soft);border-color:var(--line)}
   /* ---------- Dashboard ---------- */
   .dash-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 8px}
   .dash-kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
@@ -163,6 +185,7 @@
     <button class="tab" data-tab="priority">★ Priority <span id="pr-badge" style="display:none;background:#d61f34;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:3px"></span></button>
     <button class="tab" data-tab="dashboard">Dashboard</button>
     <button class="tab" data-tab="decks">Decks</button>
+    <button class="tab" data-tab="accounts">Accounts</button>
   </div>
 
   <!-- ============ LEDGER TAB ============ -->
@@ -308,6 +331,17 @@
   </section>
 
   <!-- ============ DASHBOARD TAB ============ -->
+  <!-- ============ ACCOUNTS TAB ============ -->
+  <section class="panel" id="panel-accounts">
+    <p class="lede">Your key institutional accounts, ranked into a short "act now" list by stage, importance, and how long since your last touch. This is the funnel Hal will work with you — next he'll read the email threads to fill in who owes a reply and what to say.</p>
+    <div class="acct-sum" id="acct-sum"></div>
+    <div class="acct-bar">
+      <button class="btn sm" id="acct-add">+ Add account</button>
+      <span style="font-size:12px;color:var(--faint)">Adjust stage, cadence, and next step inline · click <b>Log touch</b> when you reach out</span>
+    </div>
+    <div id="acct-list"></div>
+  </section>
+
   <section class="panel" id="panel-dashboard">
     <p class="lede">Outreach volume and success rates, month by month — a rolling 12-month view. Rebuilt each time you import your Messages, Invitations, and Connections CSVs.</p>
     <div id="dash-empty" class="hint" style="display:none">Import your <b>Messages</b>, <b>Invitations</b>, and <b>Connections</b> CSVs (Connection Ledger → the ↑ buttons) to populate this dashboard.</div>
@@ -462,6 +496,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==='priority'&&window.renderPriority)window.renderPriority();
   if(b.dataset.tab==='dashboard'&&window.renderDashboard)window.renderDashboard();
   if(b.dataset.tab==='decks'&&window.renderDecks)window.renderDecks();
+  if(b.dataset.tab==='accounts'&&window.renderAccounts)window.renderAccounts();
 });
 
 /* =================== CONNECTION LEDGER =================== */
@@ -1169,13 +1204,93 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   document.addEventListener('mouseout',function(e){var el=e.target.closest?e.target.closest('[data-tip]'):null;if(!el)return;var t=document.getElementById('dash-tip');if(t)t.classList.remove('show');});
 })();
 
+/* ===== Accounts tab — key-account funnel + "Act now" prioritizer (Phase 1 of Hal) ===== */
+(function(){
+  var KEY='ledger:accounts';
+  var SEED=[
+    {name:'Southern New Hampshire University (SNHU)',stage:'paying',tier:'flagship',cadence:14,urgent:false,note:'Biggest paying client — working hard to expand.'},
+    {name:'Student Freedom Initiative',stage:'partner',tier:'high',cadence:21,urgent:false,note:'Engaged us to build a piece of software; extend the relationship.'},
+    {name:'Tennessee State University',stage:'paying',tier:'standard',cadence:21,urgent:false,note:'Paying customer, relatively modest student count.'},
+    {name:'Atlanta University Consortium — Data Analytics Initiative',stage:'paying',tier:'standard',cadence:21,urgent:false,note:'Paying customer, relatively modest student count.'},
+    {name:'Howard University Law — AI Initiative',stage:'paying',tier:'high',cadence:21,urgent:false,note:'Paying (modest); we’d like to extend to other areas of Howard.',nextStep:'Explore expansion beyond Law'},
+    {name:'UNC Greensboro',stage:'paying',tier:'standard',cadence:21,urgent:false,note:'Paying customer, modest; based in the Research area.'},
+    {name:'California Community Colleges — Foothill College',stage:'trial',tier:'flagship',cadence:5,urgent:true,note:'Just starting a paid trial. ~2M students — expanding this would be a very big deal.',nextStep:'Nurture trial toward expansion'},
+    {name:'Arizona State University',stage:'trial',tier:'high',cadence:7,urgent:false,note:'Trial we would like to expand.'},
+    {name:'Miles College (AL)',stage:'trial',tier:'high',cadence:5,urgent:true,note:'Trial ready to convert — they want to go paid and so do we.',nextStep:'Close the paid conversion'},
+    {name:'North Carolina A&T',stage:'prospect',tier:'high',cadence:5,urgent:true,note:'Recent conversations — don’t drop the ball.'},
+    {name:'LaGuardia College, CUNY',stage:'prospect',tier:'high',cadence:5,urgent:true,note:'Recent conversations — don’t drop the ball.'},
+    {name:'North Carolina Central University (NCCU)',stage:'prospect',tier:'high',cadence:5,urgent:true,note:'Recent conversations — don’t drop the ball.'},
+    {name:'Hampton University',stage:'prospect',tier:'high',cadence:5,urgent:true,note:'Appointment to visit — important.',nextStep:'Prep for the campus visit'},
+    {name:'Rutgers University',stage:'prospect',tier:'high',cadence:10,urgent:false,note:'Warm connection — could be an important account.'},
+    {name:'Huston-Tillotson University',stage:'prospect',tier:'standard',cadence:10,urgent:false,note:'Important prospect.'},
+    {name:'Claflin University',stage:'prospect',tier:'standard',cadence:10,urgent:false,note:'Important prospect.'},
+    {name:'Patten University',stage:'prospect',tier:'standard',cadence:14,urgent:false,note:'Small but attainable account.'},
+    {name:'Spelman College',stage:'prospect',tier:'flagship',cadence:5,urgent:true,note:'Trying to get on the president’s calendar — she is also a Latimer shareholder. Don’t drop the ball.',nextStep:'Reach the president’s office'}
+  ];
+  var STAGE={paying:'Paying',trial:'Trial',prospect:'Prospect',partner:'Partner'};
+  var accts=[];
+  function uid(){return 'a_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+  function loadRaw(){try{var v=localStorage.getItem(KEY);if(v){var a=JSON.parse(v);if(Array.isArray(a))return a;}}catch(e){}return null;}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(accts));}catch(e){}}
+  function ensure(){var a=loadRaw();if(a&&a.length){accts=a;}else{accts=SEED.map(function(s){return Object.assign({id:uid(),lastTouch:'',nextStep:'',createdAt:new Date().toISOString()},s);});save();}}
+  function daysSince(d){if(!d)return null;var t=new Date(d);if(isNaN(t))return null;return Math.floor((Date.now()-t)/86400000);}
+  function fmt(d){if(!d)return '—';var t=new Date(d);if(isNaN(t))return d;return t.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'2-digit'});}
+  function today(){return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);}
+  function esc(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+  function tierW(t){return t==='flagship'?100:t==='high'?60:30;}
+  function stageW(s){return s==='trial'?40:s==='prospect'?25:s==='partner'?18:12;}
+  function overdue(a){var d=daysSince(a.lastTouch);if(d==null)return null;return d-(+a.cadence||14);}
+  function score(a){var s=tierW(a.tier)+stageW(a.stage);if(a.urgent)s+=50;var o=overdue(a);if(o==null)s+=25;else if(o>0)s+=Math.min(o,30)*3;return s;}
+  function stageLabel(s){return STAGE[s]||s;}
+  function cardSum(n,l){return '<div class="c"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>';}
+  function card(a,rank){
+    var o=overdue(a);
+    var touch=(!a.lastTouch)?'<b>no contact logged yet</b>':(o>0?'<b>overdue '+o+'d</b> — last touch '+fmt(a.lastTouch):'on track — last touch '+fmt(a.lastTouch));
+    var whyline=stageLabel(a.stage)+' · target every '+(+a.cadence||14)+'d · '+touch;
+    var flag=a.urgent?'<span class="flag">Don’t drop</span>':'';
+    var ns=a.nextStep?('<div class="note"><b style="color:var(--ink)">Next:</b> '+esc(a.nextStep)+'</div>'):'';
+    function opt(v,cur,lbl){return '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+lbl+'</option>';}
+    return '<div class="acct'+(a.urgent?' urgent':'')+'" data-id="'+a.id+'">'
+      +'<div class="rank">'+rank+'</div><div class="body">'
+      +'<div class="top"><span class="nm">'+esc(a.name)+'</span><span class="pill '+a.stage+'">'+stageLabel(a.stage)+'</span><span class="tier">'+esc(a.tier)+'</span>'+flag+'</div>'
+      +'<div class="why">'+whyline+'</div>'
+      +(a.note?'<div class="note">'+esc(a.note)+'</div>':'')+ns
+      +'<div class="ctl">'
+      +'<select data-f="stage">'+opt('paying',a.stage,'Paying')+opt('trial',a.stage,'Trial')+opt('prospect',a.stage,'Prospect')+opt('partner',a.stage,'Partner')+'</select>'
+      +'<select data-f="tier">'+opt('flagship',a.tier,'Flagship')+opt('high',a.tier,'High')+opt('standard',a.tier,'Standard')+'</select>'
+      +'<input data-f="cadence" type="number" min="1" style="width:62px" value="'+(+a.cadence||14)+'" title="Follow-up cadence (days)">'
+      +'<input class="ns" data-f="nextStep" placeholder="Next step…" value="'+esc(a.nextStep||'')+'">'
+      +'<button class="btn sm" data-act="touch">Log touch</button>'
+      +'<button class="del" data-act="del" title="Remove">×</button>'
+      +'</div></div></div>';
+  }
+  window.renderAccounts=function(){
+    ensure();
+    var host=document.getElementById('acct-list');if(!host)return;
+    var by={paying:0,trial:0,prospect:0,partner:0},need=0;
+    accts.forEach(function(a){by[a.stage]=(by[a.stage]||0)+1;var o=overdue(a);if(o==null||o>0)need++;});
+    var sum=document.getElementById('acct-sum');
+    if(sum)sum.innerHTML=cardSum(accts.length,'Accounts')+cardSum(by.paying,'Paying')+cardSum(by.trial,'Trials')+cardSum(by.prospect,'Prospects')+cardSum(need,'Need a touch');
+    var sorted=accts.slice().sort(function(a,b){return score(b)-score(a);});
+    host.innerHTML=sorted.length?sorted.map(function(a,i){return card(a,i+1);}).join(''):'<div class="empty"><div class="big">No accounts yet</div><div>Add your key institutions to start the funnel.</div></div>';
+    host.querySelectorAll('.acct').forEach(function(el){
+      var id=el.getAttribute('data-id');var a=accts.find(function(x){return x.id===id;});if(!a)return;
+      el.querySelectorAll('[data-f]').forEach(function(inp){inp.onchange=function(){var f=inp.getAttribute('data-f');a[f]=(f==='cadence')?(+inp.value||14):inp.value;save();if(f==='stage'||f==='cadence')window.renderAccounts();};});
+      var t=el.querySelector('[data-act="touch"]');if(t)t.onclick=function(){a.lastTouch=today();save();window.renderAccounts();if(window.toast)window.toast('Logged a touch with '+a.name);};
+      var d=el.querySelector('[data-act="del"]');if(d)d.onclick=function(){if(!confirm('Remove '+a.name+' from the funnel?'))return;accts=accts.filter(function(x){return x.id!==id;});save();window.renderAccounts();};
+    });
+  };
+  var addBtn=document.getElementById('acct-add');
+  if(addBtn)addBtn.onclick=function(){var nm=prompt('Institution / account name:');if(!nm||!nm.trim())return;accts.push({id:uid(),name:nm.trim(),stage:'prospect',tier:'standard',cadence:14,urgent:false,note:'',nextStep:'',lastTouch:'',createdAt:new Date().toISOString()});save();window.renderAccounts();};
+})();
+
 /* ===== Cloudflare D1 cloud sync (localStorage-first, graceful fallback) ===== */
 (function(){
   var cloudOn=true,lastSig=null;
-  function sig(){try{return (localStorage.getItem('ledger:contacts')||'')+'\u0001'+(localStorage.getItem('router:records')||'');}catch(e){return '';}}
-  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}return {ledger:(window.ledgerAll?window.ledgerAll():p('ledger:contacts')),router:p('router:records'),msgstats:ms};}
+  function sig(){try{return (localStorage.getItem('ledger:contacts')||'')+'\u0001'+(localStorage.getItem('router:records')||'')+'|'+(localStorage.getItem('ledger:accounts')||'');}catch(e){return '';}}
+  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}return {ledger:(window.ledgerAll?window.ledgerAll():p('ledger:contacts')),router:p('router:records'),msgstats:ms,accounts:(function(){try{return JSON.parse(localStorage.getItem('ledger:accounts')||'null');}catch(e){return null;}})()};}
   function setStatus(t){var el=document.getElementById('cloudStatus');if(el)el.textContent='Cloud: '+t;}
-  async function applyCloud(d){try{if(d&&d.ledger)await lsSetLarge('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));if(d&&d.msgstats)localStorage.setItem('ledger:msgstats',JSON.stringify(d.msgstats));}catch(e){}}
+  async function applyCloud(d){try{if(d&&d.ledger)await lsSetLarge('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));if(d&&d.msgstats)localStorage.setItem('ledger:msgstats',JSON.stringify(d.msgstats));if(d&&d.accounts)localStorage.setItem('ledger:accounts',JSON.stringify(d.accounts));}catch(e){}}
   async function cloudGet(){var r=await fetch('/api/state',{headers:{'Accept':'application/json'}});if(!r.ok)throw new Error('get '+r.status);return r.json();}
   async function gzipB64(str){var cs=new CompressionStream('gzip');var buf=await new Response(new Blob([str]).stream().pipeThrough(cs)).arrayBuffer();var bytes=new Uint8Array(buf),bin='';for(var i=0;i<bytes.length;i+=0x8000){bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));}return btoa(bin);}
   async function gunzipB64(b64){var bin=atob(b64);var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);var ds=new DecompressionStream('gzip');return await new Response(new Blob([bytes]).stream().pipeThrough(ds)).text();}
