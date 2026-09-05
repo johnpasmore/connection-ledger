@@ -313,9 +313,16 @@
     <div class="keybar" id="lr-keybar">
       <div class="f"><label class="fld">Anthropic API key</label><input id="lr-apikey" type="password" placeholder="sk-ant-…"></div>
       <div class="f"><label class="fld">Model</label><input id="lr-model" placeholder="claude-sonnet-4-5"></div>
+      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal engine — which model powers Hal (briefs + chat)</label>
+        <select id="lr-halprovider" style="font-family:var(--sans);font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink)">
+          <option value="anthropic">Claude (Anthropic key above)</option>
+          <option value="latimer">Latimer (uses Gemini)</option>
+        </select></div>
+      <div class="f" id="lr-latimerwrap" style="display:none"><label class="fld">Latimer API key</label><input id="lr-latimerkey" type="password" placeholder="Bearer token — LATIMER_API_KEY"></div>
+      <div class="f" id="lr-latimermodelwrap" style="display:none"><label class="fld">Latimer model</label><input id="lr-latimermodel" placeholder="gemini-3.1-pro"></div>
       <div class="f" style="flex-basis:100%"><label class="fld">Salesforce logging address (Email-to-Salesforce)</label><input id="lr-sfaddr" placeholder="emailtosalesforce@…"></div>
       <button class="btn sm primary" id="lr-savekey">Save settings</button>
-      <div class="note">Stored only in this browser, never embedded in the page. The API key goes straight to Anthropic; the Salesforce address is used as the To: line when you log an activity.</div>
+      <div class="note">Stored only in this browser, never embedded in the page. Keys go straight to their provider (Anthropic or Latimer). Switching Hal’s engine keeps everything Hal remembers — briefs, corrections, chat. The Salesforce address is the To: line when you log an activity.</div>
     </div>
     <div id="vault">
       <span style="font-size:13px;font-weight:600">Saved leads: <span id="vault-count">0</span></span>
@@ -1032,20 +1039,33 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   /* api key persistence */
   function lsGet(k,d){try{const v=localStorage.getItem(k);return (v==null||v==='')?d:v;}catch(e){return d;}}
   function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+  const HALPROV='hal:provider',LKEY='hal:latimerkey',LMODEL='hal:latimermodel';
   g('lr-apikey').value=lsGet(AKEY,'');
   g('lr-model').value=lsGet(MKEY,'claude-sonnet-4-5');
   g('lr-sfaddr').value=lsGet(SFKEY,DEFAULT_SF);
+  g('lr-halprovider').value=lsGet(HALPROV,'anthropic');
+  g('lr-latimerkey').value=lsGet(LKEY,'');
+  g('lr-latimermodel').value=lsGet(LMODEL,'gemini-3.1-pro');
+  function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';}
+  g('lr-halprovider').onchange=syncHalFields;
+  syncHalFields();
   function refreshConn(){
-    const has=!!lsGet(AKEY,'').trim();
-    g('lr-connstatus').textContent=has?'Anthropic API connected ✓':'No API key yet — add one to enable Classify & route.';
-    g('lr-toggle').textContent=has?'Edit API':'Add API';
-    g('lr-keybar').style.display=has?'none':'flex';
+    const prov=lsGet(HALPROV,'anthropic');
+    const anth=!!lsGet(AKEY,'').trim(), lat=!!lsGet(LKEY,'').trim();
+    const engine=prov==='latimer'?('Latimer · '+(lsGet(LMODEL,'gemini-3.1-pro'))):('Claude · '+(lsGet(MKEY,'claude-sonnet-4-5')));
+    const ready=prov==='latimer'?lat:anth;
+    g('lr-connstatus').textContent=(anth?'Anthropic API connected ✓':'No Anthropic key yet.')+' · Hal engine: '+engine+(ready?' ✓':' — add its key');
+    g('lr-toggle').textContent=(anth||lat)?'Edit API':'Add API';
+    g('lr-keybar').style.display=(anth||lat)?'none':'flex';
   }
   g('lr-toggle').onclick=()=>{const kb=g('lr-keybar');kb.style.display=(kb.style.display==='none')?'flex':'none';};
   g('lr-savekey').onclick=()=>{
     lsSet(AKEY,g('lr-apikey').value.trim());
     lsSet(MKEY,g('lr-model').value.trim()||'claude-sonnet-4-5');
     lsSet(SFKEY,g('lr-sfaddr').value.trim());
+    lsSet(HALPROV,g('lr-halprovider').value);
+    lsSet(LKEY,g('lr-latimerkey').value.trim());
+    lsSet(LMODEL,g('lr-latimermodel').value.trim()||'gemini-3.1-pro');
     toast('Settings saved in this browser');refreshConn();
   };
   refreshConn();
@@ -1278,6 +1298,54 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   document.addEventListener('mouseout',function(e){var el=e.target.closest?e.target.closest('[data-tip]'):null;if(!el)return;var t=document.getElementById('dash-tip');if(t)t.classList.remove('show');});
 })();
 
+/* ===== Hal model provider — swappable engine (Claude ⇄ Latimer/Gemini) =====
+   Every Hal model call (briefs + chat) routes through window.halLLM, so switching
+   engines never touches Hal's memory (briefs, corrections, history all persist). */
+(function(){
+  function ls(k,d){try{var v=localStorage.getItem(k);return (v==null||v==='')?d:v;}catch(e){return d;}}
+  function provider(){return ls('hal:provider','anthropic');}
+  function anthroKey(){return ls('router:apikey','');}
+  function anthroModel(){return ls('router:model','claude-sonnet-4-5');}
+  function latimerKey(){return ls('hal:latimerkey','');}
+  function latimerModel(){return ls('hal:latimermodel','gemini-3.1-pro');}
+  window.halProvider=function(){return provider();};
+  window.halConfigured=function(){return provider()==='latimer'?!!latimerKey():!!anthroKey();};
+  window.halEngineLabel=function(){return provider()==='latimer'?('Latimer · '+latimerModel()):('Claude · '+anthroModel());};
+  window.halNeedsKeyMsg=function(){return provider()==='latimer'?'Add your Latimer API key on the Lead Router tab (choose Latimer under “Hal engine”).':'Add your Anthropic API key on the Lead Router tab.';};
+  // Read the assistant text out of Latimer's response defensively (output field
+  // wasn't in the docs example; try the likely names, then surface the raw shape).
+  function extractLatimer(j){
+    if(j==null)return '';
+    if(typeof j==='string')return j.trim();
+    var d=[j.output,j.response,j.completion,j.text,j.answer,j.result,j.reply];
+    for(var i=0;i<d.length;i++)if(typeof d[i]==='string'&&d[i].trim())return d[i].trim();
+    try{if(j.message&&typeof j.message==='string'&&j.message.trim()&&j.message!==j.input)return j.message.trim();}catch(e){}
+    try{if(j.message&&j.message.content&&typeof j.message.content==='string')return j.message.content.trim();}catch(e){}
+    try{if(j.choices&&j.choices[0]){var c=j.choices[0];var t=(c.message&&c.message.content)||c.text||c.content;if(typeof t==='string'&&t.trim())return t.trim();}}catch(e){}
+    try{if(j.data){var dd=extractLatimer(j.data);if(dd)return dd;}}catch(e){}
+    return '';
+  }
+  // messages: [{role:'user'|'assistant', content}] — last item is the current user turn.
+  window.halLLM=async function(system,messages,maxTokens){
+    messages=messages||[];
+    if(provider()==='latimer'){
+      var key=latimerKey();if(!key)throw new Error('NOKEY');
+      var last=messages[messages.length-1]||{content:''};
+      var addl=[];for(var i=0;i<messages.length-1;i++){var m=messages[i];addl.push({role:(m.role==='assistant'?'assistant':'user'),content:m.content});}
+      var body={message:last.content||'',model:latimerModel(),additionalInstructions:system||'',additionalMessages:addl};
+      var r=await fetch('https://api.latimer.ai/v2/api/completion',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'Latimer-Version':'2026-01-02'},body:JSON.stringify(body)});
+      if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error('Latimer '+r.status+' '+t.replace(/\s+/g,' ').slice(0,180));}
+      var j=await r.json();var out=extractLatimer(j);
+      if(!out)throw new Error('Latimer replied but I couldn’t find the text field — raw: '+JSON.stringify(j).slice(0,220));
+      return out;
+    }
+    var ak=anthroKey();if(!ak)throw new Error('NOKEY');
+    var ar=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:anthroModel(),max_tokens:maxTokens||1000,system:system,messages:messages.map(function(m){return {role:(m.role==='assistant'?'assistant':'user'),content:m.content};})})});
+    if(!ar.ok){var at='';try{at=await ar.text();}catch(e){}throw new Error('Claude '+ar.status+' '+at.replace(/\s+/g,' ').slice(0,180));}
+    var aj=await ar.json();return (aj.content&&aj.content[0]&&aj.content[0].text||'').trim();
+  };
+})();
+
 /* ===== Accounts tab — key-account funnel + "Act now" prioritizer (Phase 1 of Hal) ===== */
 (function(){
   var KEY='ledger:accounts';
@@ -1417,15 +1485,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
      Hal reads the recent thread for an account, summarizes it into a compact
      brief (signals only, never raw bodies), and remembers the newest message he
      saw (lastMsgId) so he doesn't re-read a thread that hasn't changed.
-     The model call is isolated in halComplete() — swap that one function to move
-     Hal off Claude (e.g. to LatimerAI) later; nothing else changes. */
-  function halKey(){try{return localStorage.getItem('router:apikey')||'';}catch(e){return '';}}
-  function halModel(){try{return localStorage.getItem('router:model')||'claude-sonnet-4-5';}catch(e){return 'claude-sonnet-4-5';}}
+     The model call routes through window.halLLM — the shared, swappable engine
+     (Claude or Latimer/Gemini). Switching engines never touches stored briefs. */
+  function halKey(){return !!(window.halConfigured&&window.halConfigured());}
+  function halKeyMsg(){return (window.halNeedsKeyMsg&&window.halNeedsKeyMsg())||'Add your API key on the Lead Router tab.';}
   async function halComplete(system,user,maxTokens){
-    var key=halKey();if(!key)throw new Error('NOKEY');
-    var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:halModel(),max_tokens:maxTokens||800,system:system,messages:[{role:'user',content:user}]})});
-    if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error('Claude '+r.status+' '+t.replace(/\s+/g,' ').slice(0,140));}
-    var j=await r.json();return (j.content&&j.content[0]&&j.content[0].text||'');
+    return await window.halLLM(system,[{role:'user',content:user}],maxTokens||800);
   }
   async function buildBrief(a,force){
     if(!a.domains||!a.domains.length)return {skip:'no domains'};
@@ -1452,7 +1517,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function readThreads(force){
     var note=document.getElementById('acct-syncnote');
     if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(note)note.textContent='Connect Google on the Follow-ups tab first, then let Hal read.';if(window.toast)window.toast('Connect Google on the Follow-ups tab, then try again');return;}
-    if(!halKey()){if(note)note.textContent='Add your Anthropic API key on the Lead Router tab first — Hal reuses that key.';if(window.toast)window.toast('Add your Anthropic API key on the Lead Router tab first');return;}
+    if(!halKey()){if(note)note.textContent=halKeyMsg();if(window.toast)window.toast(halKeyMsg());return;}
     ensure();var did=0,cached=0,none=0;
     var btn=document.getElementById('acct-hal');if(btn){btn.disabled=true;btn.textContent='🧠 Hal is reading…';}
     for(var i=0;i<accts.length;i++){var a=accts[i];
@@ -1468,7 +1533,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function briefOne(a){
     var note=document.getElementById('acct-syncnote');
     if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(window.toast)window.toast('Connect Google on the Follow-ups tab first');return;}
-    if(!halKey()){if(window.toast)window.toast('Add your Anthropic API key on the Lead Router tab first');return;}
+    if(!halKey()){if(window.toast)window.toast(halKeyMsg());return;}
     if(note)note.textContent='Hal is reading '+a.name+'…';
     try{var r=await buildBrief(a,true);save();window.renderAccounts();if(note)note.textContent=r.ok?('Hal updated the brief for '+a.name):('No thread found for '+a.name+(r.skip?' ('+r.skip+')':''));}
     catch(e){if(note)note.textContent='Hal error: '+(e&&e.message?e.message:e);}
@@ -1509,8 +1574,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 (function(){
   var STAGE={paying:'Paying',trial:'Trial',prospect:'Prospect',partner:'Partner'};
   var hist=[];
-  function akey(){try{return localStorage.getItem('router:apikey')||'';}catch(e){return '';}}
-  function amodel(){try{return localStorage.getItem('router:model')||'claude-sonnet-4-5';}catch(e){return 'claude-sonnet-4-5';}}
+  function akey(){return !!(window.halConfigured&&window.halConfigured());}
+  function keyMsg(){return (window.halNeedsKeyMsg&&window.halNeedsKeyMsg())||'Add your API key on the Lead Router tab.';}
   function loadAccts(){try{var v=JSON.parse(localStorage.getItem('ledger:accounts')||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
   function loadHist(){try{var v=JSON.parse(localStorage.getItem('hal:chat')||'[]');if(Array.isArray(v))hist=v;}catch(e){}}
   function saveHist(){try{localStorage.setItem('hal:chat',JSON.stringify(hist.slice(-40)));}catch(e){}}
@@ -1543,12 +1608,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'Keep drafts short, human, and tailored to that account’s real situation — something JP can send after one quick read. You may include a short line of context before or after a draft.\n\n'
       +'=== CURRENT PIPELINE (your briefs on file) ===\n'+ctxBlock();
   }
-  /* ---- model adapter (swap point) ---- */
+  /* ---- routes through the shared, swappable engine (Claude ⇄ Latimer/Gemini) ---- */
   async function halSend(messages){
-    var key=akey();if(!key)throw new Error('NOKEY');
-    var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:amodel(),max_tokens:2000,system:sys(),messages:messages})});
-    if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error('Claude '+r.status+' '+t.replace(/\s+/g,' ').slice(0,160));}
-    var j=await r.json();return (j.content&&j.content[0]&&j.content[0].text||'').trim();
+    return await window.halLLM(sys(),messages,2000);
   }
   /* ---- light markdown → HTML (escape first) ---- */
   function md(s){
@@ -1632,7 +1694,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function setup(){
     var el=document.getElementById('hal-setup');if(!el)return;
-    if(!akey()){el.textContent='Add your Anthropic API key on the Lead Router tab to chat with Hal.';return;}
+    if(!akey()){el.textContent=keyMsg();return;}
     var A=loadAccts(),nb=A.filter(function(a){return a.brief;}).length;
     if(!(window.gConnected&&window.gConnected())&&!nb){el.textContent='Connect Google (Follow-ups tab) and let Hal read threads on Accounts for account-specific answers.';return;}
     el.textContent='';
@@ -1640,7 +1702,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var busy=false;
   async function send(q){
     q=(q||'').trim();if(!q||busy)return;
-    if(!akey()){if(window.toast)window.toast('Add your Anthropic API key on the Lead Router tab first');setup();return;}
+    if(!akey()){if(window.toast)window.toast(keyMsg());setup();return;}
     busy=true;
     hist.push({role:'user',content:q});saveHist();thinking=true;paint();
     try{
@@ -1648,7 +1710,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var reply=await halSend(msgs);
       hist.push({role:'assistant',content:reply});
     }catch(e){
-      var msg=String(e&&e.message).indexOf('NOKEY')>=0?'I need your Anthropic API key — add it on the Lead Router tab.':('Sorry — I hit an error: '+(e&&e.message?e.message:e));
+      var msg=String(e&&e.message).indexOf('NOKEY')>=0?('I’m not connected to an engine yet — '+keyMsg()):('Sorry — I hit an error: '+(e&&e.message?e.message:e));
       hist.push({role:'assistant',content:msg});
     }
     thinking=false;saveHist();paint();
