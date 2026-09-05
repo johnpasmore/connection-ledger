@@ -17,6 +17,19 @@ export async function onRequest(context) {
   if (!key) return jerr("No ElevenLabs API key provided", 401);
   const voiceId = (body && body.voiceId) || "";
   if (!voiceId) return jerr("No ElevenLabs voice id provided", 400);
+
+  // Verify mode: confirm the key + voice via GET /v1/voices/{id} (per ElevenLabs).
+  // Returns the voice name so the UI can distinguish a bad key from a bad voice id.
+  if (body && body.verify) {
+    let vr;
+    try { vr = await fetch("https://api.elevenlabs.io/v1/voices/" + encodeURIComponent(voiceId), { headers: { "xi-api-key": key } }); }
+    catch (e) { return jerr("Could not reach ElevenLabs: " + (e && e.message ? e.message : String(e)), 502); }
+    let vt = ""; try { vt = await vr.text(); } catch (e) {}
+    if (!vr.ok) return jerr("ElevenLabs " + vr.status + " " + vt.replace(/\s+/g, " ").slice(0, 220), vr.status);
+    let name = ""; try { name = (JSON.parse(vt) || {}).name || ""; } catch (e) {}
+    return new Response(JSON.stringify({ ok: true, name: name }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+
   const model = (body && body.model) || "eleven_turbo_v2_5";
   const text = (body && body.text) || "";
   if (!text.trim()) return jerr("No text provided", 400);
