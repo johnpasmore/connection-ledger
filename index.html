@@ -126,6 +126,17 @@
   .acct .ctl select,.acct .ctl input{font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-family:var(--sans);color:var(--ink)}
   .acct .ctl .ns{flex:1;min-width:180px}
   .acct .ctl .del{margin-left:auto;background:none;border:none;color:var(--faint);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:5px} .acct .ctl .del:hover{color:var(--accent)}
+  .hal{margin-top:11px;border:1px solid var(--line);border-left:3px solid var(--ink);border-radius:7px;background:var(--paper);padding:10px 12px}
+  .hal-h{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .hal-when{margin-left:auto;text-transform:none;letter-spacing:0}
+  .hal-tag{font-family:var(--mono);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;border-radius:5px;padding:2px 6px}
+  .hal-tag.you{color:var(--accent);border:1px solid var(--accent)}
+  .hal-tag.them{color:var(--faint);border:1px solid var(--line)}
+  .hal-sum{font-size:13.5px;color:var(--ink);line-height:1.5;font-weight:500}
+  .hal-row{font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-top:5px}
+  .hal-row span:first-child{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-right:6px}
+  .hal-next{font-size:13px;color:var(--ink);line-height:1.5;margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
+  .hal-next b{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-right:6px;font-weight:600}
   .pill.paying{color:var(--ink);border-color:var(--ink)} .pill.trial{color:var(--accent);border-color:var(--accent)} .pill.prospect{color:var(--ink-soft);border-color:var(--line)} .pill.partner{color:var(--ink-soft);border-color:var(--line)}
   /* ---------- Dashboard ---------- */
   .dash-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 8px}
@@ -333,12 +344,14 @@
   <!-- ============ DASHBOARD TAB ============ -->
   <!-- ============ ACCOUNTS TAB ============ -->
   <section class="panel" id="panel-accounts">
-    <p class="lede">Your key institutional accounts, ranked into a short "act now" list by stage, importance, and how long since your last touch. This is the funnel Hal will work with you — next he'll read the email threads to fill in who owes a reply and what to say.</p>
+    <p class="lede">Your key institutional accounts, ranked into a short "act now" list by stage, importance, and how long since your last touch. Connect Google and let Hal read the recent thread for each account — he writes a short brief (where it stands, who owes a reply, and the best next move) and remembers what he’s already read, so he only re-reads threads that changed.</p>
     <div class="acct-sum" id="acct-sum"></div>
     <div class="acct-bar">
       <button class="btn sm" id="acct-add">+ Add account</button>
       <button class="btn sm" id="acct-sync">↻ Refresh from Gmail</button>
-      <span id="acct-syncnote" style="font-size:12px;color:var(--faint)">Refresh pulls last-touch &amp; who-owes-a-reply from your Gmail (dates &amp; senders only, no message text). Connect Google on the Follow-ups tab first.</span>
+      <button class="btn sm" id="acct-hal">🧠 Have Hal read threads</button>
+      <span id="acct-gstatus" style="font-size:12px;font-weight:600"></span>
+      <span id="acct-syncnote" style="font-size:12px;color:var(--faint);flex-basis:100%">Refresh pulls last-touch &amp; who-owes-a-reply from your Gmail (dates &amp; senders only, no message text). Connect Google on the Follow-ups tab first.</span>
     </div>
     <div id="acct-list"></div>
   </section>
@@ -1284,6 +1297,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'<div class="top"><span class="nm">'+esc(a.name)+'</span><span class="pill '+a.stage+'">'+stageLabel(a.stage)+'</span><span class="tier">'+esc(a.tier)+'</span>'+flag+'</div>'
       +'<div class="why">'+whyline+'</div>'
       +(a.note?'<div class="note">'+esc(a.note)+'</div>':'')+ns
+      +halBrief(a.brief)
       +'<div class="ctl">'
       +'<select data-f="stage">'+opt('paying',a.stage,'Paying')+opt('trial',a.stage,'Trial')+opt('prospect',a.stage,'Prospect')+opt('partner',a.stage,'Partner')+'</select>'
       +'<select data-f="tier">'+opt('flagship',a.tier,'Flagship')+opt('high',a.tier,'High')+opt('standard',a.tier,'Standard')+'</select>'
@@ -1291,11 +1305,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'<input data-f="domainsStr" style="width:150px" value="'+esc((a.domains||[]).join(', '))+'" title="Email domains (comma-separated) — used to match Gmail">'
       +'<input class="ns" data-f="nextStep" placeholder="Next step…" value="'+esc(a.nextStep||'')+'">'
       +'<button class="btn sm" data-act="touch">Log touch</button>'
+      +'<button class="btn sm" data-act="brief" title="Have Hal read this account’s recent emails">'+(a.brief?'🧠 Re-read':'🧠 Hal read')+'</button>'
       +'<button class="del" data-act="del" title="Remove">×</button>'
       +'</div></div></div>';
   }
   window.renderAccounts=function(){
-    ensure();
+    ensure();gbadge();
     var host=document.getElementById('acct-list');if(!host)return;
     var by={paying:0,trial:0,prospect:0,partner:0},need=0;
     accts.forEach(function(a){by[a.stage]=(by[a.stage]||0)+1;var o=overdue(a);if(o==null||o>0)need++;});
@@ -1307,6 +1322,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var id=el.getAttribute('data-id');var a=accts.find(function(x){return x.id===id;});if(!a)return;
       el.querySelectorAll('[data-f]').forEach(function(inp){inp.onchange=function(){var f=inp.getAttribute('data-f');if(f==='cadence')a.cadence=(+inp.value||14);else if(f==='domainsStr')a.domains=inp.value.split(',').map(function(s){return s.trim();}).filter(Boolean);else a[f]=inp.value;save();if(f==='stage'||f==='cadence')window.renderAccounts();};});
       var t=el.querySelector('[data-act="touch"]');if(t)t.onclick=function(){a.lastTouch=today();save();window.renderAccounts();if(window.toast)window.toast('Logged a touch with '+a.name);};
+      var br=el.querySelector('[data-act="brief"]');if(br)br.onclick=function(){br.disabled=true;br.textContent='🧠 reading…';briefOne(a);};
       var d=el.querySelector('[data-act="del"]');if(d)d.onclick=function(){if(!confirm('Remove '+a.name+' from the funnel?'))return;accts=accts.filter(function(x){return x.id!==id;});save();window.renderAccounts();};
     });
   };
@@ -1334,8 +1350,84 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     save();window.renderAccounts();
     var n2=document.getElementById('acct-syncnote');if(n2)n2.textContent='Updated from Gmail · '+matched+' of '+accts.length+' had recent threads';
   }
+  /* ===== Hal's brain — per-account email brief (index + LLM summary) =====
+     Hal reads the recent thread for an account, summarizes it into a compact
+     brief (signals only, never raw bodies), and remembers the newest message he
+     saw (lastMsgId) so he doesn't re-read a thread that hasn't changed.
+     The model call is isolated in halComplete() — swap that one function to move
+     Hal off Claude (e.g. to LatimerAI) later; nothing else changes. */
+  function halKey(){try{return localStorage.getItem('router:apikey')||'';}catch(e){return '';}}
+  function halModel(){try{return localStorage.getItem('router:model')||'claude-sonnet-4-5';}catch(e){return 'claude-sonnet-4-5';}}
+  async function halComplete(system,user,maxTokens){
+    var key=halKey();if(!key)throw new Error('NOKEY');
+    var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:halModel(),max_tokens:maxTokens||800,system:system,messages:[{role:'user',content:user}]})});
+    if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error('Claude '+r.status+' '+t.replace(/\s+/g,' ').slice(0,140));}
+    var j=await r.json();return (j.content&&j.content[0]&&j.content[0].text||'');
+  }
+  async function buildBrief(a,force){
+    if(!a.domains||!a.domains.length)return {skip:'no domains'};
+    var terms=a.domains.map(function(d){return 'from:'+d+' OR to:'+d;}).join(' OR ');
+    var res=await window.gFetchThread('newer_than:1y ('+terms+')',6);
+    if(!res||res.connected===false)return {skip:'not connected'};
+    if(res.error)return {skip:res.error};
+    if(!res.messages||!res.messages.length)return {skip:'no threads'};
+    if(!force&&a.brief&&a.brief.lastMsgId&&a.brief.lastMsgId===res.latestId)return {cached:true};
+    var me=(window.gMyEmail&&window.gMyEmail())||'JP';
+    var convo=res.messages.map(function(m){var who=m.fromMe?'ME':(m.from||'them');return '['+(m.dateISO||'').slice(0,10)+'] '+who+' — '+m.subject+'\n'+(m.body||'').slice(0,1500);}).join('\n\n---\n\n');
+    var system='You are Hal, an AI sales partner for Latimer.AI, which sells AI software to colleges and universities. You read the recent email thread with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts that are not in the thread.';
+    var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
+    var txt=(await halComplete(system,user,800)).replace(/```json|```/g,'').trim();
+    var b=JSON.parse(txt);
+    b.updatedAt=new Date().toISOString();b.lastMsgId=res.latestId;b.msgCount=res.messages.length;
+    if(!Array.isArray(b.openQuestions))b.openQuestions=b.openQuestions?[String(b.openQuestions)]:[];
+    a.brief=b;
+    if(b.whoOwesReply==='you'||b.whoOwesReply==='them')a.replyOwed=b.whoOwesReply;
+    if(!res.messages.length){}else{var last=res.messages[res.messages.length-1];if(last&&last.dateISO)a.lastTouch=last.dateISO.slice(0,10);}
+    return {ok:true,brief:b};
+  }
+  async function readThreads(force){
+    var note=document.getElementById('acct-syncnote');
+    if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(note)note.textContent='Connect Google on the Follow-ups tab first, then let Hal read.';if(window.toast)window.toast('Connect Google on the Follow-ups tab, then try again');return;}
+    if(!halKey()){if(note)note.textContent='Add your Anthropic API key on the Lead Router tab first — Hal reuses that key.';if(window.toast)window.toast('Add your Anthropic API key on the Lead Router tab first');return;}
+    ensure();var did=0,cached=0,none=0;
+    var btn=document.getElementById('acct-hal');if(btn){btn.disabled=true;btn.textContent='🧠 Hal is reading…';}
+    for(var i=0;i<accts.length;i++){var a=accts[i];
+      if(note)note.textContent='Hal is reading '+a.name+' ('+(i+1)+'/'+accts.length+')…';
+      try{var r=await buildBrief(a,force);if(r.ok)did++;else if(r.cached)cached++;else none++;}
+      catch(e){if(String(e&&e.message).indexOf('NOKEY')>=0){if(note)note.textContent='No API key — add it on the Lead Router tab.';break;} none++;}
+      save();window.renderAccounts();
+    }
+    if(btn){btn.disabled=false;btn.textContent='🧠 Have Hal read threads';}
+    save();window.renderAccounts();
+    var n2=document.getElementById('acct-syncnote');if(n2)n2.textContent='Hal read '+did+' updated · '+cached+' already current · '+none+' with no new thread';
+  }
+  async function briefOne(a){
+    var note=document.getElementById('acct-syncnote');
+    if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(window.toast)window.toast('Connect Google on the Follow-ups tab first');return;}
+    if(!halKey()){if(window.toast)window.toast('Add your Anthropic API key on the Lead Router tab first');return;}
+    if(note)note.textContent='Hal is reading '+a.name+'…';
+    try{var r=await buildBrief(a,true);save();window.renderAccounts();if(note)note.textContent=r.ok?('Hal updated the brief for '+a.name):('No thread found for '+a.name+(r.skip?' ('+r.skip+')':''));}
+    catch(e){if(note)note.textContent='Hal error: '+(e&&e.message?e.message:e);}
+  }
+  function halBrief(b){
+    if(!b)return '';
+    var owe=b.whoOwesReply==='you'?'<span class="hal-tag you">you owe a reply</span>':(b.whoOwesReply==='them'?'<span class="hal-tag them">awaiting them</span>':'');
+    var oq=(b.openQuestions&&b.openQuestions.length)?'<div class="hal-row"><span>Open</span> '+b.openQuestions.map(esc).join(' · ')+'</div>':'';
+    return '<div class="hal">'
+      +'<div class="hal-h">Hal’s read'+owe+'<span class="hal-when">'+(b.updatedAt?fmt(b.updatedAt):'')+'</span></div>'
+      +'<div class="hal-sum">'+esc(b.summary||'')+'</div>'
+      +(b.intent?'<div class="hal-row"><span>Intent</span> '+esc(b.intent)+'</div>':'')
+      +oq
+      +(b.nextMove?'<div class="hal-next"><b>Next move</b> '+esc(b.nextMove)+'</div>':'')
+      +(b.draftHint?'<div class="hal-row"><span>Angle</span> '+esc(b.draftHint)+'</div>':'')
+      +'</div>';
+  }
+  function gbadge(){var el=document.getElementById('acct-gstatus');if(!el)return;var on=!!(window.gConnected&&window.gConnected());if(on){var me=(window.gMyEmail&&window.gMyEmail())||'';el.innerHTML='<span style="color:var(--ink)">●</span> <span style="color:var(--ink-soft)">Google connected'+(me?' — '+esc(me):'')+'</span>';}else{el.innerHTML='<span style="color:var(--accent)">●</span> <a href="#" id="acct-gc" style="color:var(--accent)">Connect Google</a>';var c=document.getElementById('acct-gc');if(c)c.onclick=function(e){e.preventDefault();if(window.gConnect)window.gConnect();setTimeout(gbadge,1800);};}}
+  setTimeout(gbadge,1600);setTimeout(gbadge,4200);
   var syncBtn=document.getElementById('acct-sync');
   if(syncBtn)syncBtn.onclick=syncGmail;
+  var halBtn=document.getElementById('acct-hal');
+  if(halBtn)halBtn.onclick=function(){readThreads(false);};
   var addBtn=document.getElementById('acct-add');
   if(addBtn)addBtn.onclick=function(){var nm=prompt('Institution / account name:');if(!nm||!nm.trim())return;accts.push({id:uid(),name:nm.trim(),stage:'prospect',tier:'standard',cadence:14,urgent:false,note:'',nextStep:'',lastTouch:'',createdAt:new Date().toISOString()});save();window.renderAccounts();};
 })();
@@ -1393,6 +1485,29 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   window.gMyEmail=function(){return myEmail;};
   window.gAuthFetch=function(url){return authFetch(url);};
   window.gConnect=function(){try{connect(false);}catch(e){}};
+  /* Read a whole thread's cleaned message text for another tab (e.g. Hal / Accounts).
+     Bodies are returned to the caller in memory only — Hal summarizes them and stores
+     the summary; raw bodies are never persisted. */
+  window.gFetchThread=async function(q,maxMsgs){
+    if(!token)return {connected:false,messages:[]};
+    var cap=maxMsgs||6,list;
+    try{list=await authFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults='+cap+'&q='+encodeURIComponent(q));}
+    catch(e){return {connected:true,error:e.message,messages:[]};}
+    var ids=(list.messages||[]);if(!ids.length)return {connected:true,messages:[]};
+    var out=[],me=(myEmail||'').toLowerCase();
+    for(var i=0;i<ids.length&&i<cap;i++){
+      try{
+        var full=await authFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[i].id+'?format=full');
+        var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
+        var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
+        var body=stripQuoted(extractBody(full.payload));if(!body)body=(full.snippet||'').trim();
+        var from=(H.from||'').toLowerCase();
+        out.push({id:ids[i].id,dateISO:(when&&!isNaN(when))?when.toISOString():'',subject:H.subject||'(no subject)',from:H.from||'',fromMe:!!(me&&from.indexOf(me)>=0),body:body});
+      }catch(e){}
+    }
+    out.sort(function(a,b){return (a.dateISO||'').localeCompare(b.dateISO||'');}); // oldest → newest
+    return {connected:true,messages:out,latestId:ids[0]&&ids[0].id};
+  };
   /* ----- Read actual reply bodies from Gmail (read-only scope already granted) ----- */
   function b64urlDecode(data){
     if(!data)return '';
