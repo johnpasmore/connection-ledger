@@ -43,3 +43,25 @@ CREATE INDEX IF NOT EXISTS idx_contacts_user_day    ON contacts(user_email, acti
 CREATE INDEX IF NOT EXISTS idx_contacts_user_conn   ON contacts(user_email, connected);
 CREATE INDEX IF NOT EXISTS idx_contacts_user_name   ON contacts(user_email, name COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_contacts_user_invite ON contacts(user_email, invited_date);
+
+-- Automatic weekly recap (Monday 7am ET, browser closed).
+-- Holds the Google offline refresh token so the cron Worker can read Gmail and
+-- send the recap without JP being present. The refresh token is stored ENCRYPTED
+-- (AES-GCM, key derived from the RECAP_ENC_KEY secret) — never in plaintext.
+CREATE TABLE IF NOT EXISTS recap_auth (
+  user_email   TEXT PRIMARY KEY,   -- the app_state key this recap is for (e.g. john@latimer.ai)
+  google_email TEXT,               -- the Google account that granted access
+  enc_refresh  TEXT NOT NULL,      -- base64(iv || AES-GCM ciphertext) of the refresh token
+  scope        TEXT,               -- granted scopes (space-separated)
+  updated_at   TEXT
+);
+
+-- One row per weekly send, so the cron never double-sends within an ISO week and
+-- JP can see the history. `week_key` is 'YYYY-Www' in America/New_York.
+CREATE TABLE IF NOT EXISTS recap_log (
+  week_key   TEXT PRIMARY KEY,
+  user_email TEXT,
+  status     TEXT,                 -- 'sent' | 'error' | 'skipped-no-activity'
+  detail     TEXT,
+  sent_at    TEXT
+);

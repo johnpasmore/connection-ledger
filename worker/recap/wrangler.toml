@@ -1,0 +1,34 @@
+# Automatic weekly recap — cron Worker.
+# Deploy from this directory:  npx wrangler deploy
+# It shares the connection-ledger Pages project's D1 database (binding DB).
+
+name = "connection-ledger-recap"
+main = "src/index.js"
+compatibility_date = "2026-05-31"
+compatibility_flags = ["nodejs_compat"]
+
+# 11:00 and 12:00 UTC every Monday. That is 7am ET in both EDT (UTC-4 → 11:00)
+# and EST (UTC-5 → 12:00). The Worker itself checks the real America/New_York
+# hour and only sends at 07:00, so exactly one of the two firings actually sends.
+[triggers]
+crons = ["0 11,12 * * 1"]
+
+# Bind the SAME D1 database the Pages app uses.
+# Fill in database_id from: Cloudflare dashboard → Storage & Databases → D1 → ledger.
+[[d1_databases]]
+binding = "DB"
+database_name = "ledger"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+RECAP_USER_EMAIL = "john@latimer.ai"   # app_state key to build the recap from (matches Cloudflare Access email)
+RECAP_RECIPIENT  = "john@latimer.ai"   # where the weekly email is sent
+
+# Secrets — set with `npx wrangler secret put <NAME>` (never commit these):
+#   GOOGLE_CLIENT_ID        (same OAuth client used by the Pages callback)
+#   GOOGLE_CLIENT_SECRET
+#   RECAP_ENC_KEY           (same random string set on the Pages project)
+#   ANTHROPIC_API_KEY       (preferred model key)  — or —  LATIMER_API_KEY
+#   RECAP_RUN_KEY           (random string; lets you hit /run?key=… to test)
+# Optional:
+#   ANTHROPIC_MODEL, LATIMER_MODEL, LATIMER_VERSION, HAL_COMPANY_CONTEXT

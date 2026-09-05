@@ -92,9 +92,18 @@ On-demand recap of email activity with prospect accounts over a period
 
 so sections 2 and 3 can be copied to those people. It scans Gmail per account by
 domain, detects who's on each thread (From/To/Cc), has Hal write the sections, and
-opens a prefilled email to john@latimer.ai (plus "Copy all"). Runs while the app
-is open; a true scheduled send when the browser is closed would need a backend
-cron + an email-sending method.
+opens a prefilled email to john@latimer.ai (plus "Copy all").
+
+**Automatic send (browser closed).** The same recap can go out on its own every
+**Monday 7am (America/New_York)**. Because Cloudflare Pages Functions can't run on
+a schedule, a small companion **Worker** (`worker/recap/`) owns the cron; it shares
+the same D1 database and mirrors the on-demand recap exactly. A one-time Google
+offline consent (read + send) stores an **encrypted** refresh token in D1
+(`recap_auth`); the Worker refreshes it each week, reads Gmail, has the model write
+the recap, and sends it, recording each run in `recap_log` (never double-sends per
+ISO week). Wire-up is the **Automatic weekly email** card on the Recap tab plus the
+steps in `RECAP-SETUP.md`. OAuth lives in `functions/api/recap/` (`connect`,
+`callback`, `status`).
 
 ## Integrations
 
