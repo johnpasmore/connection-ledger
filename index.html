@@ -171,6 +171,14 @@
   .hal-bar{display:flex;gap:9px;align-items:flex-end;border-top:1px solid var(--line);padding-top:12px}
   .hal-bar textarea{flex:1;resize:none;font-family:var(--sans);font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:10px 12px;line-height:1.5;max-height:180px;box-sizing:border-box}
   .hal-bar textarea:focus{outline:none;border-color:var(--accent)}
+  .hal-mic{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:8px 11px;font-size:16px;cursor:pointer;line-height:1;flex:0 0 auto}
+  .hal-mic:hover{border-color:var(--accent)}
+  .hal-mic.listening{background:var(--accent);border-color:var(--accent);animation:halpulse 1.1s ease-in-out infinite}
+  @keyframes halpulse{0%,100%{box-shadow:0 0 0 0 rgba(214,31,52,.45)}50%{box-shadow:0 0 0 6px rgba(214,31,52,0)}}
+  .hal-speak{border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);border-radius:16px;padding:4px 11px;font-size:12px;font-family:var(--sans);cursor:pointer}
+  .hal-speak:hover{border-color:var(--accent);color:var(--accent)}
+  .hal-speak.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .hal-pop-actions .hal-speak{padding:2px 8px;font-size:13px}
   .hal-think{align-self:flex-start;font-size:13px;color:var(--faint);font-style:italic}
   #hal-setup{color:var(--accent);font-weight:600}
   /* Corrections */
@@ -283,11 +291,12 @@
   <section class="panel active" id="panel-hal">
     <p class="lede">Hal is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
     <div class="hal-chat">
-      <div class="hal-tools"><button type="button" id="hal-clear" class="hal-clear">＋ New chat</button></div>
+      <div class="hal-tools"><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear">＋ New chat</button></div>
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
-        <textarea id="hal-q" rows="1" placeholder="Ask Hal about your pipeline — e.g. “what should I do today?” or “draft a follow-up to Miles”"></textarea>
+        <textarea id="hal-q" rows="1" placeholder="Ask Hal — or tap 🎤 and talk"></textarea>
+        <button type="button" class="hal-mic" title="Talk to Hal">🎤</button>
         <button class="btn primary" id="hal-send">Send</button>
       </div>
     </div>
@@ -1761,6 +1770,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});
       var reply=await halSend(msgs);
       hist.push({role:'assistant',content:reply});
+      speak(reply);
     }catch(e){
       var msg=String(e&&e.message).indexOf('NOKEY')>=0?('I’m not connected to an engine yet — '+keyMsg()):('Sorry — I hit an error: '+(e&&e.message?e.message:e));
       hist.push({role:'assistant',content:msg});
@@ -1769,6 +1779,31 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     busy=false;
   }
   function clearChat(){if(hist.length&&!confirm('Start a new chat? This clears the current Hal conversation. Your accounts, briefs and corrections are kept.'))return;hist=[];saveHist();paint();}
+  /* ---- Voice: talk to Hal + hear replies (Web Speech API, no external service) ---- */
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var rec=null,listening=false,voiceInput=null;
+  function speakOn(){try{return localStorage.getItem('hal:speak')==='1';}catch(e){return false;}}
+  function stripForSpeech(t){t=(t||'').replace(/```email[\s\S]*?```/gi,'. I’ve drafted an email you can review on screen. ');t=t.replace(/```[\s\S]*?```/g,' ');return t.replace(/[*_#>`]/g,'').replace(/\s+/g,' ').trim();}
+  function speak(t){if(!speakOn()||!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var s=stripForSpeech(t);if(!s)return;var u=new SpeechSynthesisUtterance(s.slice(0,1400));u.rate=1.04;window.speechSynthesis.speak(u);}catch(e){}}
+  function setMicUI(on){document.querySelectorAll('.hal-mic').forEach(function(m){m.classList.toggle('listening',on);m.title=on?'Listening… tap to stop':'Talk to Hal';});}
+  function stopVoice(){if(rec){try{rec.stop();}catch(e){}}}
+  function startVoice(inputEl){
+    if(!SR){if(window.toast)window.toast('Voice input needs Chrome (or another browser with speech recognition).');return;}
+    if(listening){stopVoice();return;}
+    voiceInput=inputEl;rec=new SR();rec.lang='en-US';rec.interimResults=true;rec.continuous=false;
+    rec.onresult=function(e){var f='',im='';for(var i=0;i<e.results.length;i++){var r=e.results[i];if(r.isFinal)f+=r[0].transcript;else im+=r[0].transcript;}if(voiceInput){voiceInput.value=f||im;try{voiceInput.dispatchEvent(new Event('input'));}catch(_){}}};
+    rec.onerror=function(){listening=false;setMicUI(false);};
+    rec.onend=function(){listening=false;setMicUI(false);var v=(voiceInput&&voiceInput.value||'').trim();if(v){voiceInput.value='';try{voiceInput.dispatchEvent(new Event('input'));}catch(_){}send(v);}};
+    try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
+    listening=true;setMicUI(true);try{rec.start();}catch(e){listening=false;setMicUI(false);}
+  }
+  function updateSpeakUI(){var on=speakOn();document.querySelectorAll('.hal-speak').forEach(function(b){b.classList.toggle('on',on);if(b.textContent.indexOf('Speak')>=0)b.textContent='🔊 Speak: '+(on?'on':'off');b.title=on?'Stop reading Hal’s replies aloud':'Read Hal’s replies aloud';});}
+  function toggleSpeak(){var on=!speakOn();try{localStorage.setItem('hal:speak',on?'1':'0');}catch(e){}if(!on&&window.speechSynthesis){try{window.speechSynthesis.cancel();}catch(e){}}updateSpeakUI();}
+  function wireVoice(root){
+    (root||document).querySelectorAll('.hal-mic').forEach(function(m){if(m._wired)return;m._wired=1;if(!SR){m.style.display='none';return;}m.onclick=function(){var bar=m.closest('.hal-bar,.hal-pop-bar');startVoice(bar&&bar.querySelector('textarea'));};});
+    (root||document).querySelectorAll('.hal-speak').forEach(function(b){if(b._wired)return;b._wired=1;b.onclick=toggleSpeak;});
+    updateSpeakUI();
+  }
   var CHIPS=['What should I focus on today?','Who owes a reply — and what do I say?','Draft follow-ups for my urgent accounts','Prep me for my next campus visit'];
   function paintChips(){
     var c=document.getElementById('hal-chips');if(!c)return;
@@ -1784,6 +1819,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     }
     if(btn&&!btn._wired){btn._wired=1;btn.onclick=function(){var v=q.value;q.value='';if(q)q.style.height='auto';send(v);};}
     var cc=document.getElementById('hal-clear');if(cc&&!cc._wired){cc._wired=1;cc.onclick=clearChat;}
+    wireVoice(document.getElementById('panel-hal'));
   };
   /* ---- Pop-up "Ask Hal" launcher — same Hal, available on every tab ---- */
   function buildPopup(){
@@ -1793,13 +1829,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     fab.innerHTML='<span>Hal</span>';
     document.body.appendChild(fab);
     var w=document.createElement('div');w.id='hal-pop';w.className='hal-pop';w.hidden=true;
-    w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><span class="hal-pop-actions"><button id="hal-pop-clear" type="button" title="Start a new chat">New chat</button><button id="hal-pop-x" type="button" title="Close">×</button></span></div>'
+    w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><span class="hal-pop-actions"><button class="hal-speak" type="button" title="Read Hal’s replies aloud">🔊</button><button id="hal-pop-clear" type="button" title="Start a new chat">New chat</button><button id="hal-pop-x" type="button" title="Close">×</button></span></div>'
       +'<div id="hal-pop-log" class="hal-log hal-pop-log"></div>'
-      +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct Hal…"></textarea><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
+      +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct Hal… or tap 🎤"></textarea><button type="button" class="hal-mic" title="Talk to Hal">🎤</button><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
     document.body.appendChild(w);
     fab.onclick=function(){toggle();};
     w.querySelector('#hal-pop-x').onclick=function(){toggle(false);};
     var pc=w.querySelector('#hal-pop-clear');if(pc)pc.onclick=clearChat;
+    wireVoice(w);
     var pq=document.getElementById('hal-pop-q'),ps=document.getElementById('hal-pop-send');
     pq.addEventListener('input',function(){pq.style.height='auto';pq.style.height=Math.min(pq.scrollHeight,140)+'px';});
     pq.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();var v=pq.value;pq.value='';pq.style.height='auto';send(v);}});
