@@ -201,6 +201,9 @@
   .rc-out{border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:14px 16px}
   .rc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   .rc-body{white-space:pre-wrap;font-family:var(--sans);font-size:13.5px;line-height:1.6;color:var(--ink);margin:0;max-height:60vh;overflow:auto}
+  .hal-greeting{border:1px dashed var(--line);border-radius:10px;background:var(--paper);padding:12px 15px;font-size:14px;line-height:1.6;color:var(--ink)}
+  .hal-greeting-h{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);margin-bottom:7px}
+  .hal-greeting p{margin:0 0 8px}.hal-greeting p:last-child{margin-bottom:0}.hal-greeting ul{margin:4px 0 8px;padding-left:20px}.hal-greeting b{color:var(--ink)}
   /* Corrections */
   .corr{margin-top:9px}
   .corr-h{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px}
@@ -1156,12 +1159,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   g('lr-elvoice').value=lsGet(ELVOICE,'6LeBM17xbqEhidO33ymI');
   function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';}
   g('lr-eltest').onclick=function(){
-    var st=g('lr-elteststatus');st.textContent='Playing…';st.style.color='var(--ink-soft)';
+    var st=g('lr-elteststatus');st.textContent='Checking voice…';st.style.color='var(--ink-soft)';
     var cfg={key:g('lr-elkey').value.trim(),voiceId:g('lr-elvoice').value.trim(),model:'eleven_turbo_v2_5'};
     if(!cfg.key||!cfg.voiceId){st.textContent='Add the key and voice ID first.';return;}
-    (window.halSpeakSample?window.halSpeakSample(cfg):Promise.reject(new Error('not ready')))
-      .then(function(){st.textContent='✓ That’s your ElevenLabs voice.';st.style.color='var(--ink)';})
-      .catch(function(e){st.textContent='Error: '+(e&&e.message?e.message:e);st.style.color='var(--accent)';});
+    // First verify the voice is on the account (GET /v1/voices/{id}), then play a sample.
+    (window.halVerifyVoice?window.halVerifyVoice(cfg):Promise.reject(new Error('not ready')))
+      .then(function(v){st.textContent='✓ Voice found'+(v&&v.name?' ("'+v.name+'")':'')+' — playing…';st.style.color='var(--ink-soft)';return window.halSpeakSample(cfg);})
+      .then(function(){var v=g('lr-elteststatus');v.textContent='✓ Working — that’s your ElevenLabs voice.';v.style.color='var(--ink)';})
+      .catch(function(e){var msg=(e&&e.message?e.message:String(e));st.textContent='Error: '+msg+(/401|invalid.*key|unauth/i.test(msg)?' — the API key looks wrong.':(/404|not.?found|voice/i.test(msg)?' — that voice ID isn’t on this account.':''));st.style.color='var(--accent)';});
   };
   g('lr-halprovider').onchange=syncHalFields;
   syncHalFields();
@@ -1806,7 +1811,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     drafts=[]; // reset once per full paint so data-draft indices stay in sync across mounts
     var h=hist.length
       ? hist.map(function(t){return t.role==='user'?bubble('user',esc(t.content).replace(/\n/g,'<br>')):bubble('bot',fmtBot(t.content));}).join('')
-      : bubble('bot',md(greeting()));
+      : '<div class="hal-greeting"><div class="hal-greeting-h">Today’s briefing</div>'+md(greeting())+'</div>'; // distinct empty-state so it isn\'t mistaken for a prior conversation
     if(thinking)h+='<div class="hal-think">Hal is thinking…</div>';
     return h;
   }
@@ -1922,6 +1927,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function elStop(){try{if(elSrc)elSrc.stop();}catch(e){}try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}}
   // Test/sample playback for the settings "Test voice" button (uses form values).
+  window.halVerifyVoice=async function(cfg){
+    var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({verify:true,key:cfg.key,voiceId:cfg.voiceId})});
+    var j={};try{j=await r.json();}catch(e){}
+    if(!r.ok)throw new Error(j.error||('verify '+r.status));
+    return j; // {ok, name}
+  };
   window.halSpeakSample=async function(cfg){
     var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:cfg.key,voiceId:cfg.voiceId,model:cfg.model||'eleven_turbo_v2_5',text:'Hi JP — this is Hal, speaking in your ElevenLabs voice.'})});
     if(!r.ok){var t='';try{t=(await r.json()).error;}catch(e){}throw new Error(t||('tts '+r.status));}
@@ -2169,7 +2180,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var data=await gather(status);
       if(!data.length){status('No prospect email activity found in '+periodLabel()+'.');return;}
       status('Hal is writing the recap…');
-      var sys='You are Hal, sales partner at Latimer.AI. Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering '+periodLabel()+'. Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: for each account with activity, a couple of tight bullet lines on what happened and where it stands. Section 2: ONLY messages tagged {scott}; group by account; if none, write "No threads involved Scott in this period." Section 3: ONLY messages tagged {barika}; if none, say so. Keep each section self-contained so JP can copy sections 2 and 3 to those people. Do not invent anything not in the data.';
+      var sys='You are Hal, sales partner at Latimer.AI. Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering '+periodLabel()+'. Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: for each account with activity, a couple of tight bullet lines on what happened and where it stands.\nSection 2: list ONLY threads whose messages are tagged {scott}, grouped by account. IF AND ONLY IF there are zero such threads, write exactly this one line and nothing else in the section: "No threads involved Scott in this period." If you list any threads, do NOT include that sentence.\nSection 3: same rule for threads tagged {barika}, using "No threads involved Barika in this period." only when there are none.\nNever both list threads and say there were none. Keep sections 2 and 3 self-contained so JP can copy each to that person. Do not invent anything not in the data.';
       var user='Here is the email activity with prospect accounts over '+periodLabel()+' (metadata + snippets; {scott}/{barika} mark who was on the thread):\n\n'+fmtData(data);
       var body=await window.halLLM(sys,[{role:'user',content:user}],3000);
       lastBody=body;lastSubject='Latimer prospect recap — '+periodLabel();
