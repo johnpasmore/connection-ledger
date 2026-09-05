@@ -1540,6 +1540,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     ensure();var matched=0;
     for(var i=0;i<accts.length;i++){if(note)note.textContent='Checking Gmail '+(i+1)+'/'+accts.length+'…';try{if(await refreshOne(accts[i]))matched++;}catch(e){}}
     save();window.renderAccounts();
+    try{localStorage.setItem('accounts:lastscan',String(Date.now()));}catch(e){}
     var n2=document.getElementById('acct-syncnote');if(n2)n2.textContent='Updated from Gmail · '+matched+' of '+accts.length+' had recent threads';
   }
   /* ===== Hal's brain — per-account email brief (index + LLM summary) =====
@@ -1626,6 +1627,32 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   if(halBtn)halBtn.onclick=function(){readThreads(false);};
   var addBtn=document.getElementById('acct-add');
   if(addBtn)addBtn.onclick=function(){var nm=prompt('Institution / account name:');if(!nm||!nm.trim())return;accts.push({id:uid(),name:nm.trim(),stage:'prospect',tier:'standard',cadence:14,urgent:false,note:'',nextStep:'',lastTouch:'',createdAt:new Date().toISOString()});save();window.renderAccounts();};
+
+  /* ===== Auto-sync — keep last-touch + briefs current without manual clicks =====
+     Runs while the app is open: on load (if it's been more than N hours since the
+     last scan) and periodically after. Metadata refresh (last-touch + who-owes-a-
+     reply) is free; brief refresh only spends model tokens on accounts whose
+     latest email actually changed (the index/watermark). Default cadence: 8h.
+     Note: this only runs while the app is open (Gmail uses your in-browser Google
+     sign-in) — a closed tab catches up on the next open via the staleness check. */
+  var SCANKEY='accounts:lastscan',scanning=false;
+  function scanHours(){var h=parseFloat(localStorage.getItem('accounts:scanhours'));return (h>0)?h:8;}
+  function autoScanOn(){try{return localStorage.getItem('accounts:autoscan')!=='0';}catch(e){return true;}}
+  function lastScan(){var t=parseInt(localStorage.getItem(SCANKEY),10);return isNaN(t)?0:t;}
+  function scanDue(){return autoScanOn()&&(Date.now()-lastScan()>scanHours()*3600000);}
+  async function autoScan(){
+    if(scanning||!autoScanOn())return;
+    if(!(window.gConnected&&window.gConnected()))return;
+    if(!scanDue())return;
+    scanning=true;
+    try{localStorage.setItem(SCANKEY,String(Date.now()));}catch(e){}
+    try{await syncGmail();}catch(e){}                       // last-touch + who-owes-a-reply (no model cost)
+    if(halKey()){try{await readThreads(false);}catch(e){}}  // refresh briefs — only for accounts with new mail
+    scanning=false;
+  }
+  window.halAutoScan=autoScan;
+  setTimeout(autoScan,7000);          // shortly after load, once silent Google sign-in has a chance to complete
+  setInterval(autoScan,20*60000);     // re-check every 20 min while the tab stays open
 })();
 
 /* ===== Hal tab — chat + co-drafting (Phase 3) =====
