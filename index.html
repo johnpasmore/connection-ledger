@@ -191,7 +191,9 @@
   .orbglow{position:absolute;width:230px;height:230px;border-radius:50%;background:radial-gradient(circle,rgba(214,31,52,.55) 0%,rgba(214,31,52,.16) 45%,rgba(214,31,52,0) 70%);will-change:transform,opacity}
   .orbimg{position:relative;width:170px;height:auto;will-change:transform}
   .hal-convo-status{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--faint)}
-  .hal-convo-cap{max-width:640px;text-align:center;font-size:16px;line-height:1.55;color:var(--ink);min-height:1.55em;padding:0 12px}
+  .hal-convo-cap{max-width:680px;width:100%;text-align:left;font-size:16px;line-height:1.6;color:var(--ink);min-height:1.55em;padding:0 12px;user-select:text;cursor:text;overflow:auto;max-height:58vh}
+  .hal-convo-cap .cap-p{margin:0 0 8px}
+  .hal-convo-cap .cap-li{margin:3px 0;padding-left:16px;text-indent:-16px}
   .hal-convo-ctrls{margin-top:6px}
   .hal-think{align-self:flex-start;font-size:13px;color:var(--faint);font-style:italic}
   #hal-setup{color:var(--accent);font-weight:600}
@@ -399,6 +401,7 @@
       <div class="f"><label class="fld">ElevenLabs API key (starts with sk_)</label><input id="lr-elkey" type="password" placeholder="sk_… — create/rotate in ElevenLabs → API Keys (not the key ID)"></div>
       <div class="f"><label class="fld">ElevenLabs voice ID</label><input id="lr-elvoice" placeholder="voice id"></div>
       <div class="f" style="flex-basis:100%"><button type="button" class="btn sm" id="lr-eltest">🔊 Test voice</button> <span id="lr-elteststatus" style="font-size:12.5px;color:var(--ink-soft);margin-left:8px"></span></div>
+      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal’s context — company facts Hal always knows (used in chat, briefs &amp; recaps)</label><textarea id="lr-company" rows="4" style="width:100%;box-sizing:border-box;font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;resize:vertical"></textarea></div>
       <div class="f" style="flex-basis:100%"><label class="fld">Salesforce logging address (Email-to-Salesforce)</label><input id="lr-sfaddr" placeholder="emailtosalesforce@…"></div>
       <button class="btn sm primary" id="lr-savekey">Save settings</button>
       <div class="note">Stored only in this browser, never embedded in the page. Keys go straight to their provider (Anthropic or Latimer). Switching Hal’s engine keeps everything Hal remembers — briefs, corrections, chat. The Salesforce address is the To: line when you log an activity.</div>
@@ -1158,6 +1161,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   if(!g('lr-latimermodel').value){g('lr-latimermodel').value='gpt-5';lsSet(LMODEL,'gpt-5');} // coerce an unsupported stored model (e.g. an old gemini value) to a valid one
   g('lr-elkey').value=lsGet(ELKEY,'');
   g('lr-elvoice').value=lsGet(ELVOICE,'6LeBM17xbqEhidO33ymI');
+  g('lr-company').value=lsGet('hal:company',(window.halCompanyDefault||''));
   function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';}
   g('lr-eltest').onclick=function(){
     var st=g('lr-elteststatus');st.textContent='Checking voice…';st.style.color='var(--ink-soft)';
@@ -1190,6 +1194,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     lsSet(LMODEL,g('lr-latimermodel').value.trim()||'gpt-5');
     lsSet(ELKEY,g('lr-elkey').value.trim());
     lsSet(ELVOICE,g('lr-elvoice').value.trim());
+    lsSet('hal:company',g('lr-company').value.trim());
     if(window.halRefreshVoices)window.halRefreshVoices();
     toast('Settings saved in this browser');refreshConn();
   };
@@ -1433,6 +1438,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function anthroModel(){return ls('router:model','claude-sonnet-4-5');}
   function latimerKey(){return ls('hal:latimerkey','');}
   function latimerModel(){return ls('hal:latimermodel','gpt-5');}
+  // Shared company/sales context injected into every Hal prompt (chat, briefs,
+  // recap). Editable on the Lead Router tab (hal:company).
+  var COMPANY_DEFAULT="You work for Latimer.AI and always operate from JP's sales perspective — every conversation is about selling and expanding Latimer.AI. Latimer.AI sells AI software to colleges and universities, with a focus on HBCUs and access-minded institutions. Typical deal motion: an institution starts on a trial, and the goal is to convert that trial into a PAID account priced at $3 per student per month. Keep guidance practical, specific, and oriented toward moving each account toward that paid conversion.";
+  window.halCompanyDefault=COMPANY_DEFAULT;
+  window.halCompanyContext=function(){try{var v=localStorage.getItem('hal:company');return (v&&v.trim())?v.trim():COMPANY_DEFAULT;}catch(e){return COMPANY_DEFAULT;}};
   window.halProvider=function(){return provider();};
   window.halConfigured=function(){return provider()==='latimer'?!!latimerKey():!!anthroKey();};
   window.halEngineLabel=function(){return provider()==='latimer'?('Latimer · '+latimerModel()):('Claude · '+anthroModel());};
@@ -1630,7 +1640,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!force&&a.brief&&a.brief.lastMsgId&&a.brief.lastMsgId===res.latestId)return {cached:true};
     var me=(window.gMyEmail&&window.gMyEmail())||'JP';
     var convo=res.messages.map(function(m){var who=m.fromMe?'ME':(m.from||'them');return '['+(m.dateISO||'').slice(0,10)+'] '+who+' — '+m.subject+'\n'+(m.body||'').slice(0,1500);}).join('\n\n---\n\n');
-    var system='You are Hal, an AI sales partner for Latimer.AI, which sells AI software to colleges and universities. You read the recent email thread with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts that are not in the thread.';
+    var system='You are Hal, an AI sales partner for Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' You read the recent email thread with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts that are not in the thread.';
     var corr=(a.corrections&&a.corrections.length)?('\n\nGROUND TRUTH from JP — trust these over anything the email implies, and reflect them in your brief:\n- '+a.corrections.map(function(c){return c.text;}).join('\n- ')):'';
     var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+corr+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
     var txt=(await halComplete(system,user,800)).replace(/```json|```/g,'').trim();
@@ -1755,7 +1765,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function sys(){
     var me=(window.gMyEmail&&window.gMyEmail())||'john@latimer.ai';
-    return 'You are Hal, the AI sales partner inside Latimer.AI’s sales console. Latimer.AI sells AI software to colleges and universities (with a focus on HBCUs and access-minded institutions). You work side by side with JP ('+me+'), the founder and seller. Today is '+new Date().toDateString()+'.\n\n'
+    return 'You are Hal, the AI sales partner inside Latimer.AI’s sales console. You work side by side with JP ('+me+'), the founder and seller. Today is '+new Date().toDateString()+'.\n\n'
+      +(window.halCompanyContext?window.halCompanyContext():'')+'\n\n'
       +'You already know the pipeline from the account briefs below — never ask JP to paste email in; reason from what you have, and say plainly when something is not in your notes. Be concise, warm, and specific. Rank by importance, urgency, and who owes a reply. Give concrete next actions, not generic advice.\n\n'
       +'If an account lists JP’S CORRECTIONS, they are ground truth: trust them over the brief, and if JP corrects you in this chat, accept it gracefully and use it for the rest of the conversation.\n\n'
       +'When JP asks you to draft or revise an email, write the whole thing and format it EXACTLY like this so the app can add send buttons:\n```email\nTo: <recipient email if you know it, otherwise leave blank>\nSubject: <subject line>\n\n<the email body>\n```\n'
@@ -1876,7 +1887,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   var rec=null,listening=false,voiceInput=null;
   function speakOn(){try{return localStorage.getItem('hal:speak')==='1';}catch(e){return false;}}
-  function stripForSpeech(t){t=(t||'').replace(/```email[\s\S]*?```/gi,'. I’ve drafted an email you can review on screen. ');t=t.replace(/```[\s\S]*?```/g,' ');return t.replace(/[*_#>`]/g,'').replace(/\s+/g,' ').trim();}
+  function stripForSpeech(t){t=(t||'').replace(/```email[\s\S]*?```/gi,'. I’ve drafted an email you can review on screen. ');t=t.replace(/```[\s\S]*?```/g,' ');
+    t=t.replace(/[*_#>`]/g,'');
+    t=t.replace(/([^\d\n])\s+[1-9]\.\s+/g,'$1. ');   // drop numbered-list markers so speech reads naturally
+    t=t.replace(/\s+[–•\-]\s+/g,'. ');                // dash bullets → sentence pauses
+    t=t.replace(/([.!?])\s*\.(\s|$)/g,'$1$2');        // collapse doubled periods from the above
+    return t.replace(/\s+/g,' ').trim();}
   function ttsVoices(){try{return (window.speechSynthesis&&window.speechSynthesis.getVoices())||[];}catch(e){return [];}}
   function chosenVoice(){var id='';try{id=localStorage.getItem('hal:voice')||'';}catch(e){}var vs=ttsVoices(),i;
     for(i=0;i<vs.length;i++)if(vs[i].voiceURI===id)return vs[i];
@@ -2033,44 +2049,66 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     convo.state='thinking';convoStatus('Hal is thinking…');convoCap('You: '+userText);
     hist.push({role:'user',content:userText});saveHist();paint();
     var reply='';
-    try{var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});reply=await halSend(msgs);hist.push({role:'assistant',content:reply});}
+    try{var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});var voiceHint='\n\n[VOICE MODE] You are in a live spoken conversation. Speak naturally and conversationally, and keep it focused — no preamble. When you give multiple points or next steps, put each on its own short line as a bullet ("- ") or numbered item, phrased so it still sounds natural read aloud, so JP can read the on-screen text and copy it into an email. Aim for a tight, sendable answer, not a long rambling briefing.';reply=await window.halLLM(sys()+voiceHint,msgs,900);hist.push({role:'assistant',content:reply});}
     catch(e){reply=String(e&&e.message).indexOf('NOKEY')>=0?('I’m not connected to an engine yet. '+keyMsg()):('Sorry, I hit an error. '+(e&&e.message||''));hist.push({role:'assistant',content:reply});}
     saveHist();paint();
     convoSay(reply);
   }
+  // Caption text keeps paragraph/line breaks and is left-aligned & selectable;
+  // the SPOKEN text is the flattened version. They're separate so the caption
+  // reads well while speech stays smooth.
+  function captionText(t){
+    t=(t||'').replace(/```email[\s\S]*?```/gi,'\n[Hal drafted an email — see the chat.]\n').replace(/```[\s\S]*?```/g,' ');
+    t=t.replace(/[*_#`>]/g,'').replace(/\r/g,'');
+    return t.replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  }
+  // Render the caption with bullets/numbered items on their own lines. Safe:
+  // the numbered split requires a single digit not preceded by a digit, so it
+  // won't break years/decimals like "2026." or "3.5".
+  function fmtCaption(s){
+    s=(s||'');
+    s=s.replace(/([^\d\n])\s+([1-9]\.)\s+/g,'$1\n$2 ');
+    s=s.replace(/\s+[–•\-]\s+/g,'\n• ');
+    var lines=s.split('\n'),out=[];
+    for(var i=0;i<lines.length;i++){var ln=lines[i].trim();if(!ln)continue;
+      var mb=ln.match(/^[•\-–]\s*(.*)$/),mn=ln.match(/^(\d+\.)\s+(.*)$/);
+      if(mb)out.push('<div class="cap-li">• '+esc(mb[1])+'</div>');
+      else if(mn)out.push('<div class="cap-li">'+esc(mn[1])+' '+esc(mn[2])+'</div>');
+      else out.push('<div class="cap-p">'+esc(ln)+'</div>');
+    }
+    return out.join('');
+  }
+  function setCap(cap,s){if(cap)cap.innerHTML=fmtCaption(s);}
   function convoSay(text){
     if(!convo.open)return;
     convo.state='speaking';convoStatus('Hal is speaking…');
-    var clean=stripForSpeech(text).slice(0,1400);
+    var spoken=stripForSpeech(text).slice(0,4000);
+    var capFull=captionText(text);
     var cap=document.getElementById('hal-convo-cap');if(cap)cap.textContent='';
     convo.elAnalyser=null;
     if(elOn()){
-      // Hal's real (cloned) voice: play ElevenLabs audio, drive the orb from its
-      // real amplitude, and reveal the caption over the clip's duration.
       var capTimer=null;
-      elSpeak(clean.slice(0,2000),{
+      elSpeak(spoken,{
         onAnalyser:function(an){convo.elAnalyser=an;},
-        onEnd:function(){convo.elAnalyser=null;if(capTimer)clearInterval(capTimer);if(cap)cap.textContent=clean;if(convo.open)convoListen();}
+        onEnd:function(){convo.elAnalyser=null;if(capTimer)clearInterval(capTimer);if(cap)setCap(cap,capFull);if(convo.open)convoListen();}
       }).then(function(info){
-        var dur=(info&&info.durationSec)||Math.max(2,clean.length/14);var t0=Date.now();
-        capTimer=setInterval(function(){if(!cap)return;var frac=Math.min(1,(Date.now()-t0)/(dur*1000));var n=Math.floor(frac*clean.length);var end=clean.indexOf(' ',n);if(end<0)end=clean.length;cap.textContent=clean.slice(0,end);if(frac>=1)clearInterval(capTimer);},90);
-      }).catch(function(){ // fall back to browser voice
-        convo.elAnalyser=null;convoSayBrowser(clean,cap);
-      });
+        var dur=(info&&info.durationSec)||Math.max(2,spoken.length/14);var t0=Date.now();
+        capTimer=setInterval(function(){if(!cap)return;var frac=Math.min(1,(Date.now()-t0)/(dur*1000));var n=Math.floor(frac*capFull.length);var end=capFull.indexOf(' ',n);if(end<0)end=capFull.length;setCap(cap,capFull.slice(0,end));if(frac>=1)clearInterval(capTimer);},90);
+      }).catch(function(){convo.elAnalyser=null;convoSayBrowser(spoken,capFull,cap);});
       return;
     }
-    if(!window.speechSynthesis){if(cap)cap.textContent=clean;setTimeout(convoListen,600);return;}
-    convoSayBrowser(clean,cap);
+    if(!window.speechSynthesis){if(cap)setCap(cap,capFull);setTimeout(convoListen,600);return;}
+    convoSayBrowser(spoken,capFull,cap);
   }
-  function convoSayBrowser(clean,cap){
+  function convoSayBrowser(spoken,capFull,cap){
     try{
       window.speechSynthesis.cancel();
-      var u=new SpeechSynthesisUtterance(clean);applyVoice(u);
-      u.onboundary=function(e){if(!cap)return;var idx=e.charIndex||0;var end=clean.indexOf(' ',idx+1);if(end<0)end=clean.length;cap.textContent=clean.slice(0,end);}; // caption types out with the speech
-      u.onend=function(){if(cap)cap.textContent=clean;if(convo.open)convoListen();};
+      var u=new SpeechSynthesisUtterance(spoken);applyVoice(u);
+      u.onboundary=function(e){if(!cap)return;var frac=Math.min(1,(e.charIndex||0)/Math.max(1,spoken.length));var n=Math.floor(frac*capFull.length);var end=capFull.indexOf(' ',n);if(end<0)end=capFull.length;setCap(cap,capFull.slice(0,end));};
+      u.onend=function(){if(cap)setCap(cap,capFull);if(convo.open)convoListen();};
       u.onerror=function(){if(convo.open)convoListen();};
       window.speechSynthesis.speak(u);
-    }catch(e){if(cap)cap.textContent=clean;setTimeout(convoListen,600);}
+    }catch(e){if(cap)setCap(cap,capFull);setTimeout(convoListen,600);}
   }
   function convoStop(){
     convo.open=false;convo.state='idle';convo.elAnalyser=null;
@@ -2181,7 +2219,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var data=await gather(status);
       if(!data.length){status('No prospect email activity found in '+periodLabel()+'.');return;}
       status('Hal is writing the recap…');
-      var sys='You are Hal, sales partner at Latimer.AI. Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering '+periodLabel()+'. Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: for each account with activity, a couple of tight bullet lines on what happened and where it stands.\nSection 2: list ONLY threads whose messages are tagged {scott}, grouped by account. IF AND ONLY IF there are zero such threads, write exactly this one line and nothing else in the section: "No threads involved Scott in this period." If you list any threads, do NOT include that sentence.\nSection 3: same rule for threads tagged {barika}, using "No threads involved Barika in this period." only when there are none.\nNever both list threads and say there were none. Keep sections 2 and 3 self-contained so JP can copy each to that person. Do not invent anything not in the data.';
+      var sys='You are Hal, sales partner at Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering '+periodLabel()+'. Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: for each account with activity, a couple of tight bullet lines on what happened and where it stands.\nSection 2: list ONLY threads whose messages are tagged {scott}, grouped by account. IF AND ONLY IF there are zero such threads, write exactly this one line and nothing else in the section: "No threads involved Scott in this period." If you list any threads, do NOT include that sentence.\nSection 3: same rule for threads tagged {barika}, using "No threads involved Barika in this period." only when there are none.\nNever both list threads and say there were none. Keep sections 2 and 3 self-contained so JP can copy each to that person. Do not invent anything not in the data.';
       var user='Here is the email activity with prospect accounts over '+periodLabel()+' (metadata + snippets; {scott}/{barika} mark who was on the thread):\n\n'+fmtData(data);
       var body=await window.halLLM(sys,[{role:'user',content:user}],3000);
       lastBody=body;lastSubject='Latimer prospect recap — '+periodLabel();
