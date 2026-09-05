@@ -1805,6 +1805,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var SCOPES='https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email';
   var LOOKBACK=30;
   var token=null,myEmail='',myDomain='',tokenClient=null,allRows=[];
+  // Your own identities/aliases — never surface these as an outside guest to follow up with.
+  var SELF_DOMAINS=['latimer.ai','futuresum.ai'];
+  var SELF_EMAILS=['john@latimer.ai','john@futuresum.ai'];
   function $(id){return document.getElementById(id);}
   function gid(){try{return localStorage.getItem('fu:clientid')||'';}catch(e){return '';}}
   function loadDismissed(){try{return JSON.parse(localStorage.getItem('fu:dismissed')||'{}');}catch(e){return {};}}
@@ -1930,6 +1933,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
         var email=(a.email||'').toLowerCase();
         if(!email||a.resource||email===myEmail)return;
         var dom=email.split('@')[1]||'';if(dom===myDomain)return;
+        if(SELF_DOMAINS.indexOf(dom)>=0||SELF_EMAILS.indexOf(email)>=0)return;
         rows.push({date:when,daysAgo:Math.floor((now-when)/86400000),name:a.displayName||email,email:email,title:ev.summary||'(no title)',dom:dom});
       });
     });
