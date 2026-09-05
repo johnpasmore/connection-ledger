@@ -319,7 +319,10 @@
           <option value="latimer">Latimer (uses Gemini)</option>
         </select></div>
       <div class="f" id="lr-latimerwrap" style="display:none"><label class="fld">Latimer API key</label><input id="lr-latimerkey" type="password" placeholder="Bearer token — LATIMER_API_KEY"></div>
-      <div class="f" id="lr-latimermodelwrap" style="display:none"><label class="fld">Latimer model</label><input id="lr-latimermodel" placeholder="gemini-3.1-pro"></div>
+      <div class="f" id="lr-latimermodelwrap" style="display:none"><label class="fld">Latimer model</label>
+        <select id="lr-latimermodel" style="font-family:var(--sans);font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink)">
+          <option value="gpt-5">gpt-5</option><option value="gpt-5.6-sol">gpt-5.6-sol</option><option value="gpt-5.4">gpt-5.4</option><option value="gpt-5.1">gpt-5.1</option><option value="gpt-5-mini">gpt-5-mini</option><option value="gpt-4o">gpt-4o</option><option value="gpt-4o-mini">gpt-4o-mini</option><option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+        </select></div>
       <div class="f" style="flex-basis:100%"><label class="fld">Salesforce logging address (Email-to-Salesforce)</label><input id="lr-sfaddr" placeholder="emailtosalesforce@…"></div>
       <button class="btn sm primary" id="lr-savekey">Save settings</button>
       <div class="note">Stored only in this browser, never embedded in the page. Keys go straight to their provider (Anthropic or Latimer). Switching Hal’s engine keeps everything Hal remembers — briefs, corrections, chat. The Salesforce address is the To: line when you log an activity.</div>
@@ -1045,14 +1048,15 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   g('lr-sfaddr').value=lsGet(SFKEY,DEFAULT_SF);
   g('lr-halprovider').value=lsGet(HALPROV,'anthropic');
   g('lr-latimerkey').value=lsGet(LKEY,'');
-  g('lr-latimermodel').value=lsGet(LMODEL,'gemini-3.1-pro');
+  g('lr-latimermodel').value=lsGet(LMODEL,'gpt-5');
+  if(!g('lr-latimermodel').value){g('lr-latimermodel').value='gpt-5';lsSet(LMODEL,'gpt-5');} // coerce an unsupported stored model (e.g. an old gemini value) to a valid one
   function syncHalFields(){const lat=g('lr-halprovider').value==='latimer';g('lr-latimerwrap').style.display=lat?'':'none';g('lr-latimermodelwrap').style.display=lat?'':'none';}
   g('lr-halprovider').onchange=syncHalFields;
   syncHalFields();
   function refreshConn(){
     const prov=lsGet(HALPROV,'anthropic');
     const anth=!!lsGet(AKEY,'').trim(), lat=!!lsGet(LKEY,'').trim();
-    const engine=prov==='latimer'?('Latimer · '+(lsGet(LMODEL,'gemini-3.1-pro'))):('Claude · '+(lsGet(MKEY,'claude-sonnet-4-5')));
+    const engine=prov==='latimer'?('Latimer · '+(lsGet(LMODEL,'gpt-5'))):('Claude · '+(lsGet(MKEY,'claude-sonnet-4-5')));
     const ready=prov==='latimer'?lat:anth;
     g('lr-connstatus').textContent=(anth?'Anthropic API connected ✓':'No Anthropic key yet.')+' · Hal engine: '+engine+(ready?' ✓':' — add its key');
     g('lr-toggle').textContent=(anth||lat)?'Edit API':'Add API';
@@ -1065,7 +1069,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     lsSet(SFKEY,g('lr-sfaddr').value.trim());
     lsSet(HALPROV,g('lr-halprovider').value);
     lsSet(LKEY,g('lr-latimerkey').value.trim());
-    lsSet(LMODEL,g('lr-latimermodel').value.trim()||'gemini-3.1-pro');
+    lsSet(LMODEL,g('lr-latimermodel').value.trim()||'gpt-5');
     toast('Settings saved in this browser');refreshConn();
   };
   refreshConn();
@@ -1307,7 +1311,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function anthroKey(){return ls('router:apikey','');}
   function anthroModel(){return ls('router:model','claude-sonnet-4-5');}
   function latimerKey(){return ls('hal:latimerkey','');}
-  function latimerModel(){return ls('hal:latimermodel','gemini-3.1-pro');}
+  function latimerModel(){return ls('hal:latimermodel','gpt-5');}
   window.halProvider=function(){return provider();};
   window.halConfigured=function(){return provider()==='latimer'?!!latimerKey():!!anthroKey();};
   window.halEngineLabel=function(){return provider()==='latimer'?('Latimer · '+latimerModel()):('Claude · '+anthroModel());};
