@@ -179,6 +179,8 @@
   .hal-speak:hover{border-color:var(--accent);color:var(--accent)}
   .hal-speak.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
   .hal-pop-actions .hal-speak{padding:2px 8px;font-size:13px}
+  .hal-voice{font-family:var(--sans);font-size:12px;color:var(--ink-soft);background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:4px 9px;cursor:pointer;max-width:150px}
+  .hal-convo-ctrls .hal-voice{max-width:200px}
   .hal-talk{border:1px solid var(--accent);background:var(--surface);color:var(--accent);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer;line-height:1;flex:0 0 auto;white-space:nowrap}
   .hal-talk:hover{background:var(--accent);color:#fff}
   /* Conversation mode overlay */
@@ -302,7 +304,7 @@
   <section class="panel active" id="panel-hal">
     <p class="lede">Hal is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
     <div class="hal-chat">
-      <div class="hal-tools"><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
+      <div class="hal-tools"><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
@@ -1824,7 +1826,20 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var rec=null,listening=false,voiceInput=null;
   function speakOn(){try{return localStorage.getItem('hal:speak')==='1';}catch(e){return false;}}
   function stripForSpeech(t){t=(t||'').replace(/```email[\s\S]*?```/gi,'. I’ve drafted an email you can review on screen. ');t=t.replace(/```[\s\S]*?```/g,' ');return t.replace(/[*_#>`]/g,'').replace(/\s+/g,' ').trim();}
-  function speak(t){if(!speakOn()||!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var s=stripForSpeech(t);if(!s)return;var u=new SpeechSynthesisUtterance(s.slice(0,1400));u.rate=1.04;window.speechSynthesis.speak(u);}catch(e){}}
+  function ttsVoices(){try{return (window.speechSynthesis&&window.speechSynthesis.getVoices())||[];}catch(e){return [];}}
+  function chosenVoice(){var id='';try{id=localStorage.getItem('hal:voice')||'';}catch(e){}var vs=ttsVoices(),i;
+    for(i=0;i<vs.length;i++)if(vs[i].voiceURI===id)return vs[i];
+    for(i=0;i<vs.length;i++)if(/en[-_]US/i.test(vs[i].lang)&&/(natural|google|samantha|aria|jenny|serena|allison)/i.test(vs[i].name))return vs[i];
+    for(i=0;i<vs.length;i++)if(/^en/i.test(vs[i].lang))return vs[i];return vs[0]||null;}
+  function applyVoice(u){try{var v=chosenVoice();if(v)u.voice=v;}catch(e){}u.rate=1.03;}
+  function populateVoices(){var vs=ttsVoices();document.querySelectorAll('.hal-voice').forEach(function(sel){
+    if(!vs.length){sel.style.display='none';return;}sel.style.display='';
+    var cur='';try{cur=localStorage.getItem('hal:voice')||'';}catch(e){}if(!cur){var cv=chosenVoice();cur=cv?cv.voiceURI:'';}
+    sel.innerHTML=vs.map(function(v){return '<option value="'+esc(v.voiceURI)+'"'+(v.voiceURI===cur?' selected':'')+'>'+esc(v.name.replace(/\s*\(.*\)$/,''))+'</option>';}).join('');
+    if(!sel._wired){sel._wired=1;sel.onchange=function(){try{localStorage.setItem('hal:voice',sel.value);}catch(e){}try{if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('Hi JP — this is how I sound.');applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}populateVoices();};}
+  });}
+  try{if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=populateVoices;}catch(e){}
+  function speak(t){if(!speakOn()||!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var s=stripForSpeech(t);if(!s)return;var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);window.speechSynthesis.speak(u);}catch(e){}}
   function setMicUI(on){document.querySelectorAll('.hal-mic').forEach(function(m){m.classList.toggle('listening',on);m.title=on?'Listening… tap to stop':'Talk to Hal';});}
   function stopVoice(){if(rec){try{rec.stop();}catch(e){}}}
   function startVoice(inputEl){
@@ -1857,9 +1872,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     o.innerHTML='<div class="orbwrap"><div class="orbglow" id="hal-orbglow"></div><img class="orbimg" id="hal-orbimg" src="/assets/Latimer-Star-2026.png" alt="Latimer"></div>'
       +'<div class="hal-convo-status" id="hal-convo-status">Starting…</div>'
       +'<div class="hal-convo-cap" id="hal-convo-cap"></div>'
-      +'<div class="hal-convo-ctrls"><button type="button" class="btn" id="hal-convo-end">End conversation</button></div>';
+      +'<div class="hal-convo-ctrls"><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="btn" id="hal-convo-end">End conversation</button></div>';
     document.body.appendChild(o);
     o.querySelector('#hal-convo-end').onclick=convoStop;
+    populateVoices();
   }
   function convoStatus(t){var e=document.getElementById('hal-convo-status');if(e)e.textContent=t;}
   function convoCap(t){var e=document.getElementById('hal-convo-cap');if(e)e.textContent=t||'';}
@@ -1911,10 +1927,18 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function convoSay(text){
     if(!convo.open)return;
-    convo.state='speaking';convoStatus('Hal is speaking…');convoCap('Hal: '+stripForSpeech(text).slice(0,180));
-    if(!window.speechSynthesis){setTimeout(convoListen,500);return;}
-    try{window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(stripForSpeech(text).slice(0,1400));u.rate=1.03;u.onend=function(){if(convo.open)convoListen();};u.onerror=function(){if(convo.open)convoListen();};window.speechSynthesis.speak(u);}
-    catch(e){setTimeout(convoListen,500);}
+    convo.state='speaking';convoStatus('Hal is speaking…');
+    var clean=stripForSpeech(text).slice(0,1400);
+    var cap=document.getElementById('hal-convo-cap');if(cap)cap.textContent='';
+    if(!window.speechSynthesis){if(cap)cap.textContent=clean;setTimeout(convoListen,600);return;}
+    try{
+      window.speechSynthesis.cancel();
+      var u=new SpeechSynthesisUtterance(clean);applyVoice(u);
+      u.onboundary=function(e){if(!cap)return;var idx=e.charIndex||0;var end=clean.indexOf(' ',idx+1);if(end<0)end=clean.length;cap.textContent=clean.slice(0,end);}; // caption types out with the speech
+      u.onend=function(){if(cap)cap.textContent=clean;if(convo.open)convoListen();};
+      u.onerror=function(){if(convo.open)convoListen();};
+      window.speechSynthesis.speak(u);
+    }catch(e){if(cap)cap.textContent=clean;setTimeout(convoListen,600);}
   }
   function convoStop(){
     convo.open=false;convo.state='idle';
@@ -1933,7 +1957,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     c.querySelectorAll('.hal-chip').forEach(function(b){b.onclick=function(){send(b.textContent);};});
   }
   window.renderHal=function(){
-    loadHist();setup();paint();paintChips();
+    loadHist();setup();paint();paintChips();populateVoices();
     var q=document.getElementById('hal-q'),btn=document.getElementById('hal-send');
     if(q&&!q._wired){q._wired=1;
       q.addEventListener('input',function(){q.style.height='auto';q.style.height=Math.min(q.scrollHeight,180)+'px';});
