@@ -1873,8 +1873,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     busy=true;
     hist.push({role:'user',content:q});saveHist();thinking=true;paint();
     try{
+      var extra='';try{extra=await autoLookupContext(q);}catch(e){} // auto-pull email for an untracked org/person JP mentions
       var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});
-      var reply=await halSend(msgs);
+      var reply=await window.halLLM(sys()+extra,msgs,2000);
       hist.push({role:'assistant',content:reply});
       speak(reply);
     }catch(e){
@@ -1885,6 +1886,23 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     busy=false;
   }
   /* ---- Ask about ANY org/person in your email (not just tracked accounts) ---- */
+  // Gather recent Gmail about a free-text term → formatted string (or '' if none).
+  async function lookupEmail(term){
+    term=(term||'').trim();if(!term)return '';
+    if(!(window.gConnected&&window.gConnected()))return '';
+    var ids=[];
+    try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:2y ("'+term+'")'));ids=(l1&&l1.messages)||[];}catch(e){}
+    if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:3y ('+term+')'));ids=(l2&&l2.messages)||[];}catch(e){}}
+    var msgs=[];
+    for(var j=0;j<ids.length&&j<8;j++){
+      try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date');
+        var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
+        var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
+        msgs.push('['+((when&&!isNaN(when))?when.toISOString().slice(0,10):'')+'] '+(H.from||'')+' — '+(H.subject||'')+'\n  '+(full.snippet||'').slice(0,240));
+      }catch(e){}
+    }
+    return msgs.join('\n');
+  }
   async function halLookup(term){
     term=(term||'').trim();if(!term||busy)return;
     if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(window.toast)window.toast('Connect Google on the Follow-ups tab first');return;}
@@ -1892,21 +1910,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     busy=true;
     hist.push({role:'user',content:'Look up: '+term});saveHist();thinking=true;paint();
     try{
-      var ids=[];
-      try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:2y ("'+term+'")'));ids=(l1&&l1.messages)||[];}catch(e){}
-      if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:3y ('+term+')'));ids=(l2&&l2.messages)||[];}catch(e){}}
-      var msgs=[];
-      for(var j=0;j<ids.length&&j<8;j++){
-        try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date');
-          var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
-          var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
-          msgs.push({date:(when&&!isNaN(when))?when.toISOString().slice(0,10):'',from:H.from||'',subject:H.subject||'',snippet:(full.snippet||'').slice(0,240)});
-        }catch(e){}
-      }
-      var reply;
-      if(!msgs.length){reply='I don’t see recent email mentioning “'+term+'” in your inbox. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
+      var data=await lookupEmail(term);var reply;
+      if(!data){reply='I don’t see recent email mentioning “'+term+'” in your inbox. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
       else{
-        var data=msgs.map(function(m){return '['+m.date+'] '+m.from+' — '+m.subject+'\n  '+m.snippet;}).join('\n');
         var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. Using only the email below, give a short brief: what it is / who is involved, where any relationship stands, and the single best next move. If the email is thin or ambiguous, say so plainly. Keep it tight and sendable.';
         reply=await window.halLLM(sysL,[{role:'user',content:'Recent email mentioning “'+term+'”:\n\n'+data}],1100);
       }
@@ -1915,6 +1921,21 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     thinking=false;saveHist();paint();busy=false;
   }
   window.halLookup=halLookup;
+  // Automatic: decide if a chat message is about an untracked org/person to pull email for.
+  async function autoLookupContext(q){
+    if(!(window.gConnected&&window.gConnected()))return '';
+    var A=loadAccts(),names=A.map(function(a){return a.name;});
+    var ent='';
+    try{
+      var cls=await window.halLLM('Decide if this message is asking about a SPECIFIC external organization or person that JP would look up in email. These are already-tracked accounts — do NOT return any of them: '+names.join('; ')+'. Respond ONLY with JSON: {"entity":"<name to search, or empty string if none / general question / a tracked account>"}.',[{role:'user',content:q}],60);
+      ent=(JSON.parse(String(cls).replace(/```json|```/g,'').trim()).entity||'').trim();
+    }catch(e){}
+    if(!ent)return '';
+    var low=ent.toLowerCase();
+    for(var i=0;i<names.length;i++){if(names[i]&&names[i].toLowerCase().indexOf(low)>=0)return '';} // skip tracked accounts
+    var data=await lookupEmail(ent);
+    return data?('\n\n[LIVE EMAIL — JP mentioned “'+ent+'”, which is not a tracked account. Recent email about it, use if relevant]:\n'+data):'';
+  }
   function clearChat(){hist=[];saveHist();try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}paint();}
   /* ---- Voice: talk to Hal + hear replies (Web Speech API, no external service) ---- */
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
