@@ -194,6 +194,13 @@
   .hal-convo-ctrls{margin-top:6px}
   .hal-think{align-self:flex-start;font-size:13px;color:var(--faint);font-style:italic}
   #hal-setup{color:var(--accent);font-weight:600}
+  /* Recap email */
+  .rc-bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:16px 0 14px}
+  .rc-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
+  .rc-period.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .rc-out{border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:14px 16px}
+  .rc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .rc-body{white-space:pre-wrap;font-family:var(--sans);font-size:13.5px;line-height:1.6;color:var(--ink);margin:0;max-height:60vh;overflow:auto}
   /* Corrections */
   .corr{margin-top:9px}
   .corr-h{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px}
@@ -293,6 +300,7 @@
         <button class="navitem" data-tab="router">Lead Router</button>
         <button class="navitem" data-tab="followup">Follow-ups <span id="fu-badge" class="navbadge" style="display:none"></span></button>
         <button class="navitem" data-tab="priority">Priority <span id="pr-badge" class="navbadge" style="display:none"></span></button>
+        <button class="navitem" data-tab="recap">Recap email</button>
       </div>
     </div>
     <div class="navgroup">
@@ -474,6 +482,23 @@
     <div id="pr-list" style="margin-top:14px"></div>
   </section>
 
+  <!-- ============ RECAP EMAIL TAB ============ -->
+  <section class="panel" id="panel-recap">
+    <p class="lede">A recap of your email activity with prospect accounts over a period — with a section you can copy to Scott and one to copy to Barika. Hal writes it from your Gmail; it opens a prefilled email to john@latimer.ai. Connect Google first.</p>
+    <div class="rc-bar">
+      <span class="rc-lbl">Period</span>
+      <button class="btn sm rc-period" data-days="7">1 week</button>
+      <button class="btn sm rc-period" data-days="30">1 month</button>
+      <button class="btn sm rc-period" data-days="365">1 year</button>
+      <button class="btn primary sm" id="rc-gen">Generate recap</button>
+      <span id="rc-status" style="font-size:12.5px;color:var(--ink-soft)"></span>
+    </div>
+    <div id="rc-out" class="rc-out" hidden>
+      <div class="rc-actions"><button class="btn sm" id="rc-open">✉ Open in email to john@latimer.ai</button><button class="btn sm" id="rc-copy">Copy all</button></div>
+      <pre id="rc-body" class="rc-body"></pre>
+    </div>
+  </section>
+
   <!-- ============ DASHBOARD TAB ============ -->
   <!-- ============ ACCOUNTS TAB ============ -->
   <section class="panel" id="panel-accounts">
@@ -647,6 +672,7 @@ function activateTab(tab){
   if(tab==='decks'&&window.renderDecks)window.renderDecks();
   if(tab==='accounts'&&window.renderAccounts)window.renderAccounts();
   if(tab==='hal'&&window.renderHal)window.renderHal();
+  if(tab==='recap'&&window.renderRecap)window.renderRecap();
   if(window.halSyncFab)window.halSyncFab();
 }
 window.activateTab=activateTab;
@@ -2097,6 +2123,70 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   // Render on first load (Hal is the default tab).
   if(document.getElementById('hal-log')){window.renderHal();buildPopup();}
+})();
+
+/* ===== Recap email — 3 sections (all activity · scott@ · barika@) ===== */
+(function(){
+  var SCOTT='scott@latimer.ai',BARIKA='barika@latimer.ai',TO='john@latimer.ai';
+  var days=7,busy=false,lastBody='',lastSubject='';
+  function loadAccts(){try{var v=JSON.parse(localStorage.getItem('ledger:accounts')||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
+  function status(t){var e=document.getElementById('rc-status');if(e)e.textContent=t||'';}
+  function periodLabel(){return days===7?'the last week':days===30?'the last month':'the last year';}
+  function ymd(d){return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate();}
+  async function gather(cb){
+    var A=loadAccts().filter(function(a){return a.domains&&a.domains.length;});
+    var afterStr=ymd(new Date(Date.now()-days*86400000));
+    var out=[];
+    for(var i=0;i<A.length;i++){var a=A[i];cb('Reading Gmail for '+a.name+' ('+(i+1)+'/'+A.length+')…');
+      var terms=a.domains.map(function(d){return 'from:'+d+' OR to:'+d;}).join(' OR ');
+      var list;try{list=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q='+encodeURIComponent('after:'+afterStr+' ('+terms+')'));}catch(e){continue;}
+      var ids=(list.messages||[]),msgs=[];
+      for(var j=0;j<ids.length&&j<12;j++){
+        try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date');
+          var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
+          var people=((H.from||'')+' '+(H.to||'')+' '+(H.cc||'')).toLowerCase();
+          var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
+          msgs.push({date:(when&&!isNaN(when))?when.toISOString().slice(0,10):'',from:(H.from||''),subject:(H.subject||'(no subject)'),snippet:(full.snippet||'').slice(0,240),scott:people.indexOf(SCOTT)>=0,barika:people.indexOf(BARIKA)>=0});
+        }catch(e){}
+      }
+      if(msgs.length)out.push({name:a.name,stage:a.stage,tier:a.tier,messages:msgs});
+    }
+    return out;
+  }
+  function fmtData(data){
+    return data.map(function(acc){
+      return 'ACCOUNT: '+acc.name+' ('+(acc.stage||'')+')\n'+acc.messages.map(function(m){
+        return '  ['+m.date+'] '+m.from+' — '+m.subject+(m.scott?' {scott}':'')+(m.barika?' {barika}':'')+'\n    '+m.snippet;
+      }).join('\n');
+    }).join('\n\n');
+  }
+  async function generate(){
+    if(busy)return;
+    if(!(window.gConnected&&window.gConnected())){status('Connect Google on the Follow-ups tab first.');if(window.gConnect)window.gConnect();return;}
+    if(!(window.halConfigured&&window.halConfigured())){status((window.halNeedsKeyMsg&&window.halNeedsKeyMsg())||'Add your API key on the Lead Router tab first.');return;}
+    busy=true;var btn=document.getElementById('rc-gen');if(btn){btn.disabled=true;btn.textContent='Working…';}
+    try{
+      var data=await gather(status);
+      if(!data.length){status('No prospect email activity found in '+periodLabel()+'.');return;}
+      status('Hal is writing the recap…');
+      var sys='You are Hal, sales partner at Latimer.AI. Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering '+periodLabel()+'. Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: for each account with activity, a couple of tight bullet lines on what happened and where it stands. Section 2: ONLY messages tagged {scott}; group by account; if none, write "No threads involved Scott in this period." Section 3: ONLY messages tagged {barika}; if none, say so. Keep each section self-contained so JP can copy sections 2 and 3 to those people. Do not invent anything not in the data.';
+      var user='Here is the email activity with prospect accounts over '+periodLabel()+' (metadata + snippets; {scott}/{barika} mark who was on the thread):\n\n'+fmtData(data);
+      var body=await window.halLLM(sys,[{role:'user',content:user}],3000);
+      lastBody=body;lastSubject='Latimer prospect recap — '+periodLabel();
+      var pre=document.getElementById('rc-body');if(pre)pre.textContent=body;
+      var out=document.getElementById('rc-out');if(out)out.hidden=false;
+      status('Ready — review, then open in email or copy.');
+    }catch(e){status('Error: '+(e&&e.message?e.message:e));}
+    finally{busy=false;if(btn){btn.disabled=false;btn.textContent='Generate recap';}}
+  }
+  function setPeriodUI(){document.querySelectorAll('.rc-period').forEach(function(b){b.classList.toggle('on',(+b.getAttribute('data-days'))===days);});}
+  window.renderRecap=function(){
+    setPeriodUI();
+    document.querySelectorAll('.rc-period').forEach(function(b){if(b._w)return;b._w=1;b.onclick=function(){days=+b.getAttribute('data-days')||7;setPeriodUI();};});
+    var g2=document.getElementById('rc-gen');if(g2&&!g2._w){g2._w=1;g2.onclick=generate;}
+    var op=document.getElementById('rc-open');if(op&&!op._w){op._w=1;op.onclick=function(){if(window.openCompose)window.openCompose(TO,lastSubject,lastBody);};}
+    var cp=document.getElementById('rc-copy');if(cp&&!cp._w){cp._w=1;cp.onclick=function(){try{navigator.clipboard.writeText(lastBody);cp.textContent='Copied ✓';setTimeout(function(){cp.textContent='Copy all';},1500);}catch(e){}};}
+  };
 })();
 
 /* ===== Cloudflare D1 cloud sync (localStorage-first, graceful fallback) ===== */
