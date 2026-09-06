@@ -817,6 +817,7 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
     const freq={};rows.forEach(r=>{const fr=pick(r,['from']);if(fr)freq[fr]=(freq[fr]||0)+1;});
     let self='',mx=-1;for(const k in freq){if(freq[k]>mx){mx=freq[k];self=k;}}
     const conv={};let unparsed=0,newest='';
+    const recs=[]; // full message records (text) for Hal's search
     const monthly={};const mo=k=>monthly[k]||(monthly[k]={sent:0,recv:0,started:0,replied:0});
     rows.forEach(r=>{
       const cid=pick(r,['conversation id'])||pick(r,['conversation title'])||'_';
@@ -824,6 +825,8 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
       const to=pick(r,['to']);const toUrl=pick(r,['recipient profile urls']);
       const dateRaw=pick(r,['date']);const date=parseLIDate(dateRaw);if(dateRaw&&!date)unparsed++;
       const ym=date?date.slice(0,7):'';
+      const content=pick(r,['content','message body','body','message']);
+      if(content)recs.push({date:date||'',from:fr||'',to:to||'',text:String(content).slice(0,1200)});
       const c=conv[cid]||(conv[cid]={others:{},inbound:false,outbound:false,last:'',firstOut:''});
       if(date&&(!c.last||Date.parse(date)>Date.parse(c.last)))c.last=date;
       if(fr&&fr!==self){c.others[fr]=c.others[fr]||frUrl;c.inbound=true;if(ym)mo(ym).recv++;}
@@ -842,7 +845,14 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
       upsert({name,profileUrl:url,messaged:true,replied,actionDate:c.last,lastMessageDate:c.last});
     });
     try{localStorage.setItem('ledger:msgstats',JSON.stringify({months:monthly,updatedAt:new Date().toISOString()}));}catch(e){}
-    return {people,noreply,unparsed,newest};
+    // Store the message bodies (newest first, capped) so Hal can search them.
+    // Compressed in localStorage via lsSetLarge; synced to cloud verbatim.
+    try{
+      recs.sort(function(a,b){return String(b.date||'').localeCompare(String(a.date||''));});
+      var capped=recs.slice(0,8000);
+      lsSetLarge('ledger:messages',JSON.stringify(capped));
+    }catch(e){}
+    return {people,noreply,unparsed,newest,messages:recs.length};
   }
   function render(){
     const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const chan=document.getElementById('chan').value;const stateQ=norm((document.getElementById('stateFilter').value||''));const tbody=document.getElementById('tbody');
@@ -1076,7 +1086,7 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
   document.getElementById('impConn').onclick=()=>document.getElementById('fileConn').click();
   document.getElementById('impMsg').onclick=()=>document.getElementById('fileMsg').click();
   function importSuffix(newest,unparsed){let s=newest?(' · newest '+fmt(newest)):'';if(unparsed)s+=` · ⚠ ${unparsed} unreadable date${unparsed>1?'s':''}`;return s;}
-  document.getElementById('fileMsg').onchange=e=>readFile(e.target,t=>{toast('Reading messages…');setTimeout(()=>{const{people,noreply,unparsed,newest}=importMessages(t);save();render();toast(`Added ${people} messaged (${noreply} never replied)`+importSuffix(newest,unparsed));},30);});
+  document.getElementById('fileMsg').onchange=e=>readFile(e.target,t=>{toast('Reading messages…');setTimeout(()=>{const{people,noreply,unparsed,newest,messages}=importMessages(t);save();render();toast(`Added ${people} messaged (${noreply} never replied)`+(messages?` · ${messages} messages now searchable`:'')+importSuffix(newest,unparsed));},30);});
   document.getElementById('fileInv').onchange=e=>readFile(e.target,t=>{const{added,seen,unparsed,newest}=importInvitations(t);save();render();toast((seen?`Imported ${seen} sent invites (${added} new)`:'No outgoing invitations found')+importSuffix(newest,unparsed));});
   document.getElementById('fileConn').onchange=e=>readFile(e.target,t=>{const{added,matched,unparsed,newest}=importConnections(t);save();render();toast(`Connections: ${added} added, ${matched} updated`+importSuffix(newest,unparsed));});
   window.ledgerAddFromLead=function(lead){
@@ -1938,6 +1948,20 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       return '- '+bits.join(' ')+' ('+st+(c.profileUrl?('; '+c.profileUrl):'')+')';
     }).join('\n');
   }
+  // Search JP's imported LinkedIn message bodies (text/from/to) for a term.
+  // Records are stored newest-first by importMessages via lsSetLarge.
+  async function searchMessages(term,limit){
+    term=(term||'').trim().toLowerCase();if(!term)return '';
+    var arr=[];try{var raw=await lsGetLarge('ledger:messages');if(raw)arr=JSON.parse(raw)||[];}catch(e){}
+    if(!arr.length)return '';
+    var hits=[];
+    for(var i=0;i<arr.length&&hits.length<(limit||12);i++){var m=arr[i];
+      var hay=((m.text||'')+' '+(m.from||'')+' '+(m.to||'')).toLowerCase();
+      if(hay.indexOf(term)>=0)hits.push(m);
+    }
+    if(!hits.length)return '';
+    return hits.map(function(m){return '['+String(m.date||'').slice(0,10)+'] '+(m.from||'')+' → '+(m.to||'')+': '+String(m.text||'').slice(0,300);}).join('\n');
+  }
   async function lookupEmail(term){
     term=(term||'').trim();if(!term)return '';
     if(!(window.gConnected&&window.gConnected()))return '';
@@ -1965,14 +1989,15 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     busy=true;
     hist.push({role:'user',content:'Look up: '+term});saveHist();thinking=true;paint();
     try{
-      var data=await lookupEmail(term);var li=searchLedger(term,30);var reply;
-      if(!data&&!li){reply='I don’t see recent email or LinkedIn connections mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
+      var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
+      if(!data&&!li&&!dm){reply='I don’t see recent email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
       else{
-        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. Below are up to two sources: his imported LinkedIn connections, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Then brief him: what it is / who is involved, WHO HE ALREADY KNOWS there (from LinkedIn) and whether they replied, where the relationship stands, and the single best next move. Note plainly if a source is thin or empty. Keep it tight and sendable.';
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. Below are up to three sources: his imported LinkedIn connections, his LinkedIn message history, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Then brief him: what it is / who is involved, WHO HE ALREADY KNOWS there (from LinkedIn) and whether they replied, what was said in any prior LinkedIn messages, where the relationship stands, and the single best next move. Note plainly if a source is thin or empty. Keep it tight and sendable.';
         var payload='';
         if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
+        if(dm)payload+='LinkedIn messages mentioning “'+term+'”:\n'+dm+'\n\n';
         if(data)payload+='Recent email mentioning “'+term+'”:\n'+data;
-        reply=await window.halLLM(sysL,[{role:'user',content:payload}],1400);
+        reply=await window.halLLM(sysL,[{role:'user',content:payload}],1500);
       }
       hist.push({role:'assistant',content:reply});speak(reply);
     }catch(e){hist.push({role:'assistant',content:'Sorry — the lookup failed: '+(e&&e.message?e.message:e)});}
@@ -1981,7 +2006,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   window.halLookup=halLookup;
   // Automatic: decide if a chat message is about an untracked org/person to pull email for.
   async function autoLookupContext(q){
-    if(!(window.gConnected&&window.gConnected()))return '';
+    // No Google gate here: LinkedIn connections/messages are local, and the email
+    // search self-gates inside lookupEmail — so lookups work even if Gmail isn't connected.
     var A=loadAccts(),names=A.map(function(a){return a.name;});
     var ent='';
     try{
@@ -1991,9 +2017,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!ent)return '';
     var low=ent.toLowerCase();
     for(var i=0;i<names.length;i++){if(names[i]&&names[i].toLowerCase().indexOf(low)>=0)return '';} // skip tracked accounts
-    var data=await lookupEmail(ent);var li=searchLedger(ent,25);
+    var data=await lookupEmail(ent);var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
     var out='';
     if(li)out+='\n\n[LINKEDIN CONNECTIONS — JP mentioned “'+ent+'”. People he already knows there (from his imported ledger), use if relevant]:\n'+li;
+    if(dm)out+='\n\n[LINKEDIN MESSAGES — prior message history mentioning “'+ent+'”, use if relevant]:\n'+dm;
     if(data)out+='\n\n[LIVE EMAIL — JP mentioned “'+ent+'”, which is not a tracked account. Recent email about it, use if relevant]:\n'+data;
     return out;
   }
@@ -2177,7 +2204,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     convoBump();convo.state='thinking';convoStatus('Hal is thinking…');convoCap('You: '+userText);
     hist.push({role:'user',content:userText});saveHist();paint();
     var reply='';
-    try{var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});var voiceHint='\n\n[VOICE MODE] You are in a live spoken conversation. Speak naturally and conversationally, and keep it focused — no preamble. When you give multiple points or next steps, put each on its own short line as a bullet ("- ") or numbered item, phrased so it still sounds natural read aloud, so JP can read the on-screen text and copy it into an email. Aim for a tight, sendable answer, not a long rambling briefing.';reply=await window.halLLM(sys()+voiceHint,msgs,900);hist.push({role:'assistant',content:reply});}
+    try{var extra='';try{extra=await autoLookupContext(userText);}catch(_){}
+      var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});var voiceHint='\n\n[VOICE MODE] You are in a live spoken conversation. Speak naturally and conversationally, and keep it focused — no preamble. When you give multiple points or next steps, put each on its own short line as a bullet ("- ") or numbered item, phrased so it still sounds natural read aloud, so JP can read the on-screen text and copy it into an email. Aim for a tight, sendable answer, not a long rambling briefing.';reply=await window.halLLM(sys()+voiceHint+extra,msgs,900);hist.push({role:'assistant',content:reply});}
     catch(e){reply=String(e&&e.message).indexOf('NOKEY')>=0?('I’m not connected to an engine yet. '+keyMsg()):('Sorry, I hit an error. '+(e&&e.message||''));hist.push({role:'assistant',content:reply});}
     saveHist();paint();
     convoSay(reply);
@@ -2400,9 +2428,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 (function(){
   var cloudOn=true,lastSig=null;
   function sig(){try{return (localStorage.getItem('ledger:contacts')||'')+'\u0001'+(localStorage.getItem('router:records')||'')+'|'+(localStorage.getItem('ledger:accounts')||'');}catch(e){return '';}}
-  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}return {ledger:(window.ledgerAll?window.ledgerAll():p('ledger:contacts')),router:p('router:records'),msgstats:ms,accounts:(function(){try{return JSON.parse(localStorage.getItem('ledger:accounts')||'null');}catch(e){return null;}})()};}
+  function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}var mraw=null;try{mraw=localStorage.getItem('ledger:messages')||null;}catch(e){}return {ledger:(window.ledgerAll?window.ledgerAll():p('ledger:contacts')),router:p('router:records'),msgstats:ms,accounts:(function(){try{return JSON.parse(localStorage.getItem('ledger:accounts')||'null');}catch(e){return null;}})(),messagesRaw:mraw};}
   function setStatus(t){var el=document.getElementById('cloudStatus');if(el)el.textContent='Cloud: '+t;}
-  async function applyCloud(d){try{if(d&&d.ledger)await lsSetLarge('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));if(d&&d.msgstats)localStorage.setItem('ledger:msgstats',JSON.stringify(d.msgstats));if(d&&d.accounts)localStorage.setItem('ledger:accounts',JSON.stringify(d.accounts));}catch(e){}}
+  async function applyCloud(d){try{if(d&&d.ledger)await lsSetLarge('ledger:contacts',JSON.stringify(d.ledger));if(d&&d.router)localStorage.setItem('router:records',JSON.stringify(d.router));if(d&&d.msgstats)localStorage.setItem('ledger:msgstats',JSON.stringify(d.msgstats));if(d&&d.accounts)localStorage.setItem('ledger:accounts',JSON.stringify(d.accounts));if(d&&d.messagesRaw)try{localStorage.setItem('ledger:messages',d.messagesRaw);}catch(e){}}catch(e){}}
   async function cloudGet(){var r=await fetch('/api/state',{headers:{'Accept':'application/json'}});if(!r.ok)throw new Error('get '+r.status);return r.json();}
   async function gzipB64(str){var cs=new CompressionStream('gzip');var buf=await new Response(new Blob([str]).stream().pipeThrough(cs)).arrayBuffer();var bytes=new Uint8Array(buf),bin='';for(var i=0;i<bytes.length;i+=0x8000){bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));}return btoa(bin);}
   async function gunzipB64(b64){var bin=atob(b64);var bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);var ds=new DecompressionStream('gzip');return await new Response(new Blob([bytes]).stream().pipeThrough(ds)).text();}
