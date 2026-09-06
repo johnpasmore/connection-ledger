@@ -2021,7 +2021,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
       if(!data&&!li&&!dm){reply=lastEmailErr?('I couldn’t search Gmail just now ('+lastEmailErr.slice(0,140)+'), and found nothing in LinkedIn for “'+term+'”. Reconnect Google (the Recap tab’s connect powers server-side email search), then ask again.'):('I don’t see email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.');}
       else{
-        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections, his LinkedIn message history, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Then answer: who he already knows there (from LinkedIn) and whether they replied, what was said in any prior LinkedIn messages/email, where the relationship stands, and the single best next move / who to follow up with. Note plainly if a source is thin or empty. Keep it tight and sendable.';
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections, his LinkedIn message history, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Structure the reply in clearly labeled sections — "Recent email" (list each relevant Gmail thread as "date — sender — subject", present ONLY if email data is provided below and never merged silently into LinkedIn), "LinkedIn" (who he knows there and whether they replied), then "Best next steps / who to follow up with". Answer his exact question. Note plainly if a source is thin or empty. Keep it tight and sendable.';
         var payload='';
         if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
         if(dm)payload+='LinkedIn messages mentioning “'+term+'”:\n'+dm+'\n\n';
@@ -2056,7 +2056,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var out='';
     if(li)out+='\n\n[LINKEDIN CONNECTIONS — JP mentioned “'+ent+'”. People he already knows there (from his imported ledger), use if relevant]:\n'+li;
     if(dm)out+='\n\n[LINKEDIN MESSAGES — prior message history mentioning “'+ent+'”, use if relevant]:\n'+dm;
-    if(data)out+='\n\n[EMAIL — recent Gmail mentioning “'+ent+'” (full-text, whole mailbox). Use if relevant]:\n'+data;
+    if(data)out+='\n\n[EMAIL — recent Gmail mentioning “'+ent+'” (full-text, whole mailbox). You MUST surface this: include a clearly labeled "Recent email" section in your reply listing each relevant thread as "date — sender — subject", separate from LinkedIn. Do NOT silently merge it into the connections list]:\n'+data;
     if(!data&&lastEmailErr)out+='\n\n[NOTE: The Gmail search was unavailable ('+lastEmailErr.slice(0,140)+'), so email was NOT included. In your reply, briefly tell JP to (re)connect Google — the weekly-recap connect on the Recap tab powers server-side email search.]';
     return out;
   }
