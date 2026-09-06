@@ -312,6 +312,9 @@
     <div class="navgroup">
       <button class="navtop" data-tab="dashboard">Analytics</button>
     </div>
+    <div class="navgroup">
+      <button class="navtop" data-tab="settings">Settings</button>
+    </div>
   </nav>
 
   <!-- ============ HAL TAB ============ -->
@@ -327,6 +330,15 @@
         <button class="btn primary" id="hal-send">Send</button>
       </div>
     </div>
+  </section>
+
+  <!-- ============ SETTINGS TAB ============ -->
+  <section class="panel" id="panel-settings">
+    <p class="lede">Everything you connect and upload, in one place — your AI engine &amp; voice keys, Google connection, and LinkedIn imports. All of it stays in your browser.</p>
+    <div style="margin:20px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">AI engine &amp; voice · Hal’s context</div><div id="set-ai"></div></div>
+    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Google — Calendar &amp; Gmail (in-browser)</div><div id="set-google"></div><p class="note" style="margin-top:8px">Read-only calendar + sent mail, straight from your browser to Google. Powers Hal’s live reads on Accounts and Follow-ups.</p></div>
+    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">LinkedIn imports</div><div id="set-uploads" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"></div><p class="note" style="margin-top:8px">Import your LinkedIn export CSVs — Connections, Invitations, and Messages. Data stays in your browser.</p></div>
+    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Weekly recap &amp; server-side email</div><p class="note">The Monday-7am recap and Hal’s server-side Gmail search use a one-time offline Google grant — connect it on <b>Conversations → Recap email</b>.</p></div>
   </section>
 
   <!-- ============ LEDGER TAB ============ -->
@@ -687,9 +699,31 @@ function activateTab(tab){
   if(tab==='accounts'&&window.renderAccounts)window.renderAccounts();
   if(tab==='hal'&&window.renderHal)window.renderHal();
   if(tab==='recap'&&window.renderRecap)window.renderRecap();
+  if(tab==='settings'&&window.renderSettings)window.renderSettings();
   if(window.halSyncFab)window.halSyncFab();
 }
 window.activateTab=activateTab;
+// Settings tab: relocate the existing connection/upload controls here (keeping
+// their nodes — and thus all wired handlers — intact), and leave a pointer in
+// each original spot. Runs once.
+window.renderSettings=function(){
+  var host=document.getElementById('panel-settings');if(!host||host._built)return;host._built=true;
+  function link(txt){var a=document.createElement('a');a.href='#settings';a.style.cssText='font-size:12.5px;color:var(--accent);cursor:pointer;margin-left:2px';a.textContent=txt;a.onclick=function(e){e.preventDefault();activateTab('settings');};return a;}
+  // 1) AI engine + voice + Hal's context (from Lead Router "Edit API")
+  var kb=document.getElementById('lr-keybar'),ai=document.getElementById('set-ai');
+  if(kb&&ai){kb.style.display='flex';ai.appendChild(kb);}
+  var lt=document.getElementById('lr-toggle');if(lt){lt.style.display='none';if(lt.parentNode&&!lt.parentNode._ptr){lt.parentNode._ptr=1;lt.parentNode.appendChild(link('⚙ AI keys, voice & Hal’s context are in Settings'));}}
+  // 2) Google — Calendar + Gmail (from Follow-ups "Set up")
+  var fs=document.getElementById('fu-setup'),gg=document.getElementById('set-google');
+  if(fs&&gg){fs.style.display='flex';gg.appendChild(fs);}
+  var ft=document.getElementById('fu-toggle');if(ft){ft.style.display='none';if(ft.parentNode&&!ft.parentNode._ptr){ft.parentNode._ptr=1;ft.parentNode.appendChild(link('⚙ Connect / manage Google in Settings'));}}
+  // 3) LinkedIn imports (from the Connection Ledger toolbar)
+  var up=document.getElementById('set-uploads');
+  if(up){['impConn','impInv','impMsg','fileConn','fileInv','fileMsg'].forEach(function(id){var el=document.getElementById(id);if(el)up.appendChild(el);});
+    var tb=document.querySelector('#panel-ledger .toolbar');if(tb&&!tb._ptr){tb._ptr=1;tb.appendChild(link('⚙ Import LinkedIn CSVs in Settings'));}}
+};
+// Relocate once after all tab IIFEs have wired their handlers.
+setTimeout(function(){try{window.renderSettings();}catch(e){}},0);
 function closeMenus(except){document.querySelectorAll('.navmenu.open').forEach(function(m){if(m!==except)m.classList.remove('open');});}
 document.querySelectorAll('.navitem').forEach(function(b){b.addEventListener('click',function(){activateTab(b.dataset.tab);closeMenus();b.blur();});});
 document.querySelectorAll('.navtop').forEach(function(b){b.addEventListener('click',function(){
