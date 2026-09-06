@@ -312,7 +312,22 @@ async function latimer(env, sys, user) {
   });
   const j = await r.json();
   if (!r.ok) throw new Error("latimer " + r.status + " " + JSON.stringify(j).slice(0, 200));
-  return (j.output || j.completion || j.message || "").toString().trim();
+  const out = extractLatimer(j);
+  if (!out) throw new Error("latimer replied but no text field — raw: " + JSON.stringify(j).slice(0, 220));
+  return out;
+}
+
+// Defensive text extraction from Latimer's response — mirrors index.html.
+function extractLatimer(j) {
+  if (j == null) return "";
+  if (typeof j === "string") return j.trim();
+  const d = [j.output, j.response, j.completion, j.text, j.answer, j.result, j.reply];
+  for (let i = 0; i < d.length; i++) if (typeof d[i] === "string" && d[i].trim()) return d[i].trim();
+  try { if (j.message && typeof j.message === "string" && j.message.trim() && j.message !== j.input) return j.message.trim(); } catch (e) {}
+  try { if (j.message && j.message.content && typeof j.message.content === "string") return j.message.content.trim(); } catch (e) {}
+  try { if (j.choices && j.choices[0]) { const c = j.choices[0]; const t = (c.message && c.message.content) || c.text || c.content; if (typeof t === "string" && t.trim()) return t.trim(); } } catch (e) {}
+  try { if (j.data) { const dd = extractLatimer(j.data); if (dd) return dd; } } catch (e) {}
+  return "";
 }
 
 // ---- Gmail send ------------------------------------------------------------
@@ -324,7 +339,7 @@ async function gmailSend(accessToken, from, to, subject, body) {
     "MIME-Version: 1.0\r\n" +
     'Content-Type: text/plain; charset="UTF-8"\r\n' +
     "Content-Transfer-Encoding: 8bit\r\n\r\n" +
-    body;
+    (typeof body === "string" ? body : String(body || ""));
   const raw = b64url(new TextEncoder().encode(mime));
   const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
