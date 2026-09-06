@@ -1969,11 +1969,28 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return hits.map(function(m){return '['+String(m.date||'').slice(0,10)+'] '+(m.from||'')+' → '+(m.to||'')+': '+String(m.text||'').slice(0,300);}).join('\n');
   }
   var lastEmailErr='';
+  function fmtSrvMsgs(arr){return (arr||[]).map(function(m){return '['+(m.date||'')+'] '+(m.from||'')+' — '+(m.subject||'')+'\n  '+(m.snippet||'');}).join('\n');}
   async function lookupEmail(term){
     lastEmailErr='';
     term=(term||'').trim();if(!term)return '';
-    if(!(window.gConnected&&window.gConnected()))return '';
     var ex=offLimitsExclusions();ex=ex?(' '+ex):'';
+    // 1) Server-side search first — uses the backend offline Google token (the one
+    //    set up for the weekly recap), so it works regardless of the in-browser
+    //    connection, which expires ~hourly and clears on reload.
+    try{
+      var sr=await fetch('/api/gmail/search?limit=20&q='+encodeURIComponent('"'+term+'"'+ex));
+      if(sr.ok){var sj=await sr.json();
+        if(sj&&sj.ok){
+          if(sj.messages&&sj.messages.length)return fmtSrvMsgs(sj.messages);
+          var sr2=await fetch('/api/gmail/search?limit=20&q='+encodeURIComponent(term+ex));
+          if(sr2.ok){var sj2=await sr2.json();if(sj2&&sj2.ok&&sj2.messages&&sj2.messages.length)return fmtSrvMsgs(sj2.messages);}
+          return ''; // server searched successfully, genuinely nothing
+        }
+        if(sj&&!sj.ok)lastEmailErr='server: '+String(sj.error||'').slice(0,140);
+      }
+    }catch(e){/* server unavailable — fall back to in-browser below */}
+    // 2) Fallback: in-browser token (older path; needs Connect on Follow-ups).
+    if(!(window.gConnected&&window.gConnected()))return '';
     var ids=[];
     // Full-text search across the WHOLE mailbox (subject + body), ALL-TIME, so any
     // email that merely mentions the term is found — not just from:/to: matches.
@@ -1998,20 +2015,18 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     term=term.split(/\s+[-–—]\s+|,\s+|\s+(?=tell me\b|who\b|what\b|where\b|and who\b|and what\b)/i)[0].replace(/[?.!]+$/,'').trim();
     if(!term)return;
     if(!akey()){if(window.toast)window.toast(keyMsg());return;}
-    var gOn=!!(window.gConnected&&window.gConnected());
     busy=true;
     hist.push({role:'user',content:(ask&&ask.trim())?ask.trim():('Look up: '+term)});saveHist();thinking=true;paint();
     try{
-      var data=gOn?await lookupEmail(term):'';var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
-      if(!data&&!li&&!dm){reply=(!gOn)?('I searched your LinkedIn but found nothing for “'+term+'”, and Gmail isn’t connected in this session — connect Google on the Follow-ups tab to search your email too.'):(lastEmailErr?('I couldn’t search Gmail just now — it returned an error ('+lastEmailErr.slice(0,120)+'). Try reconnecting Google on the Follow-ups tab, then ask again.'):('I don’t see email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.'));}
+      var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
+      if(!data&&!li&&!dm){reply=lastEmailErr?('I couldn’t search Gmail just now ('+lastEmailErr.slice(0,140)+'), and found nothing in LinkedIn for “'+term+'”. Reconnect Google (the Recap tab’s connect powers server-side email search), then ask again.'):('I don’t see email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.');}
       else{
         var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections, his LinkedIn message history, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Then answer: who he already knows there (from LinkedIn) and whether they replied, what was said in any prior LinkedIn messages/email, where the relationship stands, and the single best next move / who to follow up with. Note plainly if a source is thin or empty. Keep it tight and sendable.';
         var payload='';
         if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
         if(dm)payload+='LinkedIn messages mentioning “'+term+'”:\n'+dm+'\n\n';
-        if(data)payload+='Recent email mentioning “'+term+'”:\n'+data;
-        if(!gOn)payload+='\n[NOTE: Gmail is NOT connected this session, so email was NOT searched — LinkedIn only. Tell JP to connect Google on the Follow-ups tab to include email.]';
-        else if(!data&&lastEmailErr)payload+='\n[Gmail search errored ('+lastEmailErr.slice(0,120)+'); email not included — tell JP to reconnect Google on the Follow-ups tab.]';
+        if(data)payload+='Recent Gmail mentioning “'+term+'”:\n'+data;
+        if(!data&&lastEmailErr)payload+='\n[NOTE: Gmail search was unavailable ('+lastEmailErr.slice(0,140)+'); email not included — tell JP to (re)connect Google via the Recap tab, which powers server-side email search.]';
         reply=await window.halLLM(sysL,[{role:'user',content:payload}],1500);
       }
       hist.push({role:'assistant',content:reply});speak(reply);
@@ -2028,21 +2043,20 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     try{
       // Plain-text extraction (no JSON) — far more reliable across models and for
       // lowercase voice transcripts. Return just the name, or blank.
-      var cls=await window.halLLM('Extract the ONE external organization, institution, or person this message is asking about, so it can be searched in email and LinkedIn. Examples of things to return: "Harvard", "Harvard Library", "Western Governors", "Sara Bleich". Return an EMPTY line only if the message names no such entity, OR names one of these already-tracked accounts ['+names.join('; ')+'], OR is about JP\'s personal life, family, medical/health, investors, or vendors. Reply with ONLY the name, on a single line — no quotes, no punctuation, no explanation. If none, reply with nothing.',[{role:'user',content:q}],120);
+      var ctx=(typeof hist!=='undefined'&&hist.length)?hist.slice(-6).map(function(t){return {role:(t.role==='assistant'?'assistant':'user'),content:String(t.content||'').slice(0,600)};}):[{role:'user',content:q}];
+      var cls=await window.halLLM('You extract the ONE external organization, institution, or person the LATEST user message wants looked up in email and LinkedIn — RESOLVING follow-up references to earlier turns. E.g. after discussing Harvard, "what about in Gmail?", "and their library?", or "who should I follow up with?" all still mean "Harvard". Examples to return: "Harvard", "Harvard Library", "Western Governors", "Sara Bleich". Return an EMPTY line only if no such entity is in play, OR it is one of these already-tracked accounts ['+names.join('; ')+'], OR it is about JP\'s personal life, family, medical/health, investors, or vendors. Reply with ONLY the name, on a single line — no quotes, no punctuation, no explanation. If none, reply with nothing.',ctx,120);
       ent=String(cls||'').replace(/```/g,'').split('\n')[0].replace(/^["'\s.:-]+|["'\s.:-]+$/g,'').trim();
       if(/^(none|empty|n\/?a|no\b|nothing|sorry|i\b|there)/i.test(ent)||ent.length>60)ent='';
     }catch(e){}
     if(!ent)return '';
     var low=ent.toLowerCase();
     for(var i=0;i<names.length;i++){if(names[i]&&names[i].toLowerCase().indexOf(low)>=0)return '';} // skip tracked accounts
-    var gOn=!!(window.gConnected&&window.gConnected());
-    var data=gOn?await lookupEmail(ent):'';var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
+    var data=await lookupEmail(ent);var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
     var out='';
     if(li)out+='\n\n[LINKEDIN CONNECTIONS — JP mentioned “'+ent+'”. People he already knows there (from his imported ledger), use if relevant]:\n'+li;
     if(dm)out+='\n\n[LINKEDIN MESSAGES — prior message history mentioning “'+ent+'”, use if relevant]:\n'+dm;
-    if(data)out+='\n\n[LIVE EMAIL — JP mentioned “'+ent+'”, which is not a tracked account. Recent email about it, use if relevant]:\n'+data;
-    if(!gOn)out+='\n\n[NOTE: Gmail is NOT connected in this browser session, so email was NOT searched — the above is LinkedIn only. In your reply, briefly tell JP to connect Google on the Follow-ups tab to include email in the search.]';
-    else if(!data&&lastEmailErr)out+='\n\n[NOTE: The Gmail search errored ('+lastEmailErr.slice(0,120)+') so email was NOT included. In your reply, briefly tell JP to reconnect Google on the Follow-ups tab.]';
+    if(data)out+='\n\n[EMAIL — recent Gmail mentioning “'+ent+'” (full-text, whole mailbox). Use if relevant]:\n'+data;
+    if(!data&&lastEmailErr)out+='\n\n[NOTE: The Gmail search was unavailable ('+lastEmailErr.slice(0,140)+'), so email was NOT included. In your reply, briefly tell JP to (re)connect Google — the weekly-recap connect on the Recap tab powers server-side email search.]';
     return out;
   }
   function clearChat(){hist=[];saveHist();try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}paint();}
