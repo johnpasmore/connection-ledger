@@ -1922,10 +1922,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!(window.gConnected&&window.gConnected()))return '';
     var ex=offLimitsExclusions();ex=ex?(' '+ex):'';
     var ids=[];
-    try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:2y ("'+term+'")'+ex));ids=(l1&&l1.messages)||[];}catch(e){}
-    if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q='+encodeURIComponent('newer_than:3y ('+term+')'+ex));ids=(l2&&l2.messages)||[];}catch(e){}}
+    // Full-text search across the WHOLE mailbox (subject + body), ALL-TIME, so any
+    // email that merely mentions the term is found — not just from:/to: matches.
+    // Gmail is the index; we let the model judge which hits are actually relevant.
+    try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q='+encodeURIComponent('"'+term+'"'+ex));ids=(l1&&l1.messages)||[];}catch(e){}
+    if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q='+encodeURIComponent(term+ex));ids=(l2&&l2.messages)||[];}catch(e){}}
     var msgs=[];
-    for(var j=0;j<ids.length&&j<8;j++){
+    for(var j=0;j<ids.length&&j<12;j++){
       try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date');
         var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
         var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
@@ -1944,7 +1947,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var data=await lookupEmail(term);var reply;
       if(!data){reply='I don’t see recent email mentioning “'+term+'” in your inbox. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
       else{
-        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. Using only the email below, give a short brief: what it is / who is involved, where any relationship stands, and the single best next move. If the email is thin or ambiguous, say so plainly. Keep it tight and sendable.';
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. The email below is a full-text search of his whole mailbox, so FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Using only the relevant email, brief him: what it is / who is involved, where the relationship stands, and the single best next move. If nothing is genuinely relevant, say so plainly. Keep it tight and sendable.';
         reply=await window.halLLM(sysL,[{role:'user',content:'Recent email mentioning “'+term+'”:\n\n'+data}],1100);
       }
       hist.push({role:'assistant',content:reply});speak(reply);
@@ -1958,7 +1961,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var A=loadAccts(),names=A.map(function(a){return a.name;});
     var ent='';
     try{
-      var cls=await window.halLLM('Decide if this message is asking about a SPECIFIC external SALES organization or business contact that JP would look up in email. These are already-tracked accounts — do NOT return any of them: '+names.join('; ')+'. Also return empty for anything personal, family, medical/health, investors, or vendors. Respond ONLY with JSON: {"entity":"<sales org/contact name to search, or empty string>"}.',[{role:'user',content:q}],60);
+      var cls=await window.halLLM('Decide if this message asks about a SPECIFIC named external organization, institution, or business contact that JP might have in his email — this includes companies, universities, colleges, schools, libraries, districts, nonprofits, foundations, and agencies (e.g. "Harvard", "Harvard Library", "Western Governors"), as well as named people/contacts. These are already-tracked accounts — do NOT return any of them: '+names.join('; ')+'. Return an empty string for tracked accounts and for anything personal, family, medical/health, investors, or vendors. Respond ONLY with JSON: {"entity":"<name to search in email, or empty string>"}.',[{role:'user',content:q}],60);
       ent=(JSON.parse(String(cls).replace(/```json|```/g,'').trim()).entity||'').trim();
     }catch(e){}
     if(!ent)return '';
@@ -2106,10 +2109,23 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(glow){glow.style.transform='scale('+(1+convo.amp*0.9)+')';glow.style.opacity=(0.25+convo.amp*0.6).toFixed(3);}
     convo.raf=requestAnimationFrame(orbLoop);
   }
+  // Auto-end conversation mode after this many ms with no speech (mic idle),
+  // so we're not holding the mic / recognizer open when JP has walked away.
+  var CONVO_SILENCE_MS=60000;
+  function convoBump(){convo.lastAct=Date.now();} // called on any user/Hal speech
+  function convoIdleCheck(){
+    if(!convo.open){if(convo.idle){clearInterval(convo.idle);convo.idle=null;}return;}
+    // Only count silence while we're waiting for JP to speak.
+    if(convo.state==='listening'&&(Date.now()-(convo.lastAct||0))>CONVO_SILENCE_MS){
+      convoStatus('Paused after 60s of silence — tap 🎙 Talk to resume.');
+      convoStop();
+    }
+  }
   async function convoStart(){
     if(!SR){if(window.toast)window.toast('Conversation mode needs Chrome (speech recognition).');return;}
     if(!akey()){if(window.toast)window.toast(keyMsg());return;}
     convoBuild();var o=document.getElementById('hal-convo');o.hidden=false;convo.open=true;convo.state='thinking';convoStatus('Warming up…');convoCap('');
+    convo.lastAct=Date.now();if(convo.idle)clearInterval(convo.idle);convo.idle=setInterval(convoIdleCheck,2000);
     try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
     try{
       convo.stream=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -2125,13 +2141,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     try{convo.rec=new SR();}catch(e){return;}
     convo.rec.lang='en-US';convo.rec.interimResults=true;convo.rec.continuous=false;
     var finalText='';
-    convo.rec.onresult=function(e){var f='',im='';for(var i=0;i<e.results.length;i++){var r=e.results[i];if(r.isFinal)f+=r[0].transcript;else im+=r[0].transcript;}finalText=f||finalText;convoCap('“'+(f||im)+'”');};
+    convo.rec.onresult=function(e){var f='',im='';for(var i=0;i<e.results.length;i++){var r=e.results[i];if(r.isFinal)f+=r[0].transcript;else im+=r[0].transcript;}finalText=f||finalText;if(f||im)convoBump();convoCap('“'+(f||im)+'”');};
     convo.rec.onerror=function(){};
     convo.rec.onend=function(){if(!convo.open)return;var v=(finalText||'').trim();if(v)convoTurn(v);else convoListen();};
     try{convo.rec.start();}catch(e){}
   }
   async function convoTurn(userText){
-    convo.state='thinking';convoStatus('Hal is thinking…');convoCap('You: '+userText);
+    convoBump();convo.state='thinking';convoStatus('Hal is thinking…');convoCap('You: '+userText);
     hist.push({role:'user',content:userText});saveHist();paint();
     var reply='';
     try{var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});var voiceHint='\n\n[VOICE MODE] You are in a live spoken conversation. Speak naturally and conversationally, and keep it focused — no preamble. When you give multiple points or next steps, put each on its own short line as a bullet ("- ") or numbered item, phrased so it still sounds natural read aloud, so JP can read the on-screen text and copy it into an email. Aim for a tight, sendable answer, not a long rambling briefing.';reply=await window.halLLM(sys()+voiceHint,msgs,900);hist.push({role:'assistant',content:reply});}
@@ -2166,7 +2182,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function setCap(cap,s){if(cap)cap.innerHTML=fmtCaption(s);}
   function convoSay(text){
     if(!convo.open)return;
-    convo.state='speaking';convoStatus('Hal is speaking…');
+    convoBump();convo.state='speaking';convoStatus('Hal is speaking…');
     var spoken=stripForSpeech(text).slice(0,4000);
     var capFull=captionText(text);
     var cap=document.getElementById('hal-convo-cap');if(cap)cap.textContent='';
@@ -2197,6 +2213,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function convoStop(){
     convo.open=false;convo.state='idle';convo.elAnalyser=null;
+    if(convo.idle){clearInterval(convo.idle);convo.idle=null;}
     try{if(convo.rec){convo.rec.onend=null;convo.rec.abort?convo.rec.abort():convo.rec.stop();}}catch(e){}
     try{elStop();}catch(e){}
     try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
