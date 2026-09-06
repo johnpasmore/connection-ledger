@@ -1962,7 +1962,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!hits.length)return '';
     return hits.map(function(m){return '['+String(m.date||'').slice(0,10)+'] '+(m.from||'')+' → '+(m.to||'')+': '+String(m.text||'').slice(0,300);}).join('\n');
   }
+  var lastEmailErr='';
   async function lookupEmail(term){
+    lastEmailErr='';
     term=(term||'').trim();if(!term)return '';
     if(!(window.gConnected&&window.gConnected()))return '';
     var ex=offLimitsExclusions();ex=ex?(' '+ex):'';
@@ -1970,8 +1972,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // Full-text search across the WHOLE mailbox (subject + body), ALL-TIME, so any
     // email that merely mentions the term is found — not just from:/to: matches.
     // Gmail is the index; we let the model judge which hits are actually relevant.
-    try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q='+encodeURIComponent('"'+term+'"'+ex));ids=(l1&&l1.messages)||[];}catch(e){}
-    if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q='+encodeURIComponent(term+ex));ids=(l2&&l2.messages)||[];}catch(e){}}
+    try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q='+encodeURIComponent('"'+term+'"'+ex));ids=(l1&&l1.messages)||[];}catch(e){lastEmailErr=String(e&&e.message?e.message:e);}
+    if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q='+encodeURIComponent(term+ex));ids=(l2&&l2.messages)||[];lastEmailErr='';}catch(e){lastEmailErr=String(e&&e.message?e.message:e);}}
     var msgs=[];
     for(var j=0;j<ids.length&&j<12;j++){
       try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date');
@@ -1990,13 +1992,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     hist.push({role:'user',content:'Look up: '+term});saveHist();thinking=true;paint();
     try{
       var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
-      if(!data&&!li&&!dm){reply='I don’t see recent email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
+      if(!data&&!li&&!dm){reply=lastEmailErr?('I couldn’t search Gmail just now — it returned an error ('+lastEmailErr.slice(0,120)+'). Try reconnecting Google on the Follow-ups tab, then ask again.'):('I don’t see recent email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.');}
       else{
         var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. Below are up to three sources: his imported LinkedIn connections, his LinkedIn message history, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Then brief him: what it is / who is involved, WHO HE ALREADY KNOWS there (from LinkedIn) and whether they replied, what was said in any prior LinkedIn messages, where the relationship stands, and the single best next move. Note plainly if a source is thin or empty. Keep it tight and sendable.';
         var payload='';
         if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
         if(dm)payload+='LinkedIn messages mentioning “'+term+'”:\n'+dm+'\n\n';
         if(data)payload+='Recent email mentioning “'+term+'”:\n'+data;
+        if(!data&&lastEmailErr)payload+='\n[Gmail search errored ('+lastEmailErr.slice(0,120)+'); email not included — tell JP to reconnect Google on the Follow-ups tab.]';
         reply=await window.halLLM(sysL,[{role:'user',content:payload}],1500);
       }
       hist.push({role:'assistant',content:reply});speak(reply);
@@ -2020,11 +2023,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!ent)return '';
     var low=ent.toLowerCase();
     for(var i=0;i<names.length;i++){if(names[i]&&names[i].toLowerCase().indexOf(low)>=0)return '';} // skip tracked accounts
-    var data=await lookupEmail(ent);var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
+    var gOn=!!(window.gConnected&&window.gConnected());
+    var data=gOn?await lookupEmail(ent):'';var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
     var out='';
     if(li)out+='\n\n[LINKEDIN CONNECTIONS — JP mentioned “'+ent+'”. People he already knows there (from his imported ledger), use if relevant]:\n'+li;
     if(dm)out+='\n\n[LINKEDIN MESSAGES — prior message history mentioning “'+ent+'”, use if relevant]:\n'+dm;
     if(data)out+='\n\n[LIVE EMAIL — JP mentioned “'+ent+'”, which is not a tracked account. Recent email about it, use if relevant]:\n'+data;
+    if(!gOn)out+='\n\n[NOTE: Gmail is NOT connected in this browser session, so email was NOT searched — the above is LinkedIn only. In your reply, briefly tell JP to connect Google on the Follow-ups tab to include email in the search.]';
+    else if(!data&&lastEmailErr)out+='\n\n[NOTE: The Gmail search errored ('+lastEmailErr.slice(0,120)+') so email was NOT included. In your reply, briefly tell JP to reconnect Google on the Follow-ups tab.]';
     return out;
   }
   function clearChat(){hist=[];saveHist();try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}paint();}
@@ -2450,7 +2456,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 (function(){
   var SCOPES='https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email';
   var LOOKBACK=30;
-  var token=null,myEmail='',myDomain='',tokenClient=null,allRows=[];
+  var token=null,myEmail='',myDomain='',tokenClient=null,allRows=[],tokenWaiters=[];
   // Your own identities/aliases — never surface these as an outside guest to follow up with.
   var SELF_DOMAINS=['latimer.ai','futuresum.ai'];
   var SELF_EMAILS=['john@latimer.ai','john@futuresum.ai'];
@@ -2472,12 +2478,20 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(tokenClient)return true;
     var cid=gid();if(!cid){status('Add your Google OAuth Client ID first (Set up).');return false;}
     if(!(window.google&&google.accounts&&google.accounts.oauth2)){status('Google library still loading — try again in a moment.');return false;}
-    tokenClient=google.accounts.oauth2.initTokenClient({client_id:cid,scope:SCOPES,hint:savedEmail()||undefined,callback:function(resp){if(resp&&resp.access_token){token=resp.access_token;onConnected();}else if(!silentMode){status('Authorization failed — click Connect to try again.');}}});
+    tokenClient=google.accounts.oauth2.initTokenClient({client_id:cid,scope:SCOPES,hint:savedEmail()||undefined,callback:function(resp){var t=(resp&&resp.access_token)||null;if(t){token=t;onConnected();}else if(!silentMode){status('Authorization failed — click Connect to try again.');}var w=tokenWaiters.splice(0);w.forEach(function(fn){try{fn(t);}catch(e){}});}});
     return true;
   }
   function connect(silent){silentMode=!!silent;if(ensureClient()){if(!silent)status('Opening Google sign-in…');try{tokenClient.requestAccessToken(silent?{prompt:''}:{});}catch(e){if(!silent)status('Could not start sign-in.');}}}
   if($('fu-connect'))$('fu-connect').onclick=function(){connect(false);};
-  function authFetch(url){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){if(!r.ok){return r.text().then(function(t){throw new Error(r.status+': '+t.replace(/\s+/g,' ').slice(0,300));});}return r.json();});}
+  // Silently request a fresh access token (used to auto-recover from expiry).
+  function refreshToken(){return new Promise(function(res){if(!ensureClient()){res(null);return;}tokenWaiters.push(res);silentMode=true;try{tokenClient.requestAccessToken({prompt:''});}catch(e){res(null);}});}
+  // Gmail access tokens last ~1h; on a 401/403 we refresh once and retry so
+  // lookups don't silently fail mid-session.
+  function authFetch(url,retried){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){
+    if((r.status===401||r.status===403)&&!retried){return refreshToken().then(function(t){if(t)return authFetch(url,true);return r.text().then(function(x){throw new Error(r.status+': '+x.replace(/\s+/g,' ').slice(0,300));});});}
+    if(!r.ok){return r.text().then(function(t){throw new Error(r.status+': '+t.replace(/\s+/g,' ').slice(0,300));});}
+    return r.json();
+  });}
   /* Shared Google/Gmail access for other tabs (e.g. Accounts). Reuses this one session. */
   window.gConnected=function(){return !!token;};
   window.gMyEmail=function(){return myEmail;};
