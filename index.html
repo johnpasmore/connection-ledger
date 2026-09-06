@@ -1904,8 +1904,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function send(q){
     q=(q||'').trim();if(!q||busy)return;
     if(!akey()){if(window.toast)window.toast(keyMsg());setup();return;}
-    var lu=q.match(/^(?:look up|what do we have on|what'?s the latest on)\s+(.+)/i);
-    if(lu){return halLookup(lu[1].replace(/[?.!]+$/,'').trim());}
+    var lu=q.match(/^(?:look ?up|lookup|what do we have on|what'?s the latest on|search(?: for)?)\b[:\s]+(.+)/i);
+    if(lu){
+      // The entity is the head; anything after a dash/comma/"tell me…" is JP's
+      // actual question, which we pass through so Hal answers it specifically.
+      var rest=lu[1].replace(/[?.!]+$/,'').trim();
+      var term=rest.split(/\s+[-–—]\s+|,\s+|\s+(?=tell me\b|who\b|what\b|and who\b)/i)[0].trim();
+      if(term)return halLookup(term,q);
+    }
     busy=true;
     hist.push({role:'user',content:q});saveHist();thinking=true;paint();
     try{
@@ -1984,22 +1990,23 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     }
     return msgs.join('\n');
   }
-  async function halLookup(term){
+  async function halLookup(term,ask){
     term=(term||'').trim();if(!term||busy)return;
-    if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(window.toast)window.toast('Connect Google on the Follow-ups tab first');return;}
     if(!akey()){if(window.toast)window.toast(keyMsg());return;}
+    var gOn=!!(window.gConnected&&window.gConnected());
     busy=true;
-    hist.push({role:'user',content:'Look up: '+term});saveHist();thinking=true;paint();
+    hist.push({role:'user',content:(ask&&ask.trim())?ask.trim():('Look up: '+term)});saveHist();thinking=true;paint();
     try{
-      var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
-      if(!data&&!li&&!dm){reply=lastEmailErr?('I couldn’t search Gmail just now — it returned an error ('+lastEmailErr.slice(0,120)+'). Try reconnecting Google on the Follow-ups tab, then ask again.'):('I don’t see recent email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.');}
+      var data=gOn?await lookupEmail(term):'';var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
+      if(!data&&!li&&!dm){reply=(!gOn)?('I searched your LinkedIn but found nothing for “'+term+'”, and Gmail isn’t connected in this session — connect Google on the Follow-ups tab to search your email too.'):(lastEmailErr?('I couldn’t search Gmail just now — it returned an error ('+lastEmailErr.slice(0,120)+'). Try reconnecting Google on the Follow-ups tab, then ask again.'):('I don’t see email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.'));}
       else{
-        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. Below are up to three sources: his imported LinkedIn connections, his LinkedIn message history, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Then brief him: what it is / who is involved, WHO HE ALREADY KNOWS there (from LinkedIn) and whether they replied, what was said in any prior LinkedIn messages, where the relationship stands, and the single best next move. Note plainly if a source is thin or empty. Keep it tight and sendable.';
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections, his LinkedIn message history, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Then answer: who he already knows there (from LinkedIn) and whether they replied, what was said in any prior LinkedIn messages/email, where the relationship stands, and the single best next move / who to follow up with. Note plainly if a source is thin or empty. Keep it tight and sendable.';
         var payload='';
         if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
         if(dm)payload+='LinkedIn messages mentioning “'+term+'”:\n'+dm+'\n\n';
         if(data)payload+='Recent email mentioning “'+term+'”:\n'+data;
-        if(!data&&lastEmailErr)payload+='\n[Gmail search errored ('+lastEmailErr.slice(0,120)+'); email not included — tell JP to reconnect Google on the Follow-ups tab.]';
+        if(!gOn)payload+='\n[NOTE: Gmail is NOT connected this session, so email was NOT searched — LinkedIn only. Tell JP to connect Google on the Follow-ups tab to include email.]';
+        else if(!data&&lastEmailErr)payload+='\n[Gmail search errored ('+lastEmailErr.slice(0,120)+'); email not included — tell JP to reconnect Google on the Follow-ups tab.]';
         reply=await window.halLLM(sysL,[{role:'user',content:payload}],1500);
       }
       hist.push({role:'assistant',content:reply});speak(reply);
