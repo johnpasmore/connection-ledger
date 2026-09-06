@@ -2011,8 +2011,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var A=loadAccts(),names=A.map(function(a){return a.name;});
     var ent='';
     try{
-      var cls=await window.halLLM('Decide if this message asks about a SPECIFIC named external organization, institution, or business contact that JP might have in his email — this includes companies, universities, colleges, schools, libraries, districts, nonprofits, foundations, and agencies (e.g. "Harvard", "Harvard Library", "Western Governors"), as well as named people/contacts. These are already-tracked accounts — do NOT return any of them: '+names.join('; ')+'. Return an empty string for tracked accounts and for anything personal, family, medical/health, investors, or vendors. Respond ONLY with JSON: {"entity":"<name to search in email, or empty string>"}.',[{role:'user',content:q}],60);
-      ent=(JSON.parse(String(cls).replace(/```json|```/g,'').trim()).entity||'').trim();
+      // Plain-text extraction (no JSON) — far more reliable across models and for
+      // lowercase voice transcripts. Return just the name, or blank.
+      var cls=await window.halLLM('Extract the ONE external organization, institution, or person this message is asking about, so it can be searched in email and LinkedIn. Examples of things to return: "Harvard", "Harvard Library", "Western Governors", "Sara Bleich". Return an EMPTY line only if the message names no such entity, OR names one of these already-tracked accounts ['+names.join('; ')+'], OR is about JP\'s personal life, family, medical/health, investors, or vendors. Reply with ONLY the name, on a single line — no quotes, no punctuation, no explanation. If none, reply with nothing.',[{role:'user',content:q}],120);
+      ent=String(cls||'').replace(/```/g,'').split('\n')[0].replace(/^["'\s.:-]+|["'\s.:-]+$/g,'').trim();
+      if(/^(none|empty|n\/?a|no\b|nothing|sorry|i\b|there)/i.test(ent)||ent.length>60)ent='';
     }catch(e){}
     if(!ent)return '';
     var low=ent.toLowerCase();
