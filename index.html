@@ -1917,6 +1917,27 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var ol=(window.halOffLimits&&window.halOffLimits())||[];
     return ol.map(function(e){return /@|\./.test(e)?('-from:'+e.replace(/^@/,'')+' -to:'+e.replace(/^@/,'')):('-"'+e+'"');}).join(' ');
   }
+  // Search JP's imported LinkedIn connection ledger (name/company/title/institution/
+  // notes) for a term. Returns a short formatted list (or '' if none). Note: the
+  // LinkedIn *message text* isn't retained on import — only who was messaged and
+  // whether they replied — so this searches contacts + that status, not message bodies.
+  function searchLedger(term,limit){
+    term=(term||'').trim().toLowerCase();if(!term)return '';
+    var all=[];try{all=(window.ledgerAll&&window.ledgerAll())||[];}catch(e){}
+    if(!all.length)return '';
+    var hits=[];
+    for(var i=0;i<all.length;i++){var c=all[i];
+      var hay=((c.name||'')+' '+(c.company||'')+' '+(c.position||'')+' '+(c.institution||'')+' '+(c.state||'')+' '+(c.notes||'')+' '+(c.profileUrl||'')).toLowerCase();
+      if(hay.indexOf(term)>=0)hits.push(c);
+    }
+    if(!hits.length)return '';
+    return hits.slice(0,limit||30).map(function(c){
+      var bits=[c.name||'—'];if(c.position)bits.push(c.position);
+      var org=c.company||c.institution;if(org)bits.push('@ '+org);
+      var st=c.replied?'replied':(c.messaged?'messaged, no reply':(c.connected?'connected':'—'));
+      return '- '+bits.join(' ')+' ('+st+(c.profileUrl?('; '+c.profileUrl):'')+')';
+    }).join('\n');
+  }
   async function lookupEmail(term){
     term=(term||'').trim();if(!term)return '';
     if(!(window.gConnected&&window.gConnected()))return '';
@@ -1944,11 +1965,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     busy=true;
     hist.push({role:'user',content:'Look up: '+term});saveHist();thinking=true;paint();
     try{
-      var data=await lookupEmail(term);var reply;
-      if(!data){reply='I don’t see recent email mentioning “'+term+'” in your inbox. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
+      var data=await lookupEmail(term);var li=searchLedger(term,30);var reply;
+      if(!data&&!li){reply='I don’t see recent email or LinkedIn connections mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.';}
       else{
-        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. The email below is a full-text search of his whole mailbox, so FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Using only the relevant email, brief him: what it is / who is involved, where the relationship stands, and the single best next move. If nothing is genuinely relevant, say so plainly. Keep it tight and sendable.';
-        reply=await window.halLLM(sysL,[{role:'user',content:'Recent email mentioning “'+term+'”:\n\n'+data}],1100);
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account. Below are up to two sources: his imported LinkedIn connections, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Then brief him: what it is / who is involved, WHO HE ALREADY KNOWS there (from LinkedIn) and whether they replied, where the relationship stands, and the single best next move. Note plainly if a source is thin or empty. Keep it tight and sendable.';
+        var payload='';
+        if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
+        if(data)payload+='Recent email mentioning “'+term+'”:\n'+data;
+        reply=await window.halLLM(sysL,[{role:'user',content:payload}],1400);
       }
       hist.push({role:'assistant',content:reply});speak(reply);
     }catch(e){hist.push({role:'assistant',content:'Sorry — the lookup failed: '+(e&&e.message?e.message:e)});}
@@ -1967,8 +1991,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!ent)return '';
     var low=ent.toLowerCase();
     for(var i=0;i<names.length;i++){if(names[i]&&names[i].toLowerCase().indexOf(low)>=0)return '';} // skip tracked accounts
-    var data=await lookupEmail(ent);
-    return data?('\n\n[LIVE EMAIL — JP mentioned “'+ent+'”, which is not a tracked account. Recent email about it, use if relevant]:\n'+data):'';
+    var data=await lookupEmail(ent);var li=searchLedger(ent,25);
+    var out='';
+    if(li)out+='\n\n[LINKEDIN CONNECTIONS — JP mentioned “'+ent+'”. People he already knows there (from his imported ledger), use if relevant]:\n'+li;
+    if(data)out+='\n\n[LIVE EMAIL — JP mentioned “'+ent+'”, which is not a tracked account. Recent email about it, use if relevant]:\n'+data;
+    return out;
   }
   function clearChat(){hist=[];saveHist();try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}paint();}
   /* ---- Voice: talk to Hal + hear replies (Web Speech API, no external service) ---- */
