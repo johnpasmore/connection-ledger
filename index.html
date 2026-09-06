@@ -2006,7 +2006,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   window.halLookup=halLookup;
   // Automatic: decide if a chat message is about an untracked org/person to pull email for.
   async function autoLookupContext(q){
-    if(!(window.gConnected&&window.gConnected()))return '';
+    // No Google gate here: LinkedIn connections/messages are local, and the email
+    // search self-gates inside lookupEmail — so lookups work even if Gmail isn't connected.
     var A=loadAccts(),names=A.map(function(a){return a.name;});
     var ent='';
     try{
@@ -2203,7 +2204,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     convoBump();convo.state='thinking';convoStatus('Hal is thinking…');convoCap('You: '+userText);
     hist.push({role:'user',content:userText});saveHist();paint();
     var reply='';
-    try{var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});var voiceHint='\n\n[VOICE MODE] You are in a live spoken conversation. Speak naturally and conversationally, and keep it focused — no preamble. When you give multiple points or next steps, put each on its own short line as a bullet ("- ") or numbered item, phrased so it still sounds natural read aloud, so JP can read the on-screen text and copy it into an email. Aim for a tight, sendable answer, not a long rambling briefing.';reply=await window.halLLM(sys()+voiceHint,msgs,900);hist.push({role:'assistant',content:reply});}
+    try{var extra='';try{extra=await autoLookupContext(userText);}catch(_){}
+      var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});var voiceHint='\n\n[VOICE MODE] You are in a live spoken conversation. Speak naturally and conversationally, and keep it focused — no preamble. When you give multiple points or next steps, put each on its own short line as a bullet ("- ") or numbered item, phrased so it still sounds natural read aloud, so JP can read the on-screen text and copy it into an email. Aim for a tight, sendable answer, not a long rambling briefing.';reply=await window.halLLM(sys()+voiceHint+extra,msgs,900);hist.push({role:'assistant',content:reply});}
     catch(e){reply=String(e&&e.message).indexOf('NOKEY')>=0?('I’m not connected to an engine yet. '+keyMsg()):('Sorry, I hit an error. '+(e&&e.message||''));hist.push({role:'assistant',content:reply});}
     saveHist();paint();
     convoSay(reply);
