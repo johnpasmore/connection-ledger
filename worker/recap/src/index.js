@@ -73,12 +73,13 @@ async function run(env, { source, force }) {
   }
 
   try {
-    // 1) Load accounts from the shared app_state blob.
-    const accounts = await loadAccounts(env, userEmail);
-    const withDomains = accounts.filter((a) => Array.isArray(a.domains) && a.domains.length);
+    // 1) Load accounts from the shared app_state blob — from whichever bucket
+    //    actually has them (handles data under 'default' vs the Access email).
+    const picked = await loadAccountsBest(env, userEmail);
+    const withDomains = picked.accounts.filter((a) => Array.isArray(a.domains) && a.domains.length);
     if (!withDomains.length) {
-      await logRun(env, weekKey, userEmail, "error", "no accounts with domains in app_state");
-      return { ok: false, error: "no accounts with domains", userEmail };
+      await logRun(env, weekKey, userEmail, "error", "no accounts with domains in any bucket");
+      return { ok: false, error: "no accounts with domains", userEmail, buckets: picked.buckets };
     }
 
     // 2) Fresh Google access token from the stored refresh token.
@@ -104,7 +105,7 @@ async function run(env, { source, force }) {
     await gmailSend(accessToken, auth.googleEmail || recipient, recipient, subject, body);
 
     await logRun(env, weekKey, userEmail, "sent", "to " + recipient + " (" + data.length + " accounts)");
-    return { ok: true, sent: true, weekKey, recipient, accounts: data.length };
+    return { ok: true, sent: true, weekKey, recipient, accounts: data.length, sourceBucket: picked.used, buckets: picked.buckets };
   } catch (e) {
     const msg = String(e && e.message ? e.message : e);
     await logRun(env, weekKey, userEmail, "error", msg);
@@ -113,9 +114,38 @@ async function run(env, { source, force }) {
 }
 
 // ---- accounts from app_state (gzip base64 blob) ---------------------------
-async function loadAccounts(env, userEmail) {
-  let row = await env.DB.prepare("SELECT data FROM app_state WHERE user_email = ?").bind(userEmail).first();
-  if (!row) row = await env.DB.prepare("SELECT data FROM app_state WHERE user_email = 'default'").first();
+// Prefer the configured bucket; if it has no domained accounts (e.g. an empty
+// bucket created by a stray login), fall back to `default`, then to whichever
+// bucket has the most domained accounts. Returns a `buckets` diagnostic too.
+async function loadAccountsBest(env, userEmail) {
+  const domained = (a) => a.filter((x) => Array.isArray(x.domains) && x.domains.length).length;
+
+  const primary = await parseBucket(env, userEmail);
+  if (domained(primary)) return { accounts: primary, used: userEmail, buckets: [{ key: userEmail, total: primary.length, withDomains: domained(primary) }] };
+
+  const def = await parseBucket(env, "default");
+  const buckets = [
+    { key: userEmail, total: primary.length, withDomains: domained(primary) },
+    { key: "default", total: def.length, withDomains: domained(def) },
+  ];
+  if (domained(def)) return { accounts: def, used: "default", buckets };
+
+  // Last resort: scan every bucket and pick the richest one.
+  let rows;
+  try { rows = await env.DB.prepare("SELECT user_email FROM app_state").all(); } catch (e) { rows = { results: [] }; }
+  let best = [], bestKey = null;
+  for (const r of (rows.results || [])) {
+    if (r.user_email === userEmail || r.user_email === "default") continue;
+    const a = await parseBucket(env, r.user_email);
+    buckets.push({ key: r.user_email, total: a.length, withDomains: domained(a) });
+    if (domained(a) > domained(best)) { best = a; bestKey = r.user_email; }
+  }
+  return { accounts: best, used: bestKey, buckets };
+}
+
+async function parseBucket(env, key) {
+  let row;
+  try { row = await env.DB.prepare("SELECT data FROM app_state WHERE user_email = ?").bind(key).first(); } catch (e) { return []; }
   if (!row || !row.data) return [];
   let packed;
   try { packed = JSON.parse(row.data); } catch (e) { packed = row.data; }
@@ -282,7 +312,22 @@ async function latimer(env, sys, user) {
   });
   const j = await r.json();
   if (!r.ok) throw new Error("latimer " + r.status + " " + JSON.stringify(j).slice(0, 200));
-  return (j.output || j.completion || j.message || "").toString().trim();
+  const out = extractLatimer(j);
+  if (!out) throw new Error("latimer replied but no text field — raw: " + JSON.stringify(j).slice(0, 220));
+  return out;
+}
+
+// Defensive text extraction from Latimer's response — mirrors index.html.
+function extractLatimer(j) {
+  if (j == null) return "";
+  if (typeof j === "string") return j.trim();
+  const d = [j.output, j.response, j.completion, j.text, j.answer, j.result, j.reply];
+  for (let i = 0; i < d.length; i++) if (typeof d[i] === "string" && d[i].trim()) return d[i].trim();
+  try { if (j.message && typeof j.message === "string" && j.message.trim() && j.message !== j.input) return j.message.trim(); } catch (e) {}
+  try { if (j.message && j.message.content && typeof j.message.content === "string") return j.message.content.trim(); } catch (e) {}
+  try { if (j.choices && j.choices[0]) { const c = j.choices[0]; const t = (c.message && c.message.content) || c.text || c.content; if (typeof t === "string" && t.trim()) return t.trim(); } } catch (e) {}
+  try { if (j.data) { const dd = extractLatimer(j.data); if (dd) return dd; } } catch (e) {}
+  return "";
 }
 
 // ---- Gmail send ------------------------------------------------------------
@@ -294,7 +339,7 @@ async function gmailSend(accessToken, from, to, subject, body) {
     "MIME-Version: 1.0\r\n" +
     'Content-Type: text/plain; charset="UTF-8"\r\n' +
     "Content-Transfer-Encoding: 8bit\r\n\r\n" +
-    body;
+    (typeof body === "string" ? body : String(body || ""));
   const raw = b64url(new TextEncoder().encode(mime));
   const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
