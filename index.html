@@ -322,9 +322,7 @@
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
-        <textarea id="hal-q" rows="1" placeholder="Ask Hal — type, tap 🎤 to dictate, or 🎙 Talk"></textarea>
-        <button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊</button>
-        <button type="button" class="hal-mic" title="Dictate a message">🎤</button>
+        <textarea id="hal-q" rows="1" placeholder="Ask Hal…"></textarea>
         <button type="button" class="hal-talk" title="Hands-free conversation with Hal">🎙 Talk</button>
         <button class="btn primary" id="hal-send">Send</button>
       </div>
@@ -1859,7 +1857,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     drafts=[]; // reset once per full paint so data-draft indices stay in sync across mounts
     var h=hist.length
       ? hist.map(function(t){return t.role==='user'?bubble('user',esc(t.content).replace(/\n/g,'<br>')):bubble('bot',fmtBot(t.content));}).join('')
-      : '<div class="hal-greeting"><div class="hal-greeting-h">Today’s briefing</div>'+md(greeting())+'</div>'; // distinct empty-state so it isn\'t mistaken for a prior conversation
+      : ''; // empty state — no auto briefing; the suggested-prompt chips guide the user
     if(thinking)h+='<div class="hal-think">Hal is thinking…</div>';
     return h;
   }
@@ -1981,12 +1979,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     //    set up for the weekly recap), so it works regardless of the in-browser
     //    connection, which expires ~hourly and clears on reload.
     try{
-      var sr=await fetch('/api/gmail/search?limit=20&q='+encodeURIComponent('"'+term+'"'+ex));
+      // Unquoted term (matches the proven whole-mailbox search); prefer actual
+      // correspondence with the org's people but fall back to any mention.
+      var sr=await fetch('/api/gmail/search?limit=15&q='+encodeURIComponent(term+ex));
       if(sr.ok){var sj=await sr.json();
         if(sj&&sj.ok){
           if(sj.messages&&sj.messages.length)return fmtSrvMsgs(sj.messages);
-          var sr2=await fetch('/api/gmail/search?limit=20&q='+encodeURIComponent(term+ex));
-          if(sr2.ok){var sj2=await sr2.json();if(sj2&&sj2.ok&&sj2.messages&&sj2.messages.length)return fmtSrvMsgs(sj2.messages);}
           return ''; // server searched successfully, genuinely nothing
         }
         if(sj&&!sj.ok)lastEmailErr='server: '+String(sj.error||'').slice(0,140);
@@ -2024,7 +2022,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
       if(!data&&!li&&!dm){reply=lastEmailErr?('I couldn’t search Gmail just now ('+lastEmailErr.slice(0,140)+'), and found nothing in LinkedIn for “'+term+'”. Reconnect Google (the Recap tab’s connect powers server-side email search), then ask again.'):('I don’t see email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.');}
       else{
-        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections (people AFFILIATED with “'+term+'”), his LinkedIn message history, and a full-text Gmail search. Structure the reply in clearly labeled sections: "Recent email" (list each Gmail thread below as "date — sender — subject"; present only if email data is provided; never merge it into LinkedIn), "LinkedIn connections" (list EVERY connection provided below — do NOT drop or summarize the list — with each person\'s status), "Also mentioned" (people/threads that merely reference “'+term+'” but are NOT affiliated with it — e.g. someone at another school copied on a thread that name-drops “'+term+'” — list them here and clearly label them as mentions, NOT as “'+term+'” connections), then "Best next steps / who to follow up with". Keep affiliated connections and mere mentions strictly separate. Answer his exact question; note plainly if a source is empty. Keep it tight and sendable.';
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections (people AFFILIATED with “'+term+'”), his LinkedIn message history, and a full-text Gmail search. Structure the reply in clearly labeled sections: "Recent email" (list EVERY Gmail thread below as "date — sender — subject" — do NOT condense to one or summarize; present only if email data is provided; never merge it into LinkedIn), "LinkedIn connections" (list EVERY connection provided below — do NOT drop or summarize the list — with each person\'s status), "Also mentioned" (people/threads that merely reference “'+term+'” but are NOT affiliated with it — e.g. someone at another school copied on a thread that name-drops “'+term+'” — list them here and clearly label them as mentions, NOT as “'+term+'” connections), then "Best next steps / who to follow up with". Keep affiliated connections and mere mentions strictly separate. Answer his exact question; note plainly if a source is empty. Keep it tight and sendable.';
         var payload='';
         if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
         if(dm)payload+='LinkedIn messages mentioning “'+term+'”:\n'+dm+'\n\n';
@@ -2059,7 +2057,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var out='';
     if(li)out+='\n\n[LINKEDIN CONNECTIONS — people AFFILIATED with “'+ent+'” (company/role) from JP\'s ledger. In your reply, list EVERY one of these under a "LinkedIn connections" heading with each person\'s status — do NOT drop or summarize the list]:\n'+li;
     if(dm)out+='\n\n[LINKEDIN MESSAGES — message threads that MENTION “'+ent+'”. Show under "Recent messages". Anyone here who is NOT in the affiliated connections list is only a MENTION — put them under an "Also mentioned" heading and label them as mentions, never as a “'+ent+'” contact]:\n'+dm;
-    if(data)out+='\n\n[EMAIL — recent Gmail that MENTIONS “'+ent+'” (full-text, whole mailbox). You MUST surface this under a clearly labeled "Recent email" heading, listing each thread as "date — sender — subject", separate from LinkedIn. People who appear only here (e.g. someone at another school copied on a thread that name-drops “'+ent+'”) are MENTIONS, not “'+ent+'” connections — put them under "Also mentioned", never in the connections list]:\n'+data;
+    if(data)out+='\n\n[EMAIL — recent Gmail that MENTIONS “'+ent+'” (full-text, whole mailbox). You MUST surface this under a "Recent email" heading and list EVERY thread below as "date — sender — subject" (do NOT condense to one or summarize the list). People who appear only here (e.g. someone at another school copied on a thread that name-drops “'+ent+'”) are MENTIONS, not “'+ent+'” connections — put them under "Also mentioned", never in the connections list]:\n'+data;
     if(!data&&lastEmailErr)out+='\n\n[NOTE: The Gmail search was unavailable ('+lastEmailErr.slice(0,140)+'), so email was NOT included. In your reply, briefly tell JP to (re)connect Google — the weekly-recap connect on the Recap tab powers server-side email search.]';
     return out;
   }
