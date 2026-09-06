@@ -1943,7 +1943,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!all.length)return '';
     var hits=[];
     for(var i=0;i<all.length;i++){var c=all[i];
-      var hay=((c.name||'')+' '+(c.company||'')+' '+(c.position||'')+' '+(c.institution||'')+' '+(c.state||'')+' '+(c.notes||'')+' '+(c.profileUrl||'')).toLowerCase();
+      // Match on AFFILIATION only (company/institution/position/name) — not notes —
+      // so someone merely *mentioned* alongside the term (e.g. a person at another
+      // school in a thread that name-drops it) isn't miscounted as a connection there.
+      var hay=((c.company||'')+' '+(c.institution||'')+' '+(c.position||'')+' '+(c.name||'')).toLowerCase();
       if(hay.indexOf(term)>=0)hits.push(c);
     }
     if(!hits.length)return '';
@@ -2021,7 +2024,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
       if(!data&&!li&&!dm){reply=lastEmailErr?('I couldn’t search Gmail just now ('+lastEmailErr.slice(0,140)+'), and found nothing in LinkedIn for “'+term+'”. Reconnect Google (the Recap tab’s connect powers server-side email search), then ask again.'):('I don’t see email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.');}
       else{
-        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections, his LinkedIn message history, and a full-text search of his whole mailbox. FIRST judge relevance: ignore hits that only mention “'+term+'” in passing, in a signature/newsletter, or are a name collision. Structure the reply in clearly labeled sections — "Recent email" (list each relevant Gmail thread as "date — sender — subject", present ONLY if email data is provided below and never merged silently into LinkedIn), "LinkedIn" (who he knows there and whether they replied), then "Best next steps / who to follow up with". Answer his exact question. Note plainly if a source is thin or empty. Keep it tight and sendable.';
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections (people AFFILIATED with “'+term+'”), his LinkedIn message history, and a full-text Gmail search. Structure the reply in clearly labeled sections: "Recent email" (list each Gmail thread below as "date — sender — subject"; present only if email data is provided; never merge it into LinkedIn), "LinkedIn connections" (list EVERY connection provided below — do NOT drop or summarize the list — with each person\'s status), "Also mentioned" (people/threads that merely reference “'+term+'” but are NOT affiliated with it — e.g. someone at another school copied on a thread that name-drops “'+term+'” — list them here and clearly label them as mentions, NOT as “'+term+'” connections), then "Best next steps / who to follow up with". Keep affiliated connections and mere mentions strictly separate. Answer his exact question; note plainly if a source is empty. Keep it tight and sendable.';
         var payload='';
         if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
         if(dm)payload+='LinkedIn messages mentioning “'+term+'”:\n'+dm+'\n\n';
@@ -2054,9 +2057,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     for(var i=0;i<names.length;i++){if(names[i]&&names[i].toLowerCase().indexOf(low)>=0)return '';} // skip tracked accounts
     var data=await lookupEmail(ent);var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
     var out='';
-    if(li)out+='\n\n[LINKEDIN CONNECTIONS — JP mentioned “'+ent+'”. People he already knows there (from his imported ledger), use if relevant]:\n'+li;
-    if(dm)out+='\n\n[LINKEDIN MESSAGES — prior message history mentioning “'+ent+'”, use if relevant]:\n'+dm;
-    if(data)out+='\n\n[EMAIL — recent Gmail mentioning “'+ent+'” (full-text, whole mailbox). You MUST surface this: include a clearly labeled "Recent email" section in your reply listing each relevant thread as "date — sender — subject", separate from LinkedIn. Do NOT silently merge it into the connections list]:\n'+data;
+    if(li)out+='\n\n[LINKEDIN CONNECTIONS — people AFFILIATED with “'+ent+'” (company/role) from JP\'s ledger. In your reply, list EVERY one of these under a "LinkedIn connections" heading with each person\'s status — do NOT drop or summarize the list]:\n'+li;
+    if(dm)out+='\n\n[LINKEDIN MESSAGES — message threads that MENTION “'+ent+'”. Show under "Recent messages". Anyone here who is NOT in the affiliated connections list is only a MENTION — put them under an "Also mentioned" heading and label them as mentions, never as a “'+ent+'” contact]:\n'+dm;
+    if(data)out+='\n\n[EMAIL — recent Gmail that MENTIONS “'+ent+'” (full-text, whole mailbox). You MUST surface this under a clearly labeled "Recent email" heading, listing each thread as "date — sender — subject", separate from LinkedIn. People who appear only here (e.g. someone at another school copied on a thread that name-drops “'+ent+'”) are MENTIONS, not “'+ent+'” connections — put them under "Also mentioned", never in the connections list]:\n'+data;
     if(!data&&lastEmailErr)out+='\n\n[NOTE: The Gmail search was unavailable ('+lastEmailErr.slice(0,140)+'), so email was NOT included. In your reply, briefly tell JP to (re)connect Google — the weekly-recap connect on the Recap tab powers server-side email search.]';
     return out;
   }
