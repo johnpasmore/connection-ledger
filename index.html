@@ -2012,14 +2012,19 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // 1) Server-side search first — uses the backend offline Google token (the one
     //    set up for the weekly recap), so it works regardless of the in-browser
     //    connection, which expires ~hourly and clears on reload.
+    // Prefer real correspondence: since June 2024 (when the Latimer motion began)
+    // and excluding bulk/newsletter categories, so substantive threads surface
+    // instead of promotional mentions. Fall back to a broad search if that's empty.
+    var focus=' after:2024/06/01 -category:promotions -category:social -category:forums -category:updates';
     try{
-      // Unquoted term (matches the proven whole-mailbox search); prefer actual
-      // correspondence with the org's people but fall back to any mention.
-      var sr=await fetch('/api/gmail/search?limit=15&q='+encodeURIComponent(term+ex));
+      var sr=await fetch('/api/gmail/search?limit=20&q='+encodeURIComponent(term+focus+ex));
       if(sr.ok){var sj=await sr.json();
         if(sj&&sj.ok){
           if(sj.messages&&sj.messages.length)return fmtSrvMsgs(sj.messages);
-          return ''; // server searched successfully, genuinely nothing
+          // Nothing in the focused window — broaden (all time, any category).
+          var sr2=await fetch('/api/gmail/search?limit=20&q='+encodeURIComponent(term+ex));
+          if(sr2.ok){var sj2=await sr2.json();if(sj2&&sj2.ok&&sj2.messages&&sj2.messages.length)return fmtSrvMsgs(sj2.messages);}
+          return ''; // genuinely nothing
         }
         if(sj&&!sj.ok)lastEmailErr='server: '+String(sj.error||'').slice(0,140);
       }
