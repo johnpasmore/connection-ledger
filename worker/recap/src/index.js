@@ -252,7 +252,7 @@ async function writeRecap(env, data) {
     " Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering the last week. " +
     "Use EXACTLY these three sections with these headers on their own lines:\n\n" +
     "1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\n" +
-    "Section 1: for each account with activity, a couple of tight bullet lines on what happened and where it stands.\n" +
+    "Section 1: one entry per account with activity. Start each entry with the institution name, then the specific person (or people) JP is corresponding with there (identify them from the From/To names; write \"(contact unclear)\" if none is identifiable), then what happened and where it stands. Format: <Institution> — <Contact name(s)>: <what happened / status>.\n" +
     "Section 2: list ONLY threads whose messages are tagged {scott}, grouped by account. IF AND ONLY IF there are zero such threads, write exactly this one line and nothing else in the section: \"No threads involved Scott in this period.\" If you list any threads, do NOT include that sentence.\n" +
     "Section 3: same rule for threads tagged {barika}, using \"No threads involved Barika in this period.\" only when there are none.\n" +
     "Never both list threads and say there were none. Keep sections 2 and 3 self-contained so JP can copy each to that person. Do not invent anything not in the data.";
