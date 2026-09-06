@@ -505,6 +505,14 @@
       <div class="rc-actions"><button class="btn sm" id="rc-open">✉ Open in email to john@latimer.ai</button><button class="btn sm" id="rc-copy">Copy all</button></div>
       <pre id="rc-body" class="rc-body"></pre>
     </div>
+    <div id="rc-auto" style="margin-top:22px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surface)">
+      <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px">📆 Automatic weekly email <span id="rc-auto-badge" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--ink-soft)">checking…</span></div>
+      <p class="note" style="margin:6px 0 10px">Hal sends this recap to <b>john@latimer.ai</b> every <b>Monday 7:00am (ET)</b> — even with your browser closed. Connect Google once for offline read + send access; the token is stored encrypted and used only for the weekly send.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn sm primary" id="rc-auto-connect">Connect Google for weekly send</button>
+        <span id="rc-auto-info" style="font-size:12px;color:var(--ink-soft)"></span>
+      </div>
+    </div>
   </section>
 
   <!-- ============ DASHBOARD TAB ============ -->
@@ -691,6 +699,8 @@ document.querySelectorAll('.navtop').forEach(function(b){b.addEventListener('cli
   var menu=b.parentNode.querySelector('.navmenu');closeMenus(menu);if(menu)menu.classList.toggle('open');
 });});
 document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))closeMenus();});
+// Deep-link support (e.g. /#recap after the weekly-email OAuth callback).
+(function(){var h=(location.hash||'').replace('#','');if(h&&document.querySelector('.navitem[data-tab="'+h+'"]'))activateTab(h);})();
 
 /* =================== CONNECTION LEDGER =================== */
 (function(){
@@ -2312,7 +2322,34 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var g2=document.getElementById('rc-gen');if(g2&&!g2._w){g2._w=1;g2.onclick=generate;}
     var op=document.getElementById('rc-open');if(op&&!op._w){op._w=1;op.onclick=function(){if(window.openCompose)window.openCompose(TO,lastSubject,lastBody);};}
     var cp=document.getElementById('rc-copy');if(cp&&!cp._w){cp._w=1;cp.onclick=function(){try{navigator.clipboard.writeText(lastBody);cp.textContent='Copied ✓';setTimeout(function(){cp.textContent='Copy all';},1500);}catch(e){}};}
+    var cn=document.getElementById('rc-auto-connect');if(cn&&!cn._w){cn._w=1;cn.onclick=function(){window.location.href='/api/recap/connect';};}
+    autoStatus();
   };
+  // Reflect the backend weekly-email wiring on the card.
+  async function autoStatus(){
+    var badge=document.getElementById('rc-auto-badge'),info=document.getElementById('rc-auto-info'),btn=document.getElementById('rc-auto-connect');
+    if(!badge)return;
+    function set(txt,bg,fg){badge.textContent=txt;badge.style.background=bg;badge.style.color=fg;}
+    try{
+      var r=await fetch('/api/recap/status',{headers:{'Accept':'application/json'}});
+      if(!r.ok)throw new Error('status '+r.status);
+      var s=await r.json();
+      if(!s.configured){set('backend not set up','#fde8e8','#a12'); if(info)info.textContent='Add the Cloudflare secrets (see RECAP-SETUP.md) to enable the weekly send.'; return;}
+      if(s.connected&&s.hasSend){
+        set('on ✓','#e6f4ea','#137333');
+        if(btn)btn.textContent='Reconnect Google';
+        var last=s.lastRun?(' · last run '+(s.lastRun.status||'')+(s.lastRun.sent_at?(' '+new Date(s.lastRun.sent_at).toLocaleDateString()):'')):'';
+        if(info)info.textContent='Connected as '+(s.googleEmail||'your Google account')+' · Mondays 7am ET → '+s.recipient+last;
+      }else if(s.connected){
+        set('needs send access','#fef7e0','#8a6d00');
+        if(info)info.textContent='Connected, but the send scope is missing — click Reconnect and approve "Send email on your behalf".';
+        if(btn)btn.textContent='Reconnect Google';
+      }else{
+        set('not connected','#fef7e0','#8a6d00');
+        if(info)info.textContent='One-time consent — then Hal handles it automatically.';
+      }
+    }catch(e){ set('unavailable','#f1f1f1','#666'); if(info)info.textContent='Deploy the recap backend to enable this (see RECAP-SETUP.md).'; }
+  }
 })();
 
 /* ===== Cloudflare D1 cloud sync (localStorage-first, graceful fallback) ===== */
