@@ -2041,12 +2041,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var A=loadAccts(),names=A.map(function(a){return a.name;});
     var ent='';
     try{
-      // Plain-text extraction (no JSON) — far more reliable across models and for
-      // lowercase voice transcripts. Return just the name, or blank.
-      var ctx=(typeof hist!=='undefined'&&hist.length)?hist.slice(-6).map(function(t){return {role:(t.role==='assistant'?'assistant':'user'),content:String(t.content||'').slice(0,600)};}):[{role:'user',content:q}];
-      var cls=await window.halLLM('You extract the ONE external organization, institution, or person the LATEST user message wants looked up in email and LinkedIn — RESOLVING follow-up references to earlier turns. E.g. after discussing Harvard, "what about in Gmail?", "and their library?", or "who should I follow up with?" all still mean "Harvard". Examples to return: "Harvard", "Harvard Library", "Western Governors", "Sara Bleich". Return an EMPTY line only if no such entity is in play, OR it is one of these already-tracked accounts ['+names.join('; ')+'], OR it is about JP\'s personal life, family, medical/health, investors, or vendors. Reply with ONLY the name, on a single line — no quotes, no punctuation, no explanation. If none, reply with nothing.',ctx,120);
-      ent=String(cls||'').replace(/```/g,'').split('\n')[0].replace(/^["'\s.:-]+|["'\s.:-]+$/g,'').trim();
-      if(/^(none|empty|n\/?a|no\b|nothing|sorry|i\b|there)/i.test(ent)||ent.length>60)ent='';
+      // Entity extraction: feed the recent transcript as ONE text block (not as
+      // chat turns — that made the model answer instead of extract) and force a
+      // short name-only output.
+      var recent=(typeof hist!=='undefined'&&hist.length)?hist.slice(-6).map(function(t){return (t.role==='assistant'?'Hal':'JP')+': '+String(t.content||'').slice(0,300);}).join('\n'):('JP: '+q);
+      var cls=await window.halLLM('From the transcript below, output ONLY the name of the ONE external organization, institution, or person the LATEST "JP:" line wants looked up in email/LinkedIn — resolving follow-up references (after discussing Harvard, "what about in Gmail?", "and their library?", "who should I follow up with?" all still mean "Harvard"). Output just the name on a single line, or an empty line. Do NOT converse, answer, or explain. NEVER output "Latimer"/"Latimer.AI" (that is JP\'s own company). Output empty for these tracked accounts ['+names.join('; ')+'] and for anything personal, family, medical/health, investors, or vendors.',[{role:'user',content:recent}],30);
+      ent=String(cls||'').replace(/```/g,'').split('\n')[0].replace(/^["'\s.:\-]+|["'\s.:\-]+$/g,'').trim();
+      if(/^(none|empty|n\/?a|no\b|nothing|sorry|i\b|there|the |here|based |it )/i.test(ent)||/latimer/i.test(ent)||ent.length>60)ent='';
     }catch(e){}
     if(!ent)return '';
     var low=ent.toLowerCase();
