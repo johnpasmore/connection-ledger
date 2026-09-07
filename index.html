@@ -1961,9 +1961,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   /* ---- Ask about ANY org/person in your email (not just tracked accounts) ---- */
   // Gather recent Gmail about a free-text term → formatted string (or '' if none).
-  function offLimitsExclusions(){ // Gmail exclusions so off-limits senders/keywords never enter a lookup
+  function offLimitsExclusions(){
+    // ONLY exclude off-limits DOMAINS/EMAILS from the Gmail query (precise). Bare
+    // keyword off-limits (e.g. "family", "personal") are NOT used as -"kw" search
+    // exclusions — common words like those appear in tons of legit emails and
+    // would wipe out results. Keyword off-limits still apply as Hal's guardrails.
     var ol=(window.halOffLimits&&window.halOffLimits())||[];
-    return ol.map(function(e){return /@|\./.test(e)?('-from:'+e.replace(/^@/,'')+' -to:'+e.replace(/^@/,'')):('-"'+e+'"');}).join(' ');
+    return ol.filter(function(e){return /@|\./.test(e);}).map(function(e){e=e.replace(/^@/,'');return '-from:'+e+' -to:'+e;}).join(' ');
   }
   // Search JP's imported LinkedIn connection ledger (name/company/title/institution/
   // notes) for a term. Returns a short formatted list (or '' if none). Note: the
