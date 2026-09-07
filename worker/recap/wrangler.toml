@@ -7,11 +7,14 @@ main = "src/index.js"
 compatibility_date = "2026-05-31"
 compatibility_flags = ["nodejs_compat"]
 
-# 11:00 and 12:00 UTC every Monday. That is 7am ET in both EDT (UTC-4 → 11:00)
-# and EST (UTC-5 → 12:00). The Worker itself checks the real America/New_York
-# hour and only sends at 07:00, so exactly one of the two firings actually sends.
+# Fire at 11:00 and 12:00 UTC EVERY day. The Worker's scheduled() gate is the single
+# source of truth for "Monday 7am America/New_York": it only sends when the real ET
+# weekday is Monday and the ET hour is 07 (11:00 UTC in EDT, 12:00 UTC in EST — so
+# exactly one firing sends each Monday), and a weekly dedupe prevents double-sends.
+# Firing daily (not "* * 1") avoids any ambiguity in how the dashboard interprets the
+# cron day-of-week (it rendered "* * 1" as Sunday) and is inherently DST-proof.
 [triggers]
-crons = ["0 11,12 * * 1"]
+crons = ["0 11,12 * * *"]
 
 # Bind the SAME D1 database the Pages app uses.
 # Fill in database_id from: Cloudflare dashboard → Storage & Databases → D1 → ledger.
