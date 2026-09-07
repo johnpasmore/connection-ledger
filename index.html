@@ -2012,10 +2012,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // 1) Server-side search first — uses the backend offline Google token (the one
     //    set up for the weekly recap), so it works regardless of the in-browser
     //    connection, which expires ~hourly and clears on reload.
-    // Prefer real correspondence: since June 2024 (when the Latimer motion began)
-    // and excluding bulk/newsletter categories, so substantive threads surface
-    // instead of promotional mentions. Fall back to a broad search if that's empty.
-    var focus=' after:2024/06/01 -category:promotions -category:social -category:forums -category:updates';
+    // Focus on the Latimer era (since June 2024). Keep it simple — a light
+    // promotions filter only — then broaden to all-time if that window is empty,
+    // so email reliably surfaces rather than over-filtering to nothing.
+    var focus=' after:2024/06/01 -category:promotions';
     try{
       var sr=await fetch('/api/gmail/search?limit=20&q='+encodeURIComponent(term+focus+ex));
       if(sr.ok){var sj=await sr.json();
