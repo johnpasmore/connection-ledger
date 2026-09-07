@@ -287,11 +287,10 @@
   </div>
   <nav class="tabs">
     <div class="navgroup">
-      <button class="navtop active" data-tab="hal">Hal <span class="caret">▾</span></button>
-      <div class="navmenu">
-        <button class="navitem" data-tab="hal">Chat with Hal</button>
-        <button class="navitem" data-tab="accounts">Accounts</button>
-      </div>
+      <button class="navtop active" data-tab="hal">Hal</button>
+    </div>
+    <div class="navgroup">
+      <button class="navtop" data-tab="accounts">Accounts</button>
     </div>
     <div class="navgroup">
       <button class="navtop" data-tab="ledger">Connections <span class="caret">▾</span></button>
@@ -732,7 +731,7 @@ document.querySelectorAll('.navtop').forEach(function(b){b.addEventListener('cli
 });});
 document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))closeMenus();});
 // Deep-link support (e.g. /#recap after the weekly-email OAuth callback).
-(function(){var h=(location.hash||'').replace('#','');if(h&&document.querySelector('.navitem[data-tab="'+h+'"]'))activateTab(h);})();
+(function(){var h=(location.hash||'').replace('#','');if(h&&document.querySelector('[data-tab="'+h+'"]'))activateTab(h);})();
 
 /* =================== CONNECTION LEDGER =================== */
 (function(){
