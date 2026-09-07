@@ -2015,26 +2015,26 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   // model kept dropping email from its narrative, so we render the factual thread
   // list ourselves and append it to Hal's reply — it can't be omitted this way.
   var lastEmailBlock='';
+  // Structured threads from the most recent lookup ({date,from,to,cc,subject,snippet,reasons}).
+  var lastEmailMsgs=[];
   // True when the email-search failure looks like a Google/Access auth problem
   // (as opposed to a plain "0 results" or a transient edge error).
   function emailAuthIssue(m){return /access|auth|token|scope|reconnect|not connected|401|403|409|session|login|sign in/i.test(String(m||''));}
-  function fmtSrvMsgs(arr){return (arr||[]).map(function(m){return '['+(m.date||'')+'] '+(m.from||'')+' — '+(m.subject||'')+'\n  '+(m.snippet||'');}).join('\n');}
+  function fmtSrvMsgs(arr){return (arr||[]).map(function(m){return '['+(m.date||'')+'] '+(m.from||'')+' → '+(m.to||'')+' — '+(m.subject||'')+((m.reasons&&m.reasons.length)?(' ['+m.reasons.join(', ')+']'):'')+'\n  '+(m.snippet||'');}).join('\n');}
   function deEntity(s){return String(s||'').replace(/&#39;/g,'’').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ');}
-  // Turn the plain-text email dump (fmtSrvMsgs output — "[date] sender — subject"
-  // then an indented snippet line per thread) into a tidy one-bullet-per-thread block.
-  function emailMd(data,term){
-    if(!data)return '';
-    var lines=String(data).split('\n'),items=[],cur=null;
-    for(var i=0;i<lines.length;i++){var ln=lines[i];if(!ln.trim())continue;
-      if(/^\s*\[/.test(ln)){if(cur)items.push(cur);cur={h:ln.trim(),s:''};}   // new thread header
-      else if(cur)cur.s+=(cur.s?' ':'')+ln.trim();                            // snippet continuation
-    }
-    if(cur)items.push(cur);
-    if(!items.length)return '';
-    var out=items.map(function(it){
-      var h=deEntity(it.h).replace(/^\[([^\]]+)\]/,'**[$1]**');               // bold the date
-      var sn=it.s?(' — _'+deEntity(it.s).slice(0,150).replace(/[*_`]/g,'')+(it.s.length>150?'…':'')+'_'):'';
-      return '- '+h+sn;
+  function shortAddr(s){s=deEntity(s||'').replace(/\s+/g,' ').trim();return s.length>70?(s.slice(0,70)+'…'):s;}
+  // Render the structured lookup threads (lastEmailMsgs) into a tidy one-bullet-per-
+  // thread block: date, actual from → to addresses, subject, WHY it matched (address/
+  // subject/body), and a short snippet. Rendered in code so the model can't drop it.
+  function emailMd(term){
+    var arr=lastEmailMsgs||[];if(!arr.length)return '';
+    var out=arr.map(function(m){
+      var date=m.date?('**['+m.date+']** '):'';
+      var route=shortAddr(m.from)+(m.to?(' → '+shortAddr(m.to)):'');
+      var subj=m.subject?(' — **'+deEntity(m.subject).replace(/[*`]/g,'')+'**'):'';
+      var why=(m.reasons&&m.reasons.length)?(' (match: '+m.reasons.join(', ')+')'):'';
+      var sn=m.snippet?(' — '+deEntity(m.snippet).slice(0,140).replace(/[*`]/g,'')+(m.snippet.length>140?'…':'')):'';
+      return '- '+date+route+subj+why+sn;
     });
     return '**Recent email'+(term?(' mentioning '+term):'')+'**\n'+out.join('\n');
   }
@@ -2047,7 +2047,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return '';
   }
   async function lookupEmail(term){
-    lastEmailErr='';
+    lastEmailErr='';lastEmailMsgs=[];
     term=(term||'').trim();if(!term)return '';
     // 1) Server-side search first — uses the backend offline Google token (works
     //    regardless of the in-browser connection). NO filters for now (per JP):
@@ -2060,7 +2060,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var raw='';try{raw=await sr.text();}catch(e){raw='';}
       var sj=null;try{sj=JSON.parse(raw);}catch(e){sj=null;}
       if(sj&&sj.ok){
-        if(sj.messages&&sj.messages.length)return fmtSrvMsgs(sj.messages);
+        if(sj.messages&&sj.messages.length){lastEmailMsgs=sj.messages;return fmtSrvMsgs(sj.messages);}
         lastEmailErr='server returned 0 email results for q="'+term+'"';
         return ''; // authoritative: the offline token searched and found nothing
       }
@@ -2082,15 +2082,21 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // Gmail is the index; we let the model judge which hits are actually relevant.
     try{var l1=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q='+encodeURIComponent('"'+term+'"'+ex));ids=(l1&&l1.messages)||[];}catch(e){lastEmailErr=String(e&&e.message?e.message:e);}
     if(!ids.length){try{var l2=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q='+encodeURIComponent(term+ex));ids=(l2&&l2.messages)||[];lastEmailErr='';}catch(e){lastEmailErr=String(e&&e.message?e.message:e);}}
-    var msgs=[];
-    for(var j=0;j<ids.length&&j<12;j++){
-      try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date');
+    var rx;try{rx=new RegExp(String(term).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i');}catch(e){rx=/$a^/;}
+    var objs=[];
+    for(var j=0;j<ids.length&&j<20;j++){
+      try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date');
         var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
+        var from=H.from||'',to=H.to||'',cc=H.cc||'',subject=H.subject||'(no subject)',snippet=(full.snippet||'').slice(0,240);
+        var reasons=[];if(rx.test(from)||rx.test(to)||rx.test(cc))reasons.push('address');if(rx.test(subject))reasons.push('subject');if(rx.test(snippet))reasons.push('body');
+        if(!reasons.length)continue; // term only in deep quoted body — noise
         var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
-        msgs.push('['+((when&&!isNaN(when))?when.toISOString().slice(0,10):'')+'] '+(H.from||'')+' — '+(H.subject||'')+'\n  '+(full.snippet||'').slice(0,240));
+        objs.push({date:(when&&!isNaN(when))?when.toISOString().slice(0,10):'',from:from,to:to,cc:cc,subject:subject,snippet:snippet,reasons:reasons});
       }catch(e){}
     }
-    return msgs.join('\n');
+    objs.sort(function(a,b){var w=function(m){return (m.reasons.indexOf('address')>=0?3:0)+(m.reasons.indexOf('subject')>=0?2:0)+(m.reasons.indexOf('body')>=0?1:0);};return (w(b)-w(a))||(a.date<b.date?1:a.date>b.date?-1:0);});
+    lastEmailMsgs=objs;
+    return fmtSrvMsgs(objs);
   }
   async function halLookup(term,ask){
     term=(term||'').trim();if(!term||busy)return;
@@ -2104,7 +2110,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     hist.push({role:'user',content:(ask&&ask.trim())?ask.trim():('Look up: '+term)});saveHist();thinking=true;paint();
     try{
       var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
-      lastEmailBlock=emailMd(data,term); // app renders email deterministically; model must not
+      lastEmailBlock=emailMd(term); // app renders email deterministically; model must not
       if(!data&&!li&&!dm){reply=lastEmailErr?('I couldn’t pull anything for “'+term+'”. Email diagnostic: '+lastEmailErr.slice(0,140)+(emailAuthIssue(lastEmailErr)?' — reconnect Google via the Recap tab (it powers server-side email search), then ask again.':'.')+' Nothing in LinkedIn either.'):('I don’t see email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.');}
       else{
         var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections (people AFFILIATED with “'+term+'”), his LinkedIn message history, and Gmail threads (context only). Structure the reply in clearly labeled sections: "LinkedIn connections" (list EVERY connection provided below — do NOT drop or summarize the list. For each person: a top bullet with their name, role, status, and the last-interaction date shown in the data; then put "Next Step:" on its OWN indented sub-bullet beneath that person — e.g. a line starting with two spaces then "- Next Step: …". Always include the interaction date when the data provides one), "Also mentioned" (people/threads that merely reference “'+term+'” but are NOT affiliated with it — list them here and clearly label them as mentions, NOT as “'+term+'” connections), then "Best next steps / who to follow up with" (use the Gmail context to inform WHO to follow up with and WHAT to reference). Do NOT print a "Recent email" section or re-list the Gmail threads — the app appends the full email list automatically beneath your reply, so listing them again would duplicate. Keep affiliated connections and mere mentions strictly separate. Answer his exact question; note plainly if a source is empty. Keep it tight and sendable.';
@@ -2146,7 +2152,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // Email is rendered deterministically by the app (see emailFooter), because the
     // model repeatedly dropped it. Give the model the threads only as CONTEXT for its
     // strategy, and tell it NOT to reproduce the list (the app appends it verbatim).
-    lastEmailBlock=emailMd(data,ent);
+    lastEmailBlock=emailMd(ent);
     if(data)out+='\n\n[EMAIL CONTEXT — Gmail threads matching “'+ent+'” (whole mailbox). Use these to inform your "Best next steps" (who to follow up with, what to reference). Do NOT print a "Recent email" section or re-list these threads — the app displays the full list automatically beneath your reply, so listing them again would duplicate. Also do NOT add these email senders to the LinkedIn connections list]:\n'+data;
     return out;
   }
