@@ -2138,14 +2138,32 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       // chat turns — that made the model answer instead of extract) and force a
       // short name-only output.
       var recent=(typeof hist!=='undefined'&&hist.length)?hist.slice(-6).map(function(t){return (t.role==='assistant'?'Hal':'JP')+': '+String(t.content||'').slice(0,300);}).join('\n'):('JP: '+q);
-      var cls=await window.halLLM('From the transcript below, output ONLY the name of the ONE external organization, institution, or person the LATEST "JP:" line wants looked up in email/LinkedIn — resolving follow-up references (after discussing Harvard, "what about in Gmail?", "and their library?", "who should I follow up with?" all still mean "Harvard"). Output just the name on a single line, or an empty line. Do NOT converse, answer, or explain. NEVER output "Latimer"/"Latimer.AI" (that is JP\'s own company). Output empty for these tracked accounts ['+names.join('; ')+'] and for anything personal, family, medical/health, investors, or vendors.',[{role:'user',content:recent}],30);
-      ent=String(cls||'').replace(/```/g,'').split('\n')[0].replace(/^["'\s.:\-]+|["'\s.:\-]+$/g,'').trim();
+      // Output TWO lines: (1) the ONE org/institution/person the latest JP line wants
+      // looked up (tracked accounts INCLUDED — JP wants their email too), and (2) that
+      // institution's primary email DOMAIN when known or if JP mentioned one (e.g.
+      // asu.edu) — so address matches like mary@asu.edu are found even though they
+      // don't contain the words "Arizona State University".
+      var dom='';
+      var cls=await window.halLLM('From the transcript below, identify the ONE external organization, institution, or person the LATEST "JP:" line wants looked up in email/LinkedIn — resolving follow-up references (after discussing Harvard, "what about in Gmail?", "look for older correspondence", "who should I follow up with?" all still mean the same org). Output at most TWO lines:\nLine 1: the name (empty line if none).\nLine 2: that institution\'s primary email domain (e.g. asu.edu, harvard.edu, mit.edu) if you are confident or JP mentioned one; otherwise leave blank.\nDo NOT converse, answer, or explain. NEVER output "Latimer"/"Latimer.AI" (JP\'s own company). Output nothing for anything personal, family, medical/health, investors, or vendors. Tracked accounts ARE allowed.',[{role:'user',content:recent}],40);
+      var oLines=String(cls||'').replace(/```/g,'').split('\n').map(function(s){return s.replace(/^["'\s.:\-]+|["'\s.:\-]+$/g,'').trim();}).filter(function(s){return s.length;});
+      ent=oLines[0]||'';
+      for(var k=1;k<oLines.length;k++){if(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(oLines[k])){dom=oLines[k].toLowerCase();break;}}
+      if(!dom&&/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(ent)){dom=ent.toLowerCase();} // ent itself is a domain
       if(/^(none|empty|n\/?a|no\b|nothing|sorry|i\b|there|the |here|based |it )/i.test(ent)||/latimer/i.test(ent)||ent.length>60)ent='';
     }catch(e){}
     if(!ent)return '';
-    var low=ent.toLowerCase();
-    for(var i=0;i<names.length;i++){if(names[i]&&names[i].toLowerCase().indexOf(low)>=0)return '';} // skip tracked accounts
-    var data=await lookupEmail(ent);var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
+    // Search email for the name AND the domain (if any), merging both result sets so
+    // both "Arizona State University" mentions and asu.edu addresses surface.
+    var data=await lookupEmail(ent);var msgsA=(lastEmailMsgs||[]).slice();
+    if(dom&&dom.toLowerCase()!==ent.toLowerCase()){
+      try{await lookupEmail(dom);}catch(e){}
+      var msgsB=(lastEmailMsgs||[]).slice(),seen={},merged=[];
+      msgsA.concat(msgsB).forEach(function(m){var key=(m.date||'')+'|'+(m.subject||'')+'|'+(m.from||'');if(!seen[key]){seen[key]=1;merged.push(m);}});
+      var wt=function(m){return ((m.reasons||[]).indexOf('address')>=0?3:0)+((m.reasons||[]).indexOf('subject')>=0?2:0)+((m.reasons||[]).indexOf('body')>=0?1:0);};
+      merged.sort(function(a,b){return (wt(b)-wt(a))||((a.date<b.date)?1:(a.date>b.date)?-1:0);});
+      lastEmailMsgs=merged.slice(0,20);data=fmtSrvMsgs(lastEmailMsgs);
+    }
+    var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
     var out='';
     if(li)out+='\n\n[LINKEDIN CONNECTIONS — people AFFILIATED with “'+ent+'” (company/role) from JP\'s ledger. List EVERY one under a "LinkedIn connections" heading — do NOT drop or summarize. For each person: a top bullet with name, role, status, and the last-interaction date shown in the data; then put "Next Step:" on its OWN indented sub-bullet beneath that person (a line of two spaces + "- Next Step: …"). Include the interaction date whenever the data has one]:\n'+li;
     if(dm)out+='\n\n[LINKEDIN MESSAGES — message threads that MENTION “'+ent+'”. Show under "Recent messages". Anyone here who is NOT in the affiliated connections list is only a MENTION — put them under an "Also mentioned" heading and label them as mentions, never as a “'+ent+'” contact]:\n'+dm;
