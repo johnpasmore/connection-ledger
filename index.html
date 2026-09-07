@@ -1950,6 +1950,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var extra='';try{extra=await autoLookupContext(q);}catch(e){} // auto-pull email for an untracked org/person JP mentions
       var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});
       var reply=await window.halLLM(sys()+extra,msgs,2000);
+      reply+=emailFooter(); // append the code-rendered Recent-email block (model can't drop it)
       hist.push({role:'assistant',content:reply});
       speak(reply);
     }catch(e){
@@ -2010,10 +2011,41 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return hits.map(function(m){return '['+String(m.date||'').slice(0,10)+'] '+(m.from||'')+' → '+(m.to||'')+': '+String(m.text||'').slice(0,300);}).join('\n');
   }
   var lastEmailErr='';
+  // A code-rendered "Recent email" markdown block for the most recent lookup. The
+  // model kept dropping email from its narrative, so we render the factual thread
+  // list ourselves and append it to Hal's reply — it can't be omitted this way.
+  var lastEmailBlock='';
   // True when the email-search failure looks like a Google/Access auth problem
   // (as opposed to a plain "0 results" or a transient edge error).
   function emailAuthIssue(m){return /access|auth|token|scope|reconnect|not connected|401|403|409|session|login|sign in/i.test(String(m||''));}
   function fmtSrvMsgs(arr){return (arr||[]).map(function(m){return '['+(m.date||'')+'] '+(m.from||'')+' — '+(m.subject||'')+'\n  '+(m.snippet||'');}).join('\n');}
+  function deEntity(s){return String(s||'').replace(/&#39;/g,'’').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ');}
+  // Turn the plain-text email dump (fmtSrvMsgs output — "[date] sender — subject"
+  // then an indented snippet line per thread) into a tidy one-bullet-per-thread block.
+  function emailMd(data,term){
+    if(!data)return '';
+    var lines=String(data).split('\n'),items=[],cur=null;
+    for(var i=0;i<lines.length;i++){var ln=lines[i];if(!ln.trim())continue;
+      if(/^\s*\[/.test(ln)){if(cur)items.push(cur);cur={h:ln.trim(),s:''};}   // new thread header
+      else if(cur)cur.s+=(cur.s?' ':'')+ln.trim();                            // snippet continuation
+    }
+    if(cur)items.push(cur);
+    if(!items.length)return '';
+    var out=items.map(function(it){
+      var h=deEntity(it.h).replace(/^\[([^\]]+)\]/,'**[$1]**');               // bold the date
+      var sn=it.s?(' — _'+deEntity(it.s).slice(0,150).replace(/[*_`]/g,'')+(it.s.length>150?'…':'')+'_'):'';
+      return '- '+h+sn;
+    });
+    return '**Recent email'+(term?(' mentioning '+term):'')+'**\n'+out.join('\n');
+  }
+  // The deterministic footer to append to a reply: the email block if we have one,
+  // else a plain diagnostic line when the search genuinely failed (auth/error).
+  function emailFooter(){
+    if(lastEmailBlock)return '\n\n'+lastEmailBlock;
+    if(lastEmailErr&&emailAuthIssue(lastEmailErr))return '\n\n_Email search unavailable — '+lastEmailErr+'. Reconnect Google on the Recap tab._';
+    if(/0 email results/.test(lastEmailErr||''))return '\n\n_No recent email found for this search._';
+    return '';
+  }
   async function lookupEmail(term){
     lastEmailErr='';
     term=(term||'').trim();if(!term)return '';
@@ -2072,15 +2104,16 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     hist.push({role:'user',content:(ask&&ask.trim())?ask.trim():('Look up: '+term)});saveHist();thinking=true;paint();
     try{
       var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
+      lastEmailBlock=emailMd(data,term); // app renders email deterministically; model must not
       if(!data&&!li&&!dm){reply=lastEmailErr?('I couldn’t pull anything for “'+term+'”. Email diagnostic: '+lastEmailErr.slice(0,140)+(emailAuthIssue(lastEmailErr)?' — reconnect Google via the Recap tab (it powers server-side email search), then ask again.':'.')+' Nothing in LinkedIn either.'):('I don’t see email, LinkedIn connections, or LinkedIn messages mentioning “'+term+'”. If it’s a real prospect, add it as an account on the Accounts tab and I’ll track it.');}
       else{
-        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections (people AFFILIATED with “'+term+'”), his LinkedIn message history, and a full-text Gmail search. Structure the reply in clearly labeled sections: "Recent email" (REQUIRED whenever email data is provided: list EVERY Gmail thread below as "date — sender — subject", verbatim, even if senders are from other organizations — never summarize as "several mentions", never omit, never merge into LinkedIn), "LinkedIn connections" (list EVERY connection provided below — do NOT drop or summarize the list. For each person: a top bullet with their name, role, status, and the last-interaction date shown in the data; then put "Next Step:" on its OWN indented sub-bullet beneath that person — e.g. a line starting with two spaces then "- Next Step: …". Always include the interaction date when the data provides one), "Also mentioned" (people/threads that merely reference “'+term+'” but are NOT affiliated with it — e.g. someone at another school copied on a thread that name-drops “'+term+'” — list them here and clearly label them as mentions, NOT as “'+term+'” connections), then "Best next steps / who to follow up with". Keep affiliated connections and mere mentions strictly separate. Answer his exact question; note plainly if a source is empty. Keep it tight and sendable.';
+        var sysL=sys()+'\n\n[LOOKUP] JP asked about “'+term+'”, which is NOT a tracked account.'+((ask&&ask.trim())?(' His exact question: “'+ask.trim()+'” — answer THAT directly.'):'')+' Below are up to three sources: his imported LinkedIn connections (people AFFILIATED with “'+term+'”), his LinkedIn message history, and Gmail threads (context only). Structure the reply in clearly labeled sections: "LinkedIn connections" (list EVERY connection provided below — do NOT drop or summarize the list. For each person: a top bullet with their name, role, status, and the last-interaction date shown in the data; then put "Next Step:" on its OWN indented sub-bullet beneath that person — e.g. a line starting with two spaces then "- Next Step: …". Always include the interaction date when the data provides one), "Also mentioned" (people/threads that merely reference “'+term+'” but are NOT affiliated with it — list them here and clearly label them as mentions, NOT as “'+term+'” connections), then "Best next steps / who to follow up with" (use the Gmail context to inform WHO to follow up with and WHAT to reference). Do NOT print a "Recent email" section or re-list the Gmail threads — the app appends the full email list automatically beneath your reply, so listing them again would duplicate. Keep affiliated connections and mere mentions strictly separate. Answer his exact question; note plainly if a source is empty. Keep it tight and sendable.';
         var payload='';
         if(li)payload+='LinkedIn connections in JP’s ledger matching “'+term+'”:\n'+li+'\n\n';
         if(dm)payload+='LinkedIn messages mentioning “'+term+'”:\n'+dm+'\n\n';
-        if(data)payload+='Recent Gmail mentioning “'+term+'”:\n'+data;
-        if(!data&&lastEmailErr)payload+='\n[NOTE — email diagnostic to relay to JP verbatim: '+lastEmailErr.slice(0,140)+'. '+(emailAuthIssue(lastEmailErr)?'This looks like a Google/Access session problem — tell JP to (re)connect Google via the Recap tab, which powers server-side email search.':'This is what the email search returned; do not claim email was included.')+']';
+        if(data)payload+='Gmail threads mentioning “'+term+'” (CONTEXT for your next-steps — the app lists these itself, do not re-list):\n'+data;
         reply=await window.halLLM(sysL,[{role:'user',content:payload}],1500);
+        reply+=emailFooter(); // append the code-rendered Recent-email block
       }
       hist.push({role:'assistant',content:reply});speak(reply);
     }catch(e){hist.push({role:'assistant',content:'Sorry — the lookup failed: '+(e&&e.message?e.message:e)});}
@@ -2091,6 +2124,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function autoLookupContext(q){
     // No Google gate here: LinkedIn connections/messages are local, and the email
     // search self-gates inside lookupEmail — so lookups work even if Gmail isn't connected.
+    lastEmailBlock='';lastEmailErr='';
     var A=loadAccts(),names=A.map(function(a){return a.name;});
     var ent='';
     try{
@@ -2109,8 +2143,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var out='';
     if(li)out+='\n\n[LINKEDIN CONNECTIONS — people AFFILIATED with “'+ent+'” (company/role) from JP\'s ledger. List EVERY one under a "LinkedIn connections" heading — do NOT drop or summarize. For each person: a top bullet with name, role, status, and the last-interaction date shown in the data; then put "Next Step:" on its OWN indented sub-bullet beneath that person (a line of two spaces + "- Next Step: …"). Include the interaction date whenever the data has one]:\n'+li;
     if(dm)out+='\n\n[LINKEDIN MESSAGES — message threads that MENTION “'+ent+'”. Show under "Recent messages". Anyone here who is NOT in the affiliated connections list is only a MENTION — put them under an "Also mentioned" heading and label them as mentions, never as a “'+ent+'” contact]:\n'+dm;
-    if(data)out+='\n\n[EMAIL — Gmail threads matching “'+ent+'” (whole mailbox). REQUIRED: list EVERY thread below under a "Recent email" heading, each as "date — sender — subject". Always show these verbatim even if the senders are from other organizations — do NOT summarize them as "several mentions", do NOT move them into "Also mentioned", and do NOT omit the section. (Separately, just don\'t add these email senders to the LinkedIn connections list unless they\'re already there.)]:\n'+data;
-    if(!data&&lastEmailErr)out+='\n\n[NOTE — email diagnostic, relay to JP verbatim in your reply: '+lastEmailErr.slice(0,140)+'. '+(emailAuthIssue(lastEmailErr)?'This looks like a Google/Access session problem — briefly tell JP to (re)connect Google on the Recap tab, which powers server-side email search.':'That is exactly what the email search returned; do not claim email was included.')+']';
+    // Email is rendered deterministically by the app (see emailFooter), because the
+    // model repeatedly dropped it. Give the model the threads only as CONTEXT for its
+    // strategy, and tell it NOT to reproduce the list (the app appends it verbatim).
+    lastEmailBlock=emailMd(data,ent);
+    if(data)out+='\n\n[EMAIL CONTEXT — Gmail threads matching “'+ent+'” (whole mailbox). Use these to inform your "Best next steps" (who to follow up with, what to reference). Do NOT print a "Recent email" section or re-list these threads — the app displays the full list automatically beneath your reply, so listing them again would duplicate. Also do NOT add these email senders to the LinkedIn connections list]:\n'+data;
     return out;
   }
   function clearChat(){hist=[];saveHist();try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}paint();}
@@ -2294,7 +2331,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     hist.push({role:'user',content:userText});saveHist();paint();
     var reply='';
     try{var extra='';try{extra=await autoLookupContext(userText);}catch(_){}
-      var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});var voiceHint='\n\n[VOICE MODE] You are in a live spoken conversation. Speak naturally and conversationally, and keep it focused — no preamble. When you give multiple points or next steps, put each on its own short line as a bullet ("- ") or numbered item, phrased so it still sounds natural read aloud, so JP can read the on-screen text and copy it into an email. Aim for a tight, sendable answer, not a long rambling briefing.';reply=await window.halLLM(sys()+voiceHint+extra,msgs,900);hist.push({role:'assistant',content:reply});}
+      var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});var voiceHint='\n\n[VOICE MODE] You are in a live spoken conversation. Speak naturally and conversationally, and keep it focused — no preamble. When you give multiple points or next steps, put each on its own short line as a bullet ("- ") or numbered item, phrased so it still sounds natural read aloud, so JP can read the on-screen text and copy it into an email. Aim for a tight, sendable answer, not a long rambling briefing.';reply=await window.halLLM(sys()+voiceHint+extra,msgs,900);hist.push({role:'assistant',content:reply+emailFooter()});}
     catch(e){reply=String(e&&e.message).indexOf('NOKEY')>=0?('I’m not connected to an engine yet. '+keyMsg()):('Sorry, I hit an error. '+(e&&e.message||''));hist.push({role:'assistant',content:reply});}
     saveHist();paint();
     convoSay(reply);
