@@ -1527,6 +1527,26 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return '';
   }
   // messages: [{role:'user'|'assistant', content}] — last item is the current user turn.
+  // Resilient fetch for model calls: retries transient network failures
+  // ("Failed to fetch" TypeErrors — common when the background thread-reader is
+  // firing many calls at once) and rate-limit/overload statuses, with backoff.
+  async function halFetch(url,opts,tries){
+    tries=tries||3;var lastErr;
+    for(var i=0;i<tries;i++){
+      try{
+        var r=await fetch(url,opts);
+        if((r.status===429||r.status===500||r.status===502||r.status===503||r.status===529)&&i<tries-1){
+          await new Promise(function(res){setTimeout(res,500*(i+1)*(i+1));});continue;
+        }
+        return r;
+      }catch(e){
+        lastErr=e;
+        if(i<tries-1){await new Promise(function(res){setTimeout(res,500*(i+1)*(i+1));});continue;}
+        throw e;
+      }
+    }
+    throw lastErr||new Error('fetch failed');
+  }
   window.halLLM=async function(system,messages,maxTokens){
     messages=messages||[];
     if(provider()==='latimer'){
@@ -1536,14 +1556,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       // Call our same-origin proxy (/api/latimer) so the browser never hits
       // Latimer directly — avoids CORS. The proxy forwards the key server-side.
       var body={key:key,latimerVersion:'2026-01-02',message:last.content||'',model:latimerModel(),additionalInstructions:system||'',additionalMessages:addl};
-      var r=await fetch('/api/latimer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      var r=await halFetch('/api/latimer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error('Latimer '+r.status+' '+t.replace(/\s+/g,' ').slice(0,180));}
       var j=await r.json();var out=extractLatimer(j);
       if(!out)throw new Error('Latimer replied but I couldn’t find the text field — raw: '+JSON.stringify(j).slice(0,220));
       return out;
     }
     var ak=anthroKey();if(!ak)throw new Error('NOKEY');
-    var ar=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:anthroModel(),max_tokens:maxTokens||1000,system:system,messages:messages.map(function(m){return {role:(m.role==='assistant'?'assistant':'user'),content:m.content};})})});
+    var ar=await halFetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:anthroModel(),max_tokens:maxTokens||1000,system:system,messages:messages.map(function(m){return {role:(m.role==='assistant'?'assistant':'user'),content:m.content};})})});
     if(!ar.ok){var at='';try{at=await ar.text();}catch(e){}throw new Error('Claude '+ar.status+' '+at.replace(/\s+/g,' ').slice(0,180));}
     var aj=await ar.json();return (aj.content&&aj.content[0]&&aj.content[0].text||'').trim();
   };
@@ -1953,7 +1973,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       hist.push({role:'assistant',content:reply});
       speak(reply);
     }catch(e){
-      var msg=String(e&&e.message).indexOf('NOKEY')>=0?('I’m not connected to an engine yet — '+keyMsg()):('Sorry — I hit an error: '+(e&&e.message?e.message:e));
+      var em=String(e&&e.message?e.message:e);
+      var msg=em.indexOf('NOKEY')>=0?('I’m not connected to an engine yet — '+keyMsg())
+        :/failed to fetch|networkerror|load failed|network request failed/i.test(em)?('The connection dropped mid-request — this can happen while “Have Hal read threads” is running in the background. Give it a moment and send again.')
+        :('Sorry — I hit an error: '+em);
       hist.push({role:'assistant',content:msg});
     }
     thinking=false;saveHist();paint();
