@@ -77,6 +77,7 @@ export async function onRequestGet(context) {
       const H = {};
       ((full.payload && full.payload.headers) || []).forEach((h) => { H[(h.name || "").toLowerCase()] = h.value; });
       const from = H.from || "", to = H.to || "", cc = H.cc || "", subject = H.subject || "(no subject)", snippet = (full.snippet || "").slice(0, 240);
+      if (isBlastSender(from)) continue; // automated/blast/role mail (info@, no-reply@, notifications@…) — not a real conversation
       // Re-derive reasons from the actual headers/snippet so a thread that only
       // matched "body" because the term sat deep in a quoted footer (not in the
       // subject, addresses, or the visible snippet) is dropped as noise.
@@ -103,6 +104,18 @@ export async function onRequestGet(context) {
 function safeRegex(term) {
   const esc = String(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   try { return new RegExp(esc, "i"); } catch (e) { return /$a^/; }
+}
+
+// True when a From header is an automated / blast / generic role mailbox rather
+// than a real person — so JP's "actual conversations" aren't buried under
+// newsletters, notifications, and info@ auto-mail. Keyed on the sender's address
+// local-part (and "X via Y" relay names). Deliberately conservative-ish; can be
+// loosened per JP's preference.
+function isBlastSender(from) {
+  const s = String(from).toLowerCase();
+  if (/\bvia\b/.test(s)) return true; // "Someone via LinkedIn / Google Groups"
+  const addr = (s.match(/[a-z0-9._%+\-]+@/) || [""])[0].replace(/@$/, "");
+  return /^(no-?reply|do-?not-?reply|donotreply|reply|notifications?|notify|mailer|mailer-daemon|postmaster|bounces?|newsletters?|digest|listserv|majordomo|mailing|marketing|promo|promotions?|unsubscribe|alerts?|info|hello|contact|updates?|news|team|admin|administrator|webmaster|events?|automated|auto|noreply|billing|receipts?|invoices?|orders?|store|shop|social|community|membership|donate|giving|support|help|hr|jobs|careers|recruiting|comms|communications)$/.test(addr);
 }
 
 async function refreshAccessToken(env, refreshToken) {
