@@ -2170,7 +2170,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       // asu.edu) — so address matches like mary@asu.edu are found even though they
       // don't contain the words "Arizona State University".
       var dom='';
-      var cls=await window.halLLM('From the transcript below, identify the ONE external organization, institution, or person the LATEST "JP:" line wants looked up in email/LinkedIn — resolving follow-up references (after discussing Harvard, "what about in Gmail?", "look for older correspondence", "who should I follow up with?" all still mean the same org). Output at most TWO lines:\nLine 1: the name (empty line if none).\nLine 2: that institution\'s primary email domain (e.g. asu.edu, harvard.edu, mit.edu) if you are confident or JP mentioned one; otherwise leave blank.\nDo NOT converse, answer, or explain. NEVER output "Latimer"/"Latimer.AI" (JP\'s own company). Output nothing for anything personal, family, medical/health, investors, or vendors. Tracked accounts ARE allowed.',[{role:'user',content:recent}],40);
+      var cls=await window.halLLM('From the transcript below, identify the ONE external organization, institution, or person the LATEST "JP:" line wants looked up in email/LinkedIn — resolving follow-up references (after discussing Harvard, "what about in Gmail?", "look for older correspondence", "who should I follow up with?" all still mean the same org). IMPORTANT: if the LATEST line NAMES a new organization or person, output THAT — never carry over an earlier topic. Only inherit the previous topic when the latest line has NO new name and is clearly a follow-up (a pronoun like they/them/their/it, or phrases like "what about in Gmail" / "older correspondence"). Output at most TWO lines:\nLine 1: the name (empty line if none).\nLine 2: that institution\'s primary email domain (e.g. asu.edu, harvard.edu, mit.edu) if you are confident or JP mentioned one; otherwise leave blank.\nDo NOT converse, answer, or explain. NEVER output "Latimer"/"Latimer.AI" (JP\'s own company). Output nothing for anything personal, family, medical/health, investors, or vendors. Tracked accounts ARE allowed.',[{role:'user',content:recent}],40);
       var oLines=String(cls||'').replace(/```/g,'').split('\n').map(function(s){return s.replace(/^["'\s.:\-]+|["'\s.:\-]+$/g,'').trim();}).filter(function(s){return s.length;});
       ent=oLines[0]||'';
       for(var k=1;k<oLines.length;k++){if(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(oLines[k])){dom=oLines[k].toLowerCase();break;}}
@@ -2180,23 +2180,29 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!ent)return '';
     // Search email for the name AND the domain (if any), merging both result sets so
     // both "Arizona State University" mentions and asu.edu addresses surface.
-    var data=await lookupEmail(ent);var msgsA=(lastEmailMsgs||[]).slice();
-    if(dom&&dom.toLowerCase()!==ent.toLowerCase()){
-      try{await lookupEmail(dom);}catch(e){}
-      var msgsB=(lastEmailMsgs||[]).slice(),seen={},merged=[];
-      msgsA.concat(msgsB).forEach(function(m){var key=(m.date||'')+'|'+(m.subject||'')+'|'+(m.from||'');if(!seen[key]){seen[key]=1;merged.push(m);}});
-      var wt=function(m){return ((m.reasons||[]).indexOf('address')>=0?3:0)+((m.reasons||[]).indexOf('subject')>=0?2:0)+((m.reasons||[]).indexOf('body')>=0?1:0);};
-      merged.sort(function(a,b){return (wt(b)-wt(a))||((a.date<b.date)?1:(a.date>b.date)?-1:0);});
-      lastEmailMsgs=merged.slice(0,20);data=fmtSrvMsgs(lastEmailMsgs);
+    // If JP is only asking for someone's contact ADDRESS (not their email history),
+    // skip the Gmail threads search + block entirely — just let Hal answer.
+    var qLow=String(q||'').toLowerCase();
+    var asksAddress=/\b(e-?mail (address|addy|for)|address for|e-?mail of|(his|her|their) e-?mail|contact (info|details)|phone(?: number)?)\b/.test(qLow);
+    var data='';
+    if(!asksAddress){
+      data=await lookupEmail(ent);var msgsA=(lastEmailMsgs||[]).slice();
+      if(dom&&dom.toLowerCase()!==ent.toLowerCase()){
+        try{await lookupEmail(dom);}catch(e){}
+        var msgsB=(lastEmailMsgs||[]).slice(),seen={},merged=[];
+        msgsA.concat(msgsB).forEach(function(m){var key=(m.date||'')+'|'+(m.subject||'')+'|'+(m.from||'');if(!seen[key]){seen[key]=1;merged.push(m);}});
+        var wt=function(m){return ((m.reasons||[]).indexOf('address')>=0?3:0)+((m.reasons||[]).indexOf('subject')>=0?2:0)+((m.reasons||[]).indexOf('body')>=0?1:0);};
+        merged.sort(function(a,b){return (wt(b)-wt(a))||((a.date<b.date)?1:(a.date>b.date)?-1:0);});
+        lastEmailMsgs=merged.slice(0,20);data=fmtSrvMsgs(lastEmailMsgs);
+      }
+      lastEmailBlock=emailMd(ent); // deterministic "Recent email" block, appended by emailFooter
     }
     var li=searchLedger(ent,25);var dm=await searchMessages(ent,10);
     var out='';
     if(li)out+='\n\n[LINKEDIN CONNECTIONS — people AFFILIATED with “'+ent+'” (company/role) from JP\'s ledger. List EVERY one under a "LinkedIn connections" heading — do NOT drop or summarize. For each person: a top bullet with name, role, status, and the last-interaction date shown in the data; then put "Next Step:" on its OWN indented sub-bullet beneath that person (a line of two spaces + "- Next Step: …"). Include the interaction date whenever the data has one]:\n'+li;
     if(dm)out+='\n\n[LINKEDIN MESSAGES — message threads that MENTION “'+ent+'”. Show under "Recent messages". Anyone here who is NOT in the affiliated connections list is only a MENTION — put them under an "Also mentioned" heading and label them as mentions, never as a “'+ent+'” contact]:\n'+dm;
-    // Email is rendered deterministically by the app (see emailFooter), because the
-    // model repeatedly dropped it. Give the model the threads only as CONTEXT for its
-    // strategy, and tell it NOT to reproduce the list (the app appends it verbatim).
-    lastEmailBlock=emailMd(ent);
+    // Email threads (when pulled) are rendered deterministically by emailFooter; the
+    // model only gets them as CONTEXT below and must not re-list them.
     if(data)out+='\n\n[EMAIL CONTEXT — Gmail threads matching “'+ent+'” (whole mailbox). Use these to inform your "Best next steps" (who to follow up with, what to reference). Do NOT print a "Recent email" section or re-list these threads — the app displays the full list automatically beneath your reply, so listing them again would duplicate. Also do NOT add these email senders to the LinkedIn connections list]:\n'+data;
     return out;
   }
