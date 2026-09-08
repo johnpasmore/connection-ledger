@@ -2045,6 +2045,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function fmtSrvMsgs(arr){return (arr||[]).map(function(m){return '['+(m.date||'')+'] '+(m.from||'')+' → '+(m.to||'')+' — '+(m.subject||'')+((m.reasons&&m.reasons.length)?(' ['+m.reasons.join(', ')+']'):'')+'\n  '+(m.snippet||'');}).join('\n');}
   function deEntity(s){return String(s||'').replace(/&#39;/g,'’').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ');}
   function shortAddr(s){s=deEntity(s||'').replace(/\s+/g,' ').trim();return s.length>70?(s.slice(0,70)+'…'):s;}
+  // Automated / blast / generic role sender (info@, no-reply@, notifications@, "via …")
+  // — filtered out so JP's actual conversations aren't buried under auto-mail.
+  function isBlastSender(from){var s=String(from||'').toLowerCase();if(/\bvia\b/.test(s))return true;var a=(s.match(/[a-z0-9._%+\-]+@/)||[''])[0].replace(/@$/,'');return /^(no-?reply|do-?not-?reply|donotreply|reply|notifications?|notify|mailer|mailer-daemon|postmaster|bounces?|newsletters?|digest|listserv|majordomo|mailing|marketing|promo|promotions?|unsubscribe|alerts?|info|hello|contact|updates?|news|team|admin|administrator|webmaster|events?|automated|auto|noreply|billing|receipts?|invoices?|orders?|store|shop|social|community|membership|donate|giving|support|help|hr|jobs|careers|recruiting|comms|communications)$/.test(a);}
   // Render the structured lookup threads (lastEmailMsgs) into a tidy one-bullet-per-
   // thread block: date, actual from → to addresses, subject, WHY it matched (address/
   // subject/body), and a short snippet. Rendered in code so the model can't drop it.
@@ -2110,6 +2113,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       try{var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+ids[j].id+'?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date');
         var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
         var from=H.from||'',to=H.to||'',cc=H.cc||'',subject=H.subject||'(no subject)',snippet=(full.snippet||'').slice(0,240);
+        if(isBlastSender(from))continue; // automated/blast/role mail (info@, no-reply@…) — not a real conversation
         var reasons=[];if(rx.test(from)||rx.test(to)||rx.test(cc))reasons.push('address');if(rx.test(subject))reasons.push('subject');if(rx.test(snippet))reasons.push('body');
         if(!reasons.length)continue; // term only in deep quoted body — noise
         var when=H.date?new Date(H.date):(full.internalDate?new Date(+full.internalDate):null);
