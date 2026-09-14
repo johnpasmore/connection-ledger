@@ -2163,14 +2163,16 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       // Entity extraction: feed the recent transcript as ONE text block (not as
       // chat turns — that made the model answer instead of extract) and force a
       // short name-only output.
-      var recent=(typeof hist!=='undefined'&&hist.length)?hist.slice(-6).map(function(t){return (t.role==='assistant'?'Hal':'JP')+': '+String(t.content||'').slice(0,300);}).join('\n'):('JP: '+q);
-      // Output TWO lines: (1) the ONE org/institution/person the latest JP line wants
-      // looked up (tracked accounts INCLUDED — JP wants their email too), and (2) that
-      // institution's primary email DOMAIN when known or if JP mentioned one (e.g.
-      // asu.edu) — so address matches like mary@asu.edu are found even though they
-      // don't contain the words "Arizona State University".
+      // Extraction input: keep PRIOR turns only as light context (assistant turns —
+      // especially big email dumps — are noise for entity extraction, so truncate them
+      // hard) and put the CURRENT question front-and-center, so a freshly-named org
+      // (e.g. "Mozilla") isn't swamped by the previous topic's email block (e.g. Rutgers).
+      var prior=(typeof hist!=='undefined'&&hist.length>1)?hist.slice(-5,-1).map(function(t){return (t.role==='assistant'?'Hal':'JP')+': '+String(t.content||'').replace(/\s+/g,' ').slice(0,(t.role==='assistant'?110:200));}).join('\n'):'';
+      var clsInput='PRIOR CONTEXT (use ONLY to resolve a follow-up that has no name in the current question — otherwise ignore it):\n'+(prior||'(none)')+'\n\nCURRENT QUESTION from JP (extract the org/person from THIS line):\n"'+String(q||'').replace(/\s+/g,' ').slice(0,400)+'"';
+      // Output TWO lines: (1) the ONE org/person; (2) its primary email DOMAIN when
+      // known/mentioned (e.g. asu.edu) so address matches like mary@asu.edu are found.
       var dom='';
-      var cls=await window.halLLM('From the transcript below, identify the ONE external organization, institution, or person the LATEST "JP:" line wants looked up in email/LinkedIn — resolving follow-up references (after discussing Harvard, "what about in Gmail?", "look for older correspondence", "who should I follow up with?" all still mean the same org). IMPORTANT: if the LATEST line NAMES a new organization or person, output THAT — never carry over an earlier topic. Only inherit the previous topic when the latest line has NO new name and is clearly a follow-up (a pronoun like they/them/their/it, or phrases like "what about in Gmail" / "older correspondence"). Output at most TWO lines:\nLine 1: the name (empty line if none).\nLine 2: that institution\'s primary email domain (e.g. asu.edu, harvard.edu, mit.edu) if you are confident or JP mentioned one; otherwise leave blank.\nDo NOT converse, answer, or explain. NEVER output "Latimer"/"Latimer.AI" (JP\'s own company). Output nothing for anything personal, family, medical/health, investors, or vendors. Tracked accounts ARE allowed.',[{role:'user',content:recent}],40);
+      var cls=await window.halLLM('You extract ONE search entity for an email/LinkedIn lookup. From the CURRENT QUESTION, output the ONE external organization, institution, or person it asks to look up. Use PRIOR CONTEXT ONLY to resolve a follow-up that has NO name in the current question (e.g. "what about in Gmail?", "who should I follow up with?", pronouns they/them/it). If the CURRENT QUESTION names an org or person, output THAT and IGNORE the prior context entirely. Output at most TWO lines:\nLine 1: the name (empty line if none).\nLine 2: its primary email domain (e.g. asu.edu, harvard.edu, mit.edu) if you are confident or JP mentioned one; otherwise leave blank.\nDo NOT converse, answer, or explain. NEVER output "Latimer"/"Latimer.AI" (JP\'s own company). Output nothing for anything personal, family, medical/health, investors, or vendors. Tracked accounts ARE allowed.',[{role:'user',content:clsInput}],40);
       var oLines=String(cls||'').replace(/```/g,'').split('\n').map(function(s){return s.replace(/^["'\s.:\-]+|["'\s.:\-]+$/g,'').trim();}).filter(function(s){return s.length;});
       ent=oLines[0]||'';
       for(var k=1;k<oLines.length;k++){if(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(oLines[k])){dom=oLines[k].toLowerCase();break;}}
