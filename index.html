@@ -1510,7 +1510,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +(ol.length?('\n Additional hard off-limits (never discuss or reveal; treat any matching sender/domain/keyword as private): '+ol.join(', ')+'.'):'');
   };
   window.halProvider=function(){return provider();};
-  window.halConfigured=function(){return provider()==='latimer'?!!latimerKey():!!anthroKey();};
+  // A server-side model key (Cloudflare secret) means Hal works with NO local key on
+  // any signed-in device — e.g. JP's iPhone — without re-entering anything. Check
+  // once on load which engines the server has configured (booleans only).
+  window.__halServerEngine=window.__halServerEngine||{latimer:false,anthropic:false};
+  try{fetch('/api/hal/engine',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(j&&j.engines){window.__halServerEngine={latimer:!!j.engines.latimer,anthropic:!!j.engines.anthropic};try{if(window.paint)window.paint();}catch(e){}}}).catch(function(){});}catch(e){}
+  window.halConfigured=function(){var se=window.__halServerEngine||{};return provider()==='latimer'?(!!latimerKey()||!!se.latimer):(!!anthroKey()||!!se.anthropic);};
   window.halEngineLabel=function(){return provider()==='latimer'?('Latimer · '+latimerModel()):('Claude · '+anthroModel());};
   window.halNeedsKeyMsg=function(){return provider()==='latimer'?'Add your Latimer API key on the Lead Router tab (choose Latimer under “Hal engine”).':'Add your Anthropic API key on the Lead Router tab.';};
   // Read the assistant text out of Latimer's response defensively (output field
@@ -1550,20 +1555,31 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   window.halLLM=async function(system,messages,maxTokens){
     messages=messages||[];
     if(provider()==='latimer'){
-      var key=latimerKey();if(!key)throw new Error('NOKEY');
+      var key=latimerKey(); // may be '' — the /api/latimer proxy falls back to the LATIMER_API_KEY secret
       var last=messages[messages.length-1]||{content:''};
       var addl=[];for(var i=0;i<messages.length-1;i++){var m=messages[i];addl.push({role:(m.role==='assistant'?'assistant':'user'),content:m.content});}
       // Call our same-origin proxy (/api/latimer) so the browser never hits
       // Latimer directly — avoids CORS. The proxy forwards the key server-side.
-      var body={key:key,latimerVersion:'2026-01-02',message:last.content||'',model:latimerModel(),additionalInstructions:system||'',additionalMessages:addl};
+      var body={latimerVersion:'2026-01-02',message:last.content||'',model:latimerModel(),additionalInstructions:system||'',additionalMessages:addl};
+      if(key)body.key=key;
       var r=await halFetch('/api/latimer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(r.status===401)throw new Error('NOKEY'); // no local key AND no server LATIMER_API_KEY
       if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error('Latimer '+r.status+' '+t.replace(/\s+/g,' ').slice(0,180));}
       var j=await r.json();var out=extractLatimer(j);
       if(!out)throw new Error('Latimer replied but I couldn’t find the text field — raw: '+JSON.stringify(j).slice(0,220));
       return out;
     }
-    var ak=anthroKey();if(!ak)throw new Error('NOKEY');
-    var ar=await halFetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:anthroModel(),max_tokens:maxTokens||1000,system:system,messages:messages.map(function(m){return {role:(m.role==='assistant'?'assistant':'user'),content:m.content};})})});
+    var ak=anthroKey();var ar;
+    var amsgs=messages.map(function(m){return {role:(m.role==='assistant'?'assistant':'user'),content:m.content};});
+    if(ak){
+      // Local key present → call Anthropic directly from the browser (as before).
+      ar=await halFetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ak,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:anthroModel(),max_tokens:maxTokens||1000,system:system,messages:amsgs})});
+    }else{
+      // No local key → use the same-origin proxy backed by the ANTHROPIC_API_KEY
+      // Cloudflare secret, so any signed-in device (e.g. iPhone) works keyless.
+      ar=await halFetch('/api/anthropic',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:anthroModel(),max_tokens:maxTokens||1000,system:system,messages:amsgs})});
+      if(ar.status===401)throw new Error('NOKEY'); // no local key AND no server ANTHROPIC_API_KEY
+    }
     if(!ar.ok){var at='';try{at=await ar.text();}catch(e){}throw new Error('Claude '+ar.status+' '+at.replace(/\s+/g,' ').slice(0,180));}
     var aj=await ar.json();return (aj.content&&aj.content[0]&&aj.content[0].text||'').trim();
   };
