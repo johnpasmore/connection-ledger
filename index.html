@@ -2660,7 +2660,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function loadBlock(){try{return JSON.parse(localStorage.getItem('fu:blacklist')||'{}');}catch(e){return {};}}
   function saveBlock(d){try{localStorage.setItem('fu:blacklist',JSON.stringify(d));}catch(e){}}
   function savedEmail(){try{return localStorage.getItem('fu:email')||'';}catch(e){return '';}}
-  var silentMode=false;
+  var silentMode=false,acquiring=false; // acquiring: a token request is in flight — single-flight guard to stop popup storms
   function status(t){var e=$('fu-status');if(e)e.textContent=t;}
   function busy(t){var e=$('fu-busy');if(e)e.textContent=t||'';}
   var tg=$('fu-toggle');if(tg)tg.onclick=function(){var p=$('fu-setup');p.style.display=(p.style.display==='none'||!p.style.display)?'flex':'none';};
@@ -2671,13 +2671,18 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(tokenClient)return true;
     var cid=gid();if(!cid){status('Add your Google OAuth Client ID first (Set up).');return false;}
     if(!(window.google&&google.accounts&&google.accounts.oauth2)){status('Google library still loading — try again in a moment.');return false;}
-    tokenClient=google.accounts.oauth2.initTokenClient({client_id:cid,scope:SCOPES,hint:savedEmail()||undefined,callback:function(resp){var t=(resp&&resp.access_token)||null;if(t){token=t;onConnected();}else if(!silentMode){status('Authorization failed — click Connect to try again.');}var w=tokenWaiters.splice(0);w.forEach(function(fn){try{fn(t);}catch(e){}});}});
+    tokenClient=google.accounts.oauth2.initTokenClient({client_id:cid,scope:SCOPES,hint:savedEmail()||undefined,callback:function(resp){var t=(resp&&resp.access_token)||null;if(t){token=t;onConnected();}else if(!silentMode){status('Authorization failed — click Connect to try again.');}acquiring=false;var w=tokenWaiters.splice(0);w.forEach(function(fn){try{fn(t);}catch(e){}});}});
     return true;
   }
-  function connect(silent){silentMode=!!silent;if(ensureClient()){if(!silent)status('Opening Google sign-in…');try{tokenClient.requestAccessToken(silent?{prompt:''}:{});}catch(e){if(!silent)status('Could not start sign-in.');}}}
+  function connect(silent){silentMode=!!silent;if(!ensureClient())return;
+    if(silent&&acquiring)return; // a silent request is already in flight — don't stack popups
+    acquiring=true;if(!silent)status('Opening Google sign-in…');
+    try{tokenClient.requestAccessToken(silent?{prompt:''}:{});}catch(e){acquiring=false;if(!silent)status('Could not start sign-in.');}}
   if($('fu-connect'))$('fu-connect').onclick=function(){connect(false);};
   // Silently request a fresh access token (used to auto-recover from expiry).
-  function refreshToken(){return new Promise(function(res){if(!ensureClient()){res(null);return;}tokenWaiters.push(res);silentMode=true;try{tokenClient.requestAccessToken({prompt:''});}catch(e){res(null);}});}
+  function refreshToken(){return new Promise(function(res){if(!ensureClient()){res(null);return;}tokenWaiters.push(res);silentMode=true;
+    if(acquiring)return; // reuse the in-flight request instead of opening another popup
+    acquiring=true;try{tokenClient.requestAccessToken({prompt:''});}catch(e){acquiring=false;var w=tokenWaiters.splice(0);w.forEach(function(fn){try{fn(null);}catch(_){}});}});}
   // Gmail access tokens last ~1h; on a 401/403 we refresh once and retry so
   // lookups don't silently fail mid-session.
   function authFetch(url,retried){return fetch(url,{headers:{Authorization:'Bearer '+token}}).then(function(r){
