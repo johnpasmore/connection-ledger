@@ -1697,10 +1697,26 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     });
   };
   // Pull last-touch + who-owes-a-reply from Gmail metadata (dates + sender only; no bodies).
+  // A Gmail query for an account: prefer its email domains (precise from:/to:); when
+  // it has NO domain, fall back to full-text on the account/contact NAME so it still
+  // matches recent email (e.g. "Congressional Black Caucus (Leah Perry)" → the person).
+  function acctSearchNames(a){
+    var out=[],nm=String((a&&a.name)||'').trim();
+    var m=nm.match(/^([^(]+?)\s*\(([^)]+)\)\s*$/); // "Org (Contact)"
+    if(m){out.push(m[1].trim());out.push(m[2].trim());}
+    else if(nm)out.push(nm);
+    return out.filter(function(s){return s.replace(/[^A-Za-z0-9]/g,'').length>=3;});
+  }
+  function acctQuery(a,win){
+    var parts=[];
+    if(a&&a.domains&&a.domains.length){a.domains.forEach(function(d){parts.push('from:'+d+' OR to:'+d);});}
+    else{acctSearchNames(a).forEach(function(n){parts.push('"'+n+'"');});}
+    if(!parts.length)return '';
+    return (win?win+' ':'')+'('+parts.join(' OR ')+')';
+  }
   async function refreshOne(a){
-    if(!a.domains||!a.domains.length)return false;
-    var terms=a.domains.map(function(d){return 'from:'+d+' OR to:'+d;}).join(' OR ');
-    var q='newer_than:1y ('+terms+')';
+    var q=acctQuery(a,'newer_than:1y');
+    if(!q)return false;
     var list=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q='+encodeURIComponent(q));
     if(!list.messages||!list.messages.length)return false;
     var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+list.messages[0].id+'?format=metadata&metadataHeaders=From');
@@ -1733,9 +1749,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return await window.halLLM(system,[{role:'user',content:user}],maxTokens||800);
   }
   async function buildBrief(a,force){
-    if(!a.domains||!a.domains.length)return {skip:'no domains'};
-    var terms=a.domains.map(function(d){return 'from:'+d+' OR to:'+d;}).join(' OR ');
-    var res=await window.gFetchThread('newer_than:1y ('+terms+')',6);
+    var q=acctQuery(a,'newer_than:1y');
+    if(!q)return {skip:'no domains or name'};
+    var res=await window.gFetchThread(q,6);
     if(!res||res.connected===false)return {skip:'not connected'};
     if(res.error)return {skip:res.error};
     if(!res.messages||!res.messages.length)return {skip:'no threads'};
