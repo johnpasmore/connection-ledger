@@ -1715,23 +1715,22 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return (win?win+' ':'')+'('+parts.join(' OR ')+')';
   }
   async function refreshOne(a){
-    var q=acctQuery(a,'newer_than:1y');
-    if(!q)return false;
-    var list=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q='+encodeURIComponent(q));
-    if(!list.messages||!list.messages.length)return false;
-    var full=await window.gAuthFetch('https://www.googleapis.com/gmail/v1/users/me/messages/'+list.messages[0].id+'?format=metadata&metadataHeaders=From');
-    var H={};((full.payload&&full.payload.headers)||[]).forEach(function(h){H[(h.name||'').toLowerCase()]=h.value;});
-    var when=full.internalDate?new Date(+full.internalDate):null;
-    if(when&&!isNaN(when))a.lastTouch=when.toISOString().slice(0,10);
-    var me=(window.gMyEmail&&window.gMyEmail())||'';
-    var fromMe=!!(me&&(H.from||'').toLowerCase().indexOf(me)>=0);
-    a.replyOwed=fromMe?'them':'you';
+    var gq=acctQuery(a,'newer_than:1y');
+    if(!gq)return false;
+    // Read via the server-side offline token (john@latimer.ai mailbox) — the same
+    // one Hal's chat search uses — so the Accounts tab sees the same email the chat
+    // does, no matter which Google account is connected in the browser.
+    var j;
+    try{var r=await fetch('/api/gmail/thread?max=1&gq='+encodeURIComponent(gq),{credentials:'same-origin'});if(!r.ok)return false;j=await r.json();}catch(e){return false;}
+    if(!j||!j.ok||!j.messages||!j.messages.length)return false;
+    var m=j.messages[0];
+    if(m.dateISO)a.lastTouch=String(m.dateISO).slice(0,10);
+    a.replyOwed=m.fromMe?'them':'you';
     return true;
   }
   async function syncGmail(){
     var note=document.getElementById('acct-syncnote');
-    if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(note)note.textContent='Sign in on the Follow-ups tab, then Refresh again.';if(window.toast)window.toast('Connect Google on the Follow-ups tab, then Refresh again');return;}
-    ensure();var matched=0;
+    ensure();var matched=0; // reads via the server-side token; no in-browser Google needed
     for(var i=0;i<accts.length;i++){if(note)note.textContent='Checking Gmail '+(i+1)+'/'+accts.length+'…';try{if(await refreshOne(accts[i]))matched++;}catch(e){}}
     save();window.renderAccounts();
     try{localStorage.setItem('accounts:lastscan',String(Date.now()));}catch(e){}
@@ -1749,15 +1748,17 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return await window.halLLM(system,[{role:'user',content:user}],maxTokens||800);
   }
   async function buildBrief(a,force){
-    var q=acctQuery(a,'newer_than:1y');
-    if(!q)return {skip:'no domains or name'};
-    var res=await window.gFetchThread(q,6);
-    if(!res||res.connected===false)return {skip:'not connected'};
-    if(res.error)return {skip:res.error};
+    var gq=acctQuery(a,'newer_than:1y');
+    if(!gq)return {skip:'no domains or name'};
+    // Read the thread via the server-side offline token (same mailbox as chat).
+    var res;
+    try{var rr=await fetch('/api/gmail/thread?full=1&max=6&gq='+encodeURIComponent(gq),{credentials:'same-origin'});if(!rr.ok)return {skip:'server '+rr.status};res=await rr.json();}catch(e){return {skip:'server error'};}
+    if(!res||!res.ok)return {skip:(res&&res.error)||'server error'};
     if(!res.messages||!res.messages.length)return {skip:'no threads'};
     if(!force&&a.brief&&a.brief.lastMsgId&&a.brief.lastMsgId===res.latestId)return {cached:true};
-    var me=(window.gMyEmail&&window.gMyEmail())||'JP';
-    var convo=res.messages.map(function(m){var who=m.fromMe?'ME':(m.from||'them');return '['+(m.dateISO||'').slice(0,10)+'] '+who+' — '+m.subject+'\n'+(m.body||'').slice(0,1500);}).join('\n\n---\n\n');
+    var me=res.myEmail||'JP';
+    // server returns newest-first; the brief wants the thread oldest-first
+    var convo=res.messages.slice().reverse().map(function(m){var who=m.fromMe?'ME':(m.from||'them');return '['+(m.dateISO||'').slice(0,10)+'] '+who+' — '+m.subject+'\n'+(m.body||'').slice(0,1500);}).join('\n\n---\n\n');
     var system='You are Hal, an AI sales partner for Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' You read the recent email thread with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts that are not in the thread.'+(window.halGuardrails?window.halGuardrails():'');
     var corr=(a.corrections&&a.corrections.length)?('\n\nGROUND TRUTH from JP — trust these over anything the email implies, and reflect them in your brief:\n- '+a.corrections.map(function(c){return c.text;}).join('\n- ')):'';
     var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+corr+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
@@ -1767,12 +1768,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!Array.isArray(b.openQuestions))b.openQuestions=b.openQuestions?[String(b.openQuestions)]:[];
     a.brief=b;
     if(b.whoOwesReply==='you'||b.whoOwesReply==='them')a.replyOwed=b.whoOwesReply;
-    if(!res.messages.length){}else{var last=res.messages[res.messages.length-1];if(last&&last.dateISO)a.lastTouch=last.dateISO.slice(0,10);}
+    var newest=res.messages[0];if(newest&&newest.dateISO)a.lastTouch=String(newest.dateISO).slice(0,10); // server is newest-first
     return {ok:true,brief:b};
   }
   async function readThreads(force){
     var note=document.getElementById('acct-syncnote');
-    if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(note)note.textContent='Connect Google on the Follow-ups tab first, then let Hal read.';if(window.toast)window.toast('Connect Google on the Follow-ups tab, then try again');return;}
     if(!halKey()){if(note)note.textContent=halKeyMsg();if(window.toast)window.toast(halKeyMsg());return;}
     ensure();var did=0,cached=0,none=0;
     var btn=document.getElementById('acct-hal');if(btn){btn.disabled=true;btn.textContent='🧠 Hal is reading…';}
@@ -1788,7 +1788,6 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   async function briefOne(a){
     var note=document.getElementById('acct-syncnote');
-    if(!(window.gConnected&&window.gConnected())){if(window.gConnect)window.gConnect();if(window.toast)window.toast('Connect Google on the Follow-ups tab first');return;}
     if(!halKey()){if(window.toast)window.toast(halKeyMsg());return;}
     if(note)note.textContent='Hal is reading '+a.name+'…';
     try{var r=await buildBrief(a,true);save();window.renderAccounts();if(note)note.textContent=r.ok?('Hal updated the brief for '+a.name):('No thread found for '+a.name+(r.skip?' ('+r.skip+')':''));}
