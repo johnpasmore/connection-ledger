@@ -2223,28 +2223,54 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     halCsv={name:name,headers:p.headers,rows:p.rows};updateCsvChip();
     if(window.toast)window.toast('Attached '+name+' ('+p.rows.length+' rows). Ask: “Who should I add to this list?”');}catch(e){if(window.toast)window.toast('Could not read that CSV.');}}
   window.halSetCsv=setHalCsv;
+  // Parse an address header ("Name <a@b>, c@d") into [{name,email}].
+  function parseAddrs(s){s=String(s||'');var out=[];s.split(/,(?![^<]*>)/).forEach(function(part){part=part.trim();if(!part)return;var m=part.match(/^(.*?)<([^>]+)>$/);if(m){out.push({name:m[1].trim().replace(/^["']+|["']+$/g,''),email:m[2].trim().toLowerCase()});}else if(/@/.test(part)){out.push({name:'',email:part.replace(/^["']+|["']+$/g,'').toLowerCase()});}});return out;}
+  function isMyAddr(e){return /@latimer\.ai|@futuresum|no-?reply|do-?not-?reply|donotreply|notifications?|mailer|postmaster|calendar-notification|@google|@docs\.google|@resource\.calendar/i.test(String(e||''));}
+  function acctGmailQuery(a,win){var parts=[];if(a&&a.domains&&a.domains.length)a.domains.forEach(function(d){parts.push('from:'+d+' OR to:'+d);});else{var nm=String(a&&a.name||'').trim();var m=nm.match(/^([^(]+?)\s*\(([^)]+)\)\s*$/);var names=m?[m[1].trim(),m[2].trim()]:(nm?[nm]:[]);names.filter(function(n){return n.replace(/[^A-Za-z0-9]/g,'').length>=3;}).forEach(function(n){parts.push('"'+n+'"');});}if(!parts.length)return '';return (win?win+' ':'')+'('+parts.join(' OR ')+')';}
+  function nameFromEmail(e){var lp=String(e||'').split('@')[0].replace(/[._\-]+/g,' ').trim();return lp.replace(/\b\w/g,function(c){return c.toUpperCase();});}
   async function suggestAdditions(q){
     if(busy)return;if(!akey()){if(window.toast)window.toast(keyMsg());setup();return;}
     if(!halCsv){if(window.toast)window.toast('Attach a CSV first (📎), then ask who to add.');return;}
     busy=true;hist.push({role:'user',content:q});saveHist();thinking=true;paint();
     try{
-      var sample=halCsv.rows.slice(0,40).map(function(r){var p=csvPerson(r);return [p.name,p.title,p.org].filter(Boolean).join(' — ');}).filter(Boolean).join('\n');
-      var profTxt=await window.halLLM('You analyze an outreach list and extract who it targets. Output ONLY JSON (no backticks): {"profile":"one sentence describing the common type of person/organization on this list","terms":["6-12 short search terms — role/title keywords, sectors, org types, institution names, or locations — to find SIMILAR people in a contact database"]}.',[{role:'user',content:'OUTREACH LIST (name — title — org):\n'+(sample||'(no readable rows)')}],400);
-      var P={};try{P=JSON.parse(String(profTxt).replace(/```json|```/g,'').trim());}catch(e){P={profile:'',terms:[]};}
-      var terms=(P.terms||[]).map(nrm).filter(function(t){return t.length>=3;});
-      var seen={};(halCsv.rows||[]).forEach(function(r){var p=csvPerson(r);if(p.name)seen['n:'+nrm(p.name)]=1;if(p.email)seen['e:'+nrm(p.email)]=1;});
-      var cand=[],pushC=function(o){if(!o.name)return;var kn='n:'+nrm(o.name),ke=o.email?('e:'+nrm(o.email)):'';if(seen[kn]||(ke&&seen[ke]))return;if(cand.some(function(x){return nrm(x.name)===nrm(o.name);}))return;cand.push(o);};
-      var all=[];try{all=(window.ledgerAll&&window.ledgerAll())||[];}catch(e){}
-      var hitsTerm=function(c){if(!terms.length)return false;var hay=nrm((c.name||'')+' '+(c.company||'')+' '+(c.position||'')+' '+(c.institution||'')+' '+(c.notes||'')+' '+(c.state||'')+' '+(c.category||''));return terms.some(function(t){return hay.indexOf(t)>=0;});};
+      // Who's already on the uploaded list (dedupe by email, then name).
+      var onList={},onListEmail={};
+      (halCsv.rows||[]).forEach(function(r){var p=csvPerson(r);if(p.name)onList['n:'+nrm(p.name)]=1;if(p.email)onListEmail[nrm(p.email)]=1;});
+      var cand=[],byEmail={},byName={};
+      var addCand=function(o){var em=nrm(o.email||''),nm=nrm(o.name||'');
+        if(!em&&!nm)return;
+        if(em&&(onListEmail[em]||byEmail[em]))return;
+        if(!em&&nm&&(onList['n:'+nm]||byName[nm]))return;
+        if(em)byEmail[em]=1;if(nm)byName[nm]=1;cand.push(o);};
+      // 1) PRIMARY — the real people JP emails at each account (from the account's own Gmail thread).
       var accts=[];try{accts=loadAccts();}catch(e){}
-      accts.forEach(function(a){pushC({name:a.name,title:'(tracked account'+(a.stage?' · '+a.stage:'')+')',org:a.name,email:'',source:'account',primary:true});});
-      all.filter(function(c){return c.priority;}).forEach(function(c){pushC({name:c.name,title:c.position||'',org:c.company||c.institution||'',email:c.email||'',source:'priority',primary:true});});
-      all.filter(function(c){return !c.priority&&hitsTerm(c);}).slice(0,80).forEach(function(c){pushC({name:c.name,title:c.position||'',org:c.company||c.institution||'',email:c.email||'',source:'connection',primary:false});});
-      if(!cand.length){hist.push({role:'assistant',content:'I read your list — it looks like: '+(P.profile||'—')+'. But I didn’t find matching people in your contacts for: '+(terms.slice(0,8).join(', ')||'—')+'. Import more LinkedIn connections, or tell me the specific role/sector to look for.'});thinking=false;saveHist();paint();busy=false;return;}
-      var pool=cand.slice(0,120).map(function(c,i){return (i+1)+'. '+c.name+(c.title?(' — '+c.title):'')+(c.org?(' @ '+c.org):'')+(c.primary?'  [PRIMARY PROSPECT]':'')+(c.email?('  <'+c.email+'>'):'');}).join('\n');
-      var sysP=sys()+'\n\n[ADD-TO-LIST] JP uploaded an outreach list and wants to know who from HIS OWN contacts to add — never anyone outside the pool below. The list targets: '+(P.profile||'(see the sample)')+'. The CANDIDATE POOL below is drawn ONLY from JP’s contacts, tracked accounts, and starred prospects, with anyone already on his list removed. Pick the ones that genuinely FIT the list’s profile and are good additions, and ALWAYS include relevant [PRIMARY PROSPECT] entries (his tracked accounts / starred prospects) when they fit. Give a one-line reason for each. Never invent anyone not in the pool. Reply as: one short sentence, then a readable bulleted list (mark primary prospects with ⭐), then a fenced code block labelled adds containing CSV with the header Name,Title,Organization,Email,Why,Primary and one row per pick (Primary = yes/no).';
-      var reply=await window.halLLM(sysP,[{role:'user',content:'LIST PROFILE: '+(P.profile||'')+'\n\nCANDIDATE POOL (only from JP’s own data; do not add anyone else):\n'+pool}],2000);
-      hist.push({role:'assistant',content:reply});speak(reply);
+      async function peopleForAcct(a){
+        var gq=acctGmailQuery(a,'newer_than:1y');if(!gq)return [];
+        try{var r=await fetch('/api/gmail/thread?max=6&gq='+encodeURIComponent(gq),{credentials:'same-origin'});if(!r.ok)return [];var j=await r.json();if(!j||!j.ok||!j.messages)return [];
+          var ppl=[];j.messages.forEach(function(m){parseAddrs(m.from).concat(parseAddrs(m.to)).concat(parseAddrs(m.cc)).forEach(function(p){if(p.email&&!isMyAddr(p.email))ppl.push({name:p.name||nameFromEmail(p.email),email:p.email,org:a.name,source:'email · '+a.name});});});
+          return ppl;}catch(e){return [];}
+      }
+      for(var i=0;i<accts.length;i+=5){var res=await Promise.all(accts.slice(i,i+5).map(peopleForAcct));res.forEach(function(ppl){ppl.forEach(addCand);});}
+      // 2) starred priority connections.
+      var all=[];try{all=(window.ledgerAll&&window.ledgerAll())||[];}catch(e){}
+      all.filter(function(c){return c.priority;}).forEach(function(c){addCand({name:c.name,email:c.email||'',org:c.company||c.institution||'',source:'priority'});});
+      // 3) LinkedIn connections matching the uploaded list's profile.
+      var sample=halCsv.rows.slice(0,40).map(function(r){var p=csvPerson(r);return [p.name,p.title,p.org].filter(Boolean).join(' — ');}).filter(Boolean).join('\n');
+      var terms=[];try{var pt=await window.halLLM('From this outreach list, output ONLY a JSON array of 6-12 short search terms (role/title keywords, sectors, org types, institutions, or locations) to find similar people in a contact database. No prose, no backticks.',[{role:'user',content:sample||'(empty)'}],300);terms=((JSON.parse(String(pt).replace(/```json|```/g,'').trim()))||[]).map(nrm).filter(function(t){return t.length>=3;});}catch(e){terms=[];}
+      if(terms.length)all.filter(function(c){if(c.priority)return false;var hay=nrm((c.name||'')+' '+(c.company||'')+' '+(c.position||'')+' '+(c.institution||''));return terms.some(function(t){return hay.indexOf(t)>=0;});}).slice(0,60).forEach(function(c){addCand({name:c.name,email:c.email||'',org:c.company||c.institution||'',source:'linkedin'});});
+      if(!cand.length){hist.push({role:'assistant',content:'I checked your accounts’ email, starred prospects, and LinkedIn connections — everyone I found is already on your uploaded list (or I couldn’t read the correspondence). Nothing new to add.'});thinking=false;saveHist();paint();busy=false;return;}
+      // Build the add list deterministically from REAL data (no model guessing).
+      cand.sort(function(a,b){var w=function(s){return /^email/.test(s.source)?0:s.source==='priority'?1:2;};return w(a.source)-w(b.source);});
+      var csvEsc=function(v){v=String(v==null?'':v);return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v;};
+      var csv='Name,Email,Organization,Source\n'+cand.map(function(c){return [c.name,c.email,c.org,c.source].map(csvEsc).join(',');}).join('\n');
+      var nEmail=cand.filter(function(c){return /^email/.test(c.source);}).length,nPri=cand.filter(function(c){return c.source==='priority';}).length,nLi=cand.filter(function(c){return c.source==='linkedin';}).length,noEmail=cand.filter(function(c){return !c.email;}).length;
+      var reply='Here are **'+cand.length+' people not already on your list** to add for the monthly Partner Update — all from your own data:\n'
+        +'- **'+nEmail+'** from recent **email with your accounts** (the actual people you’ve corresponded with, with their addresses)\n'
+        +'- **'+nPri+'** starred **priority** contacts\n'
+        +'- **'+nLi+'** matching **LinkedIn connections**\n'
+        +(noEmail?('\n'+noEmail+' have no email on file yet — I left Email blank so you can fill them in.\n'):'')
+        +'\nReview, then **Download CSV** and append to your list.\n```adds\n'+csv+'\n```';
+      hist.push({role:'assistant',content:reply});speak('I found '+cand.length+' people to add — the list is on screen.');
     }catch(e){hist.push({role:'assistant',content:'Sorry — the list suggestion failed: '+(e&&e.message?e.message:e)});}
     thinking=false;saveHist();paint();busy=false;
   }
