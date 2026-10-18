@@ -320,7 +320,7 @@
   <section class="panel active" id="panel-hal">
     <p class="lede">Hal is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
     <div class="hal-chat">
-      <div class="hal-tools"><button type="button" id="hal-lookup" class="hal-clear" title="Ask Hal about any org or person in your email">🔎 Look up</button><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
+      <div class="hal-tools"><button type="button" id="hal-lookup" class="hal-clear" title="Ask Hal about any org or person in your email">🔎 Look up</button><button type="button" id="hal-attach" class="hal-clear" title="Attach a CSV list, then ask “Who should I add?”">📎 Attach CSV</button><span id="hal-csvchip" class="hal-clear" style="display:none"></span><input type="file" id="hal-file" accept=".csv" class="hidden"><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
@@ -1927,8 +1927,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'</div>';
   }
   function fmtBot(text){
-    var parts=[],re=/```email\s*([\s\S]*?)```/gi,last=0,m;
-    while((m=re.exec(text))){if(m.index>last)parts.push(md(text.slice(last,m.index)));parts.push(draftCard(m[1].trim()));last=re.lastIndex;}
+    var parts=[],re=/```(email|adds)\s*([\s\S]*?)```/gi,last=0,m;
+    while((m=re.exec(text))){if(m.index>last)parts.push(md(text.slice(last,m.index)));parts.push(m[1].toLowerCase()==='adds'?addsCard(m[2].trim()):draftCard(m[2].trim()));last=re.lastIndex;}
     if(last<text.length)parts.push(md(text.slice(last)));
     return parts.join('');
   }
@@ -1938,7 +1938,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   var thinking=false;
   function buildHtml(){
-    drafts=[]; // reset once per full paint so data-draft indices stay in sync across mounts
+    drafts=[];addsBlocks=[]; // reset once per full paint so data-draft/data-adds indices stay in sync across mounts
     var h=hist.length
       ? hist.map(function(t){return t.role==='user'?bubble('user',esc(t.content).replace(/\n/g,'<br>')):bubble('bot',fmtBot(t.content));}).join('')
       : ''; // empty state — no auto briefing; the suggested-prompt chips guide the user
@@ -1954,6 +1954,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var d=drafts[+el.getAttribute('data-draft')];if(!d)return;
       var ob=el.querySelector('[data-dact="open"]');if(ob)ob.onclick=function(){if(window.openCompose)window.openCompose(d.to||'',d.subject||'',d.body||'');};
       var cb=el.querySelector('[data-dact="copy"]');if(cb)cb.onclick=function(){var txt=(d.subject?('Subject: '+d.subject+'\n\n'):'')+d.body;try{navigator.clipboard.writeText(txt);cb.textContent='Copied ✓';setTimeout(function(){cb.textContent='Copy';},1500);}catch(e){}};
+    });
+    root.querySelectorAll('.hal-adds').forEach(function(el){
+      var raw=addsBlocks[+el.getAttribute('data-adds')];if(raw==null)return;
+      var dl=el.querySelector('[data-aact="dl"]');if(dl)dl.onclick=function(){try{var b=new Blob([raw],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='suggested-additions-'+new Date().toISOString().slice(0,10)+'.csv';a.click();}catch(e){}};
+      var ac=el.querySelector('[data-aact="copy"]');if(ac)ac.onclick=function(){try{navigator.clipboard.writeText(raw);ac.textContent='Copied ✓';setTimeout(function(){ac.textContent='Copy';},1500);}catch(e){}};
     });
   }
   function greeting(){
@@ -1994,6 +1999,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var term=rest.split(/\s+[-–—]\s+|,\s+|\s+(?=tell me\b|who\b|what\b|and who\b)/i)[0].trim();
       if(term)return halLookup(term,q);
     }
+    // CSV attached + an "add to this list" ask → suggest from JP's own contacts.
+    if(halCsv&&/\b(who (should|do|can|would)|add|include|suggest|who else|more (people|partners|contacts|names|prospects)|missing|expand|from my (contacts|network|connections))\b/i.test(q))return suggestAdditions(q);
     busy=true;
     hist.push({role:'user',content:q});saveHist();thinking=true;paint();
     try{
@@ -2183,6 +2190,68 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     thinking=false;saveHist();paint();busy=false;
   }
   window.halLookup=halLookup;
+  /* ===== Upload a CSV list + "who should I add?" — suggests people from JP's OWN
+     data (LinkedIn connections, tracked accounts, starred prospects), never the open
+     internet. The CSV is parsed in-browser; only compact name/title/org lines go to
+     the model. ===== */
+  var halCsv=null,addsBlocks=[];
+  function parseCSV(text){
+    text=String(text||'').replace(/^﻿/,'');var rows=[],row=[],cur='',inq=false;
+    for(var i=0;i<text.length;i++){var ch=text[i];
+      if(inq){if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++;}else inq=false;}else cur+=ch;}
+      else{if(ch==='"')inq=true;else if(ch===','){row.push(cur);cur='';}else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur='';}else if(ch!=='\r')cur+=ch;}
+    }
+    if(cur.length||row.length){row.push(cur);rows.push(row);}
+    rows=rows.filter(function(r){return r.some(function(c){return String(c).trim();});});
+    if(!rows.length)return {headers:[],rows:[]};
+    var headers=rows[0].map(function(h){return String(h).trim();});
+    return {headers:headers,rows:rows.slice(1).map(function(r){var o={};headers.forEach(function(h,idx){o[h]=(r[idx]!=null?String(r[idx]).trim():'');});return o;})};
+  }
+  function csvField(row,names){var keys=Object.keys(row),n,k;
+    for(n=0;n<names.length;n++){for(k=0;k<keys.length;k++)if(keys[k].toLowerCase()===names[n])return row[keys[k]];}
+    for(n=0;n<names.length;n++){for(k=0;k<keys.length;k++)if(keys[k].toLowerCase().indexOf(names[n])>=0)return row[keys[k]];}
+    return '';}
+  function csvPerson(row){var name=csvField(row,['name','full name','contact']);
+    if(!name){var fn=csvField(row,['first name','first']),ln=csvField(row,['last name','last']);name=((fn||'')+' '+(ln||'')).trim();}
+    return {name:name,email:csvField(row,['email','e-mail']),org:csvField(row,['company','organization','organisation','org','institution','account']),title:csvField(row,['title','position','role'])};}
+  function nrm(s){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();}
+  function updateCsvChip(){var el=document.getElementById('hal-csvchip');if(!el)return;
+    if(halCsv){el.style.display='';el.innerHTML='📎 '+esc(halCsv.name)+' ('+halCsv.rows.length+') <a href="#" id="hal-csvx" style="color:var(--accent);text-decoration:none;margin-left:3px">✕</a>';
+      var x=document.getElementById('hal-csvx');if(x)x.onclick=function(e){e.preventDefault();halCsv=null;updateCsvChip();};}
+    else{el.style.display='none';el.innerHTML='';}}
+  function setHalCsv(name,text){try{var p=parseCSV(text);if(!p.rows.length){if(window.toast)window.toast('That CSV looked empty.');return;}
+    halCsv={name:name,headers:p.headers,rows:p.rows};updateCsvChip();
+    if(window.toast)window.toast('Attached '+name+' ('+p.rows.length+' rows). Ask: “Who should I add to this list?”');}catch(e){if(window.toast)window.toast('Could not read that CSV.');}}
+  window.halSetCsv=setHalCsv;
+  async function suggestAdditions(q){
+    if(busy)return;if(!akey()){if(window.toast)window.toast(keyMsg());setup();return;}
+    if(!halCsv){if(window.toast)window.toast('Attach a CSV first (📎), then ask who to add.');return;}
+    busy=true;hist.push({role:'user',content:q});saveHist();thinking=true;paint();
+    try{
+      var sample=halCsv.rows.slice(0,40).map(function(r){var p=csvPerson(r);return [p.name,p.title,p.org].filter(Boolean).join(' — ');}).filter(Boolean).join('\n');
+      var profTxt=await window.halLLM('You analyze an outreach list and extract who it targets. Output ONLY JSON (no backticks): {"profile":"one sentence describing the common type of person/organization on this list","terms":["6-12 short search terms — role/title keywords, sectors, org types, institution names, or locations — to find SIMILAR people in a contact database"]}.',[{role:'user',content:'OUTREACH LIST (name — title — org):\n'+(sample||'(no readable rows)')}],400);
+      var P={};try{P=JSON.parse(String(profTxt).replace(/```json|```/g,'').trim());}catch(e){P={profile:'',terms:[]};}
+      var terms=(P.terms||[]).map(nrm).filter(function(t){return t.length>=3;});
+      var seen={};(halCsv.rows||[]).forEach(function(r){var p=csvPerson(r);if(p.name)seen['n:'+nrm(p.name)]=1;if(p.email)seen['e:'+nrm(p.email)]=1;});
+      var cand=[],pushC=function(o){if(!o.name)return;var kn='n:'+nrm(o.name),ke=o.email?('e:'+nrm(o.email)):'';if(seen[kn]||(ke&&seen[ke]))return;if(cand.some(function(x){return nrm(x.name)===nrm(o.name);}))return;cand.push(o);};
+      var all=[];try{all=(window.ledgerAll&&window.ledgerAll())||[];}catch(e){}
+      var hitsTerm=function(c){if(!terms.length)return false;var hay=nrm((c.name||'')+' '+(c.company||'')+' '+(c.position||'')+' '+(c.institution||'')+' '+(c.notes||'')+' '+(c.state||'')+' '+(c.category||''));return terms.some(function(t){return hay.indexOf(t)>=0;});};
+      var accts=[];try{accts=loadAccts();}catch(e){}
+      accts.forEach(function(a){pushC({name:a.name,title:'(tracked account'+(a.stage?' · '+a.stage:'')+')',org:a.name,email:'',source:'account',primary:true});});
+      all.filter(function(c){return c.priority;}).forEach(function(c){pushC({name:c.name,title:c.position||'',org:c.company||c.institution||'',email:c.email||'',source:'priority',primary:true});});
+      all.filter(function(c){return !c.priority&&hitsTerm(c);}).slice(0,80).forEach(function(c){pushC({name:c.name,title:c.position||'',org:c.company||c.institution||'',email:c.email||'',source:'connection',primary:false});});
+      if(!cand.length){hist.push({role:'assistant',content:'I read your list — it looks like: '+(P.profile||'—')+'. But I didn’t find matching people in your contacts for: '+(terms.slice(0,8).join(', ')||'—')+'. Import more LinkedIn connections, or tell me the specific role/sector to look for.'});thinking=false;saveHist();paint();busy=false;return;}
+      var pool=cand.slice(0,120).map(function(c,i){return (i+1)+'. '+c.name+(c.title?(' — '+c.title):'')+(c.org?(' @ '+c.org):'')+(c.primary?'  [PRIMARY PROSPECT]':'')+(c.email?('  <'+c.email+'>'):'');}).join('\n');
+      var sysP=sys()+'\n\n[ADD-TO-LIST] JP uploaded an outreach list and wants to know who from HIS OWN contacts to add — never anyone outside the pool below. The list targets: '+(P.profile||'(see the sample)')+'. The CANDIDATE POOL below is drawn ONLY from JP’s contacts, tracked accounts, and starred prospects, with anyone already on his list removed. Pick the ones that genuinely FIT the list’s profile and are good additions, and ALWAYS include relevant [PRIMARY PROSPECT] entries (his tracked accounts / starred prospects) when they fit. Give a one-line reason for each. Never invent anyone not in the pool. Reply as: one short sentence, then a readable bulleted list (mark primary prospects with ⭐), then a fenced code block labelled adds containing CSV with the header Name,Title,Organization,Email,Why,Primary and one row per pick (Primary = yes/no).';
+      var reply=await window.halLLM(sysP,[{role:'user',content:'LIST PROFILE: '+(P.profile||'')+'\n\nCANDIDATE POOL (only from JP’s own data; do not add anyone else):\n'+pool}],2000);
+      hist.push({role:'assistant',content:reply});speak(reply);
+    }catch(e){hist.push({role:'assistant',content:'Sorry — the list suggestion failed: '+(e&&e.message?e.message:e)});}
+    thinking=false;saveHist();paint();busy=false;
+  }
+  function addsCard(raw){var i=addsBlocks.length;addsBlocks.push(raw);
+    return '<div class="hal-draft hal-adds" data-adds="'+i+'"><div class="dh">Suggested additions (CSV)</div>'
+      +'<div class="dbody" style="white-space:pre-wrap;max-height:220px;overflow:auto">'+esc(raw)+'</div>'
+      +'<div class="dact"><button class="btn sm" data-aact="dl">⬇ Download CSV</button><button class="btn sm" data-aact="copy">Copy</button></div></div>';}
   // Automatic: decide if a chat message is about an untracked org/person to pull email for.
   async function autoLookupContext(q){
     // No Google gate here: LinkedIn connections/messages are local, and the email
@@ -2509,6 +2578,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(btn&&!btn._wired){btn._wired=1;btn.onclick=function(){var v=q.value;q.value='';if(q)q.style.height='auto';send(v);};}
     var cc=document.getElementById('hal-clear');if(cc&&!cc._wired){cc._wired=1;cc.onclick=clearChat;}
     var lu=document.getElementById('hal-lookup');if(lu&&!lu._wired){lu._wired=1;lu.onclick=function(){var t=prompt('Ask Hal about any org or person (searches Gmail + LinkedIn). You can add a question, e.g. “Harvard — who should I follow up with?”');if(t&&t.trim())halLookup(t.trim());};}
+    var at=document.getElementById('hal-attach'),fi=document.getElementById('hal-file');
+    if(at&&!at._wired){at._wired=1;at.onclick=function(){if(fi)fi.click();};}
+    if(fi&&!fi._wired){fi._wired=1;fi.onchange=function(){var f=fi.files&&fi.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){setHalCsv(f.name,String(rd.result||''));};rd.readAsText(f);fi.value='';};}
+    updateCsvChip();
     wireVoice(document.getElementById('panel-hal'));
   };
   /* ---- Pop-up "Ask Hal" launcher — same Hal, available on every tab ---- */
