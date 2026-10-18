@@ -2308,7 +2308,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(data)out+='\n\n[EMAIL CONTEXT — Gmail threads matching “'+ent+'” (whole mailbox). Use these to inform your "Best next steps" (who to follow up with, what to reference). Do NOT print a "Recent email" section or re-list these threads — the app displays the full list automatically beneath your reply, so listing them again would duplicate. Also do NOT add these email senders to the LinkedIn connections list]:\n'+data;
     return out;
   }
-  function clearChat(){hist=[];saveHist();try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}paint();}
+  function clearChat(){hist=[];saveHist();try{elStop();}catch(e){}paint();}
   /* ---- Voice: talk to Hal + hear replies (Web Speech API, no external service) ---- */
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   var rec=null,listening=false,voiceInput=null;
@@ -2347,11 +2347,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   try{if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=populateVoices;}catch(e){}
   /* ---- ElevenLabs (custom/cloned voice) via same-origin /api/tts proxy ---- */
   function elOn(){try{return localStorage.getItem('hal:voice')==='elevenlabs'&&elConfigured();}catch(e){return false;}}
-  var elCtx=null,elSrc=null;
+  var elCtx=null,elSrc=null,speechGen=0; // speechGen bumps on every stop so late-arriving audio won't start
   // Speak via ElevenLabs. Returns a promise; opts.onAnalyser(analyser) gives real
   // amplitude for the orb; opts.onEnd fires when playback finishes.
   async function elSpeak(clean,opts){
     opts=opts||{};
+    var myGen=speechGen; // if speech is stopped while we fetch/decode, don't start playing
     var cfg={key:localStorage.getItem('hal:elevenkey')||'',voiceId:localStorage.getItem('hal:elevenvoice')||'',model:localStorage.getItem('hal:elevenmodel')||'eleven_turbo_v2_5'};
     var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:cfg.key,voiceId:cfg.voiceId,model:cfg.model,text:clean})});
     if(!r.ok){var t='';try{t=(await r.json()).error;}catch(e){}throw new Error(t||('tts '+r.status));}
@@ -2359,6 +2360,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var AC=window.AudioContext||window.webkitAudioContext;elCtx=elCtx||new AC();
     if(elCtx.state==='suspended'){try{await elCtx.resume();}catch(e){}}
     var audio=await elCtx.decodeAudioData(arr);
+    if(myGen!==speechGen)return {durationSec:0}; // speech was turned off while audio loaded — stay silent
     try{if(elSrc)elSrc.stop();}catch(e){}
     var src=elCtx.createBufferSource();src.buffer=audio;
     var an=elCtx.createAnalyser();an.fftSize=512;src.connect(an);an.connect(elCtx.destination);
@@ -2368,7 +2370,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     src.start();
     return {durationSec:audio.duration};
   }
-  function elStop(){try{if(elSrc)elSrc.stop();}catch(e){}try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}}
+  function elStop(){speechGen++;try{if(elSrc){elSrc.stop();elSrc=null;}}catch(e){}try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}}
   // Test/sample playback for the settings "Test voice" button (uses form values).
   window.halVerifyVoice=async function(cfg){
     var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({verify:true,key:cfg.key,voiceId:cfg.voiceId})});
@@ -2405,7 +2407,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     listening=true;setMicUI(true);try{rec.start();}catch(e){listening=false;setMicUI(false);}
   }
   function updateSpeakUI(){var on=speakOn();document.querySelectorAll('.hal-speak').forEach(function(b){b.classList.toggle('on',on);if(b.textContent.indexOf('Speak')>=0)b.textContent='🔊 Speak: '+(on?'on':'off');b.title=on?'Stop reading Hal’s replies aloud':'Read Hal’s replies aloud';});}
-  function toggleSpeak(){var on=!speakOn();try{localStorage.setItem('hal:speak',on?'1':'0');}catch(e){}if(!on&&window.speechSynthesis){try{window.speechSynthesis.cancel();}catch(e){}}updateSpeakUI();}
+  function toggleSpeak(){var on=!speakOn();try{localStorage.setItem('hal:speak',on?'1':'0');}catch(e){}if(!on){try{elStop();}catch(e){}}updateSpeakUI();}
   function wireVoice(root){
     (root||document).querySelectorAll('.hal-mic').forEach(function(m){if(m._wired)return;m._wired=1;if(!SR){m.style.display='none';return;}m.onclick=function(){var bar=m.closest('.hal-bar,.hal-pop-bar');startVoice(bar&&bar.querySelector('textarea'));};});
     (root||document).querySelectorAll('.hal-speak').forEach(function(b){if(b._wired)return;b._wired=1;b.onclick=toggleSpeak;});
