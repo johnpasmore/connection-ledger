@@ -53,27 +53,32 @@ export async function onRequestGet(context) {
   // Collect ids per reason (address/subject first so they win the per-thread cap).
   const reasonsById = new Map();
   const order = [];
+  let lists;
   try {
-    for (const { reason, q: gq } of queries) {
-      const list = await gFetch(accessToken, "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q=" + encodeURIComponent(gq));
-      for (const it of (list.messages || [])) {
-        if (!reasonsById.has(it.id)) { reasonsById.set(it.id, new Set()); order.push(it.id); }
-        reasonsById.get(it.id).add(reason);
-      }
-    }
+    // Run the three targeted searches in parallel instead of one after another.
+    lists = await Promise.all(queries.map(({ q: gq }) =>
+      gFetch(accessToken, "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q=" + encodeURIComponent(gq))));
   } catch (e) { return json({ ok: false, error: "gmail list: " + msg(e) }, 502); }
+  queries.forEach(({ reason }, i) => {
+    for (const it of ((lists[i] || {}).messages || [])) {
+      if (!reasonsById.has(it.id)) { reasonsById.set(it.id, new Set()); order.push(it.id); }
+      reasonsById.get(it.id).add(reason);
+    }
+  });
 
   // Fetch metadata + snippet for the union (bounded), then rank.
   const ids = order.slice(0, 40);
   const messages = [];
   const rx = safeRegex(q);
-  for (const id of ids) {
+  // Fetch message metadata in parallel batches (was one-at-a-time — the main latency source).
+  const metas = await fetchInBatches(ids, 10, (id) => gFetch(
+    accessToken,
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + id +
+      "?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date"
+  ).catch(() => null));
+  for (const full of metas) {
+    if (!full) continue;
     try {
-      const full = await gFetch(
-        accessToken,
-        "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + id +
-          "?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date"
-      );
       const H = {};
       ((full.payload && full.payload.headers) || []).forEach((h) => { H[(h.name || "").toLowerCase()] = h.value; });
       const from = H.from || "", to = H.to || "", cc = H.cc || "", subject = H.subject || "(no subject)", snippet = (full.snippet || "").slice(0, 240);
@@ -104,6 +109,16 @@ export async function onRequestGet(context) {
 function safeRegex(term) {
   const esc = String(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   try { return new RegExp(esc, "i"); } catch (e) { return /$a^/; }
+}
+
+// Run fn over items with bounded concurrency (parallel batches), preserving order.
+async function fetchInBatches(items, size, fn) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) {
+    const batch = await Promise.all(items.slice(i, i + size).map(fn));
+    for (const v of batch) out.push(v);
+  }
+  return out;
 }
 
 // True when a From header is an automated / blast / generic role mailbox rather
