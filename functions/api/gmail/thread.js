@@ -39,20 +39,25 @@ export async function onRequestGet(context) {
   } catch (e) { return json({ ok: false, error: "gmail list: " + msg(e) }, 502); }
 
   const ids = (list.messages || []).slice(0, max);
+  const detailQ = full
+    ? "?format=full"
+    : "?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date";
+  // Fetch all messages in parallel instead of one-at-a-time (latency win).
+  const fetched = await Promise.all(ids.map((it) =>
+    gFetch(accessToken, "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + it.id + detailQ)
+      .then((m) => ({ id: it.id, m })).catch(() => null)));
   const messages = [];
-  for (const it of ids) {
+  for (const f of fetched) {
+    if (!f) continue;
     try {
-      const q = full
-        ? "?format=full"
-        : "?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date";
-      const m = await gFetch(accessToken, "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + it.id + q);
+      const m = f.m;
       const H = {};
       ((m.payload && m.payload.headers) || []).forEach((h) => { H[(h.name || "").toLowerCase()] = h.value; });
       const from = H.from || "", to = H.to || "", cc = H.cc || "", subject = H.subject || "(no subject)";
       const when = H.date ? new Date(H.date) : (m.internalDate ? new Date(+m.internalDate) : null);
       const fromMe = /@latimer\.ai|@futuresum/i.test(from) || !!(myEmail && from.toLowerCase().indexOf(myEmail.toLowerCase()) >= 0);
       messages.push({
-        id: it.id,
+        id: f.id,
         dateISO: when && !isNaN(when) ? when.toISOString() : "",
         from, to, cc, subject,
         body: full ? extractBody(m.payload).slice(0, 4000) : "",
