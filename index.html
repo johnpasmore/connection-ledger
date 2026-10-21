@@ -1747,6 +1747,21 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function halComplete(system,user,maxTokens){
     return await window.halLLM(system,[{role:'user',content:user}],maxTokens||800);
   }
+  // Calendar lines for an account's brief — meetings on JP's calendar related to it,
+  // so Hal knows what already happened. Best-effort: silently empty if the offline
+  // Google grant has no Calendar scope yet (JP re-grants via the Recap tab's connect).
+  async function acctCalLines(a){
+    var terms=[];try{terms=acctSearchNames(a);}catch(e){terms=[];}
+    (a.domains||[]).forEach(function(d){terms.push(d);});
+    var uniq=[],seenT={};terms.forEach(function(t){t=String(t||'').trim();if(t.replace(/[^A-Za-z0-9]/g,'').length<3)return;var k=t.toLowerCase();if(!seenT[k]){seenT[k]=1;uniq.push(t);}});
+    uniq=uniq.slice(0,3);if(!uniq.length)return '';
+    var lists=await Promise.all(uniq.map(function(t){return fetch('/api/calendar/search?q='+encodeURIComponent(t),{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});}));
+    var seen={},evs=[];
+    lists.forEach(function(j){if(j&&j.ok&&j.events)j.events.forEach(function(e){var k=e.date+'|'+e.summary;if(!seen[k]){seen[k]=1;evs.push(e);}});});
+    if(!evs.length)return '';
+    evs.sort(function(x,y){return (x.date<y.date)?-1:(x.date>y.date)?1:0;});
+    return 'CALENDAR — meetings on JP’s calendar related to this account:\n'+evs.slice(0,8).map(function(e){return '- '+e.date+' ('+(e.past?'already happened':'upcoming')+'): '+e.summary;}).join('\n');
+  }
   async function buildBrief(a,force){
     var gq=acctQuery(a,'newer_than:1y');
     if(!gq)return {skip:'no domains or name'};
@@ -1759,9 +1774,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var me=res.myEmail||'JP';
     // server returns newest-first; the brief wants the thread oldest-first
     var convo=res.messages.slice().reverse().map(function(m){var who=m.fromMe?'ME':(m.from||'them');return '['+(m.dateISO||'').slice(0,10)+'] '+who+' — '+m.subject+'\n'+(m.body||'').slice(0,1500);}).join('\n\n---\n\n');
-    var system='You are Hal, an AI sales partner for Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' You read the recent email thread with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts that are not in the thread.'+(window.halGuardrails?window.halGuardrails():'');
+    var cal='';try{cal=await acctCalLines(a);}catch(e){}
+    var system='You are Hal, an AI sales partner for Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' You read the recent email thread (and any calendar meetings) with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts. IMPORTANT: if the CALENDAR shows a meeting already happened (a past date), treat it as DONE — never suggest scheduling or "setting a date" for something that already occurred; reflect that it happened and recommend the right follow-up.'+(window.halGuardrails?window.halGuardrails():'');
     var corr=(a.corrections&&a.corrections.length)?('\n\nGROUND TRUTH from JP — trust these over anything the email implies, and reflect them in your brief:\n- '+a.corrections.map(function(c){return c.text;}).join('\n- ')):'';
-    var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+corr+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
+    var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+corr+(cal?('\n\n'+cal):'')+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
     var txt=(await halComplete(system,user,800)).replace(/```json|```/g,'').trim();
     var b=JSON.parse(txt);
     b.updatedAt=new Date().toISOString();b.lastMsgId=res.latestId;b.msgCount=res.messages.length;
