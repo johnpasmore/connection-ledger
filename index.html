@@ -1936,13 +1936,27 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(role==='user')return '<div class="hal-msg user">'+html+'</div>';
     return '<div class="hal-msg bot"><div class="who">Hal</div><div class="body">'+html+'</div></div>';
   }
-  var thinking=false;
+  var thinking=false,thinkMsg='';
+  // Friendly, first-person line shown while Hal works, so the gap isn't silent.
+  var TL={
+    lookup:['Thanks — let me look through your email and LinkedIn conversations, then I’ll pull together a prioritized view.','On it — reading your recent email and LinkedIn history on this, then I’ll lay out the priorities.','Give me a moment — going through your email and LinkedIn so I can prioritize this for you.'],
+    adds:['Got it — scanning your accounts’ email, your priority contacts, and LinkedIn to build the list.','On it — pulling the real people from your account threads and checking them against your list.'],
+    draft:['On it — drafting that for you now.','Sure — writing that up now.'],
+    general:['Let me take a look and pull this together for you.','One moment — working through this for you now.']
+  };
+  function pickTL(a){return a[Math.floor(Math.random()*a.length)];}
+  function thinkLineFor(q){var t=String(q||'').toLowerCase();
+    if(typeof halCsv!=='undefined'&&halCsv&&/\b(who (should|do|can|would)|add|include|suggest|more (people|partners|contacts|names|prospects)|missing)\b/.test(t))return pickTL(TL.adds);
+    if(/\b(draft|write|compose|reply|respond|follow[- ]?up)\b/.test(t))return pickTL(TL.draft);
+    if(/\b(who|when|what|where|email|linkedin|conversation|talk|spoke|recent|history|look|about|status|update|priorit)\b/.test(t))return pickTL(TL.lookup);
+    return pickTL(TL.general);
+  }
   function buildHtml(){
     drafts=[];addsBlocks=[]; // reset once per full paint so data-draft/data-adds indices stay in sync across mounts
     var h=hist.length
       ? hist.map(function(t){return t.role==='user'?bubble('user',esc(t.content).replace(/\n/g,'<br>')):bubble('bot',fmtBot(t.content));}).join('')
       : ''; // empty state — no auto briefing; the suggested-prompt chips guide the user
-    if(thinking)h+='<div class="hal-think">Hal is thinking…</div>';
+    if(thinking)h+='<div class="hal-think">'+esc(thinkMsg||'Hal is thinking…')+'</div>';
     return h;
   }
   function paint(){
@@ -2002,6 +2016,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // CSV attached + an "add to this list" ask → suggest from JP's own contacts.
     if(halCsv&&/\b(who (should|do|can|would)|add|include|suggest|who else|more (people|partners|contacts|names|prospects)|missing|expand|from my (contacts|network|connections))\b/i.test(q))return suggestAdditions(q);
     busy=true;
+    thinkMsg=thinkLineFor(q);
     hist.push({role:'user',content:q});saveHist();thinking=true;paint();
     try{
       var extra='';try{extra=await autoLookupContext(q);}catch(e){} // auto-pull email for an untracked org/person JP mentions
@@ -2171,7 +2186,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!term)return;
     if(!akey()){if(window.toast)window.toast(keyMsg());return;}
     busy=true;
-    hist.push({role:'user',content:(ask&&ask.trim())?ask.trim():('Look up: '+term)});saveHist();thinking=true;paint();
+    hist.push({role:'user',content:(ask&&ask.trim())?ask.trim():('Look up: '+term)});thinkMsg=pickTL(TL.lookup);saveHist();thinking=true;paint();
     try{
       var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
       lastEmailBlock=emailMd(term); // app renders email deterministically; model must not
@@ -2231,7 +2246,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function suggestAdditions(q){
     if(busy)return;if(!akey()){if(window.toast)window.toast(keyMsg());setup();return;}
     if(!halCsv){if(window.toast)window.toast('Attach a CSV first (📎), then ask who to add.');return;}
-    busy=true;hist.push({role:'user',content:q});saveHist();thinking=true;paint();
+    busy=true;hist.push({role:'user',content:q});thinkMsg=pickTL(TL.adds);saveHist();thinking=true;paint();
     try{
       // Who's already on the uploaded list (dedupe by email, then name).
       var onList={},onListEmail={};
