@@ -1962,10 +1962,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var thinking=false,thinkMsg='';
   // Friendly, first-person line shown while Hal works, so the gap isn't silent.
   var TL={
-    lookup:['Thanks, John — let me look through your email and LinkedIn conversations, then I’ll pull together a prioritized view.','On it — reading your recent email and LinkedIn history on this, then I’ll lay out the priorities.','Give me a moment — going through your email and LinkedIn so I can prioritize this for you.'],
-    adds:['Got it — scanning your accounts’ email, your priority contacts, and LinkedIn to build the list.','On it — pulling the real people from your account threads and checking them against your list.'],
-    draft:['On it — drafting that for you now.','Sure — writing that up now.'],
-    general:['Thank you, John — let me think about that and pull it together.','Let me take a look and pull this together for you.','One moment — working through this for you now.']
+    lookup:['Thanks, John — let me look through your email and LinkedIn conversations, then I’ll pull together a prioritized view.','On it — reading your recent email and LinkedIn history on this, then I’ll lay out the priorities.','Give me a moment — going through your email and LinkedIn so I can prioritize this for you.','Good question — let me pull your recent threads and accounts together before I answer.','Let me check what’s moved recently across your email and accounts, then I’ll walk you through it.','On it — I’ll scan where things stand and surface what matters most.','Give me a second to read the latest and think this through with you.'],
+    adds:['Got it — scanning your accounts’ email, your priority contacts, and LinkedIn to build the list.','On it — pulling the real people from your account threads and checking them against your list.','Let me work through your accounts and connections and see who belongs on this list.','One moment — matching your network against the list so I don’t miss anyone.'],
+    draft:['On it — drafting that for you now.','Sure — writing that up now.','Let me put a first version together for you.','Give me a moment to draft that the way you’d send it.'],
+    general:['Thank you, John — let me think about that and pull it together.','Let me take a look and pull this together for you.','One moment — working through this for you now.','Good one — let me think this through and come back with a plan.','On it — let me organize this and give you a clear answer.','Let me look at where things stand and figure out the best focus for you.']
   };
   function pickTL(a){return a[Math.floor(Math.random()*a.length)];}
   function thinkLineFor(q){var t=String(q||'').toLowerCase();
