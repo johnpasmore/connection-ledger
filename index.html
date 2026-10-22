@@ -65,6 +65,10 @@
   .search{flex:1;min-width:180px} .search input{width:100%;font-size:13.5px;padding:9px 13px;border-radius:9px;border:1px solid var(--line);background:#fff}
   .search input:focus{outline:none;border-color:var(--clay)}
   select.filter{font-size:13px;padding:9px 12px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+  .seg-btn{font-size:13px;padding:9px 14px;border:none;background:#fff;cursor:pointer;color:var(--ink-soft);white-space:nowrap}
+  .seg-btn+.seg-btn{border-left:1px solid var(--line)}
+  .seg-btn.active{background:var(--ink);color:#fff;font-weight:600}
   .thresh{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft)} .thresh input{width:48px;padding:6px 7px;border-radius:7px;border:1px solid var(--line);text-align:center}
   table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
   thead th{text-align:left;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);font-weight:600;padding:12px 14px;background:var(--surface);border-bottom:1px solid var(--line);white-space:nowrap}
@@ -355,6 +359,7 @@
     </div>
     <div class="toolbar">
       <div class="search"><input id="search" placeholder="Search name, company, institution…"></div>
+      <div class="seg" id="connSeg" role="group" aria-label="View"><button type="button" class="seg-btn active" data-view="all">All</button><button type="button" class="seg-btn" data-view="connected" title="Only people who actually connected (not pending invites)">✔ Connected only</button></div>
       <select class="filter" id="filter"><option value="all">All statuses</option><option value="pending">Awaiting reply</option><option value="no_response">No response</option><option value="connected">Connected</option></select>
       <select class="filter" id="sortby"><option value="status">Sort: Status</option><option value="date_desc">Date ↓ newest</option><option value="date_asc">Date ↑ oldest</option></select>
       <select class="filter" id="chan"><option value="all">All channels</option><option value="email">Has email</option><option value="li_only">LinkedIn only</option><option value="email_only">Email only</option><option value="both">Both channels</option><option value="msg_noreply">Messaged, no reply</option></select>
@@ -736,7 +741,7 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
 /* =================== CONNECTION LEDGER =================== */
 (function(){
   const KEY='ledger:contacts';
-  let contacts=[]; let editingId=null; let threshold=21; let page=0;
+  let contacts=[]; let editingId=null; let threshold=21; let page=0; let connView='all';
   // One-time cleanup: rewrite legacy raw LinkedIn date strings (stored before dates
   // were normalized at import) into browser-safe ISO, so they sort correctly too.
   // Values already in clean ISO are left untouched; anything unreadable is kept as-is.
@@ -888,6 +893,7 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
   function render(){
     const q=norm(document.getElementById('search').value);const f=document.getElementById('filter').value;const sortby=document.getElementById('sortby').value;const chan=document.getElementById('chan').value;const stateQ=norm((document.getElementById('stateFilter').value||''));const tbody=document.getElementById('tbody');
     const rows=contacts.map(c=>({c,st:status(c)})).filter(({c,st})=>{
+        if(connView==='connected'&&st!=='connected')return false;
         if(f!=='all'&&st!==f)return false;
         if(chan!=='all'){const li=hasLI(c),em=hasEm(c);
           if(chan==='email'&&!em)return false;
@@ -1062,6 +1068,7 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
   document.getElementById('scrim').onclick=e=>{if(e.target.id==='scrim')closeModal();};
   document.getElementById('search').oninput=()=>{page=0;render();};
   document.getElementById('filter').onchange=()=>{page=0;render();};
+  document.querySelectorAll('#connSeg .seg-btn').forEach(function(b){b.onclick=function(){connView=b.getAttribute('data-view');document.querySelectorAll('#connSeg .seg-btn').forEach(function(x){x.classList.toggle('active',x===b);});page=0;render();};});
   document.getElementById('sortby').onchange=()=>{page=0;render();};
   document.getElementById('chan').onchange=()=>{page=0;render();};
   (function(){var ms=document.getElementById('mailAppSel');if(ms){ms.value=mailApp();ms.onchange=function(){setMailApp(ms.value);render();toast('Email links now open in '+ms.options[ms.selectedIndex].text.replace('Email via ',''));};}})();
@@ -1955,10 +1962,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var thinking=false,thinkMsg='';
   // Friendly, first-person line shown while Hal works, so the gap isn't silent.
   var TL={
-    lookup:['Thanks — let me look through your email and LinkedIn conversations, then I’ll pull together a prioritized view.','On it — reading your recent email and LinkedIn history on this, then I’ll lay out the priorities.','Give me a moment — going through your email and LinkedIn so I can prioritize this for you.'],
+    lookup:['Thanks, John — let me look through your email and LinkedIn conversations, then I’ll pull together a prioritized view.','On it — reading your recent email and LinkedIn history on this, then I’ll lay out the priorities.','Give me a moment — going through your email and LinkedIn so I can prioritize this for you.'],
     adds:['Got it — scanning your accounts’ email, your priority contacts, and LinkedIn to build the list.','On it — pulling the real people from your account threads and checking them against your list.'],
     draft:['On it — drafting that for you now.','Sure — writing that up now.'],
-    general:['Let me take a look and pull this together for you.','One moment — working through this for you now.']
+    general:['Thank you, John — let me think about that and pull it together.','Let me take a look and pull this together for you.','One moment — working through this for you now.']
   };
   function pickTL(a){return a[Math.floor(Math.random()*a.length)];}
   function thinkLineFor(q){var t=String(q||'').toLowerCase();
@@ -2033,7 +2040,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(halCsv&&/\b(who (should|do|can|would)|add|include|suggest|who else|more (people|partners|contacts|names|prospects)|missing|expand|from my (contacts|network|connections))\b/i.test(q))return suggestAdditions(q);
     busy=true;
     thinkMsg=thinkLineFor(q);
-    hist.push({role:'user',content:q});saveHist();thinking=true;paint();
+    hist.push({role:'user',content:q});saveHist();thinking=true;paint();speak(thinkMsg); // Hal says the filler aloud (if Speak is on) so the thinking gap isn't silent
     try{
       var extra='';try{extra=await autoLookupContext(q);}catch(e){} // auto-pull email for an untracked org/person JP mentions
       var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});
@@ -2202,7 +2209,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!term)return;
     if(!akey()){if(window.toast)window.toast(keyMsg());return;}
     busy=true;
-    hist.push({role:'user',content:(ask&&ask.trim())?ask.trim():('Look up: '+term)});thinkMsg=pickTL(TL.lookup);saveHist();thinking=true;paint();
+    hist.push({role:'user',content:(ask&&ask.trim())?ask.trim():('Look up: '+term)});thinkMsg=pickTL(TL.lookup);saveHist();thinking=true;paint();speak(thinkMsg);
     try{
       var data=await lookupEmail(term);var li=searchLedger(term,30);var dm=await searchMessages(term,12);var reply;
       lastEmailBlock=emailMd(term); // app renders email deterministically; model must not
@@ -2262,7 +2269,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function suggestAdditions(q){
     if(busy)return;if(!akey()){if(window.toast)window.toast(keyMsg());setup();return;}
     if(!halCsv){if(window.toast)window.toast('Attach a CSV first (📎), then ask who to add.');return;}
-    busy=true;hist.push({role:'user',content:q});thinkMsg=pickTL(TL.adds);saveHist();thinking=true;paint();
+    busy=true;hist.push({role:'user',content:q});thinkMsg=pickTL(TL.adds);saveHist();thinking=true;paint();speak(thinkMsg);
     try{
       // Who's already on the uploaded list (dedupe by email, then name).
       var onList={},onListEmail={};
@@ -2445,6 +2452,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function speak(t){
     if(!speakOn())return;
     var s=stripForSpeech(t);if(!s)return;
+    speechGen++; // latest utterance wins — aborts any in-flight filler so it can't overlap the reply
     if(elOn()){elSpeak(s.slice(0,2000),{}).catch(function(err){ // surface the reason once, then fall back to the browser voice so Hal never goes silent
       if(!elWarned){elWarned=true;if(window.toast)window.toast('ElevenLabs voice failed ('+(err&&err.message?err.message:err)+') — using the browser voice. Check the key/voice on Lead Router.');}
       try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}
