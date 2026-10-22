@@ -2389,10 +2389,17 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     for(i=0;i<vs.length;i++)if(/en[-_]US/i.test(vs[i].lang)&&/(natural|google|samantha|aria|jenny|serena|allison)/i.test(vs[i].name))return vs[i];
     for(i=0;i<vs.length;i++)if(/^en/i.test(vs[i].lang))return vs[i];return vs[0]||null;}
   function applyVoice(u){try{var v=chosenVoice();if(v)u.voice=v;}catch(e){}u.rate=1.03;}
-  function elConfigured(){try{return !!(localStorage.getItem('hal:elevenkey')||'')&&!!(localStorage.getItem('hal:elevenvoice')||'');}catch(e){return false;}}
+  // JP's voice is served by the backend (ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID
+  // secrets) — no in-browser key needed, so it works on iPhone and survives a hard
+  // reset. elServer is set by a one-time probe of GET /api/tts at boot.
+  var elServer=false;
+  function elConfigured(){try{return elServer||(!!(localStorage.getItem('hal:elevenkey')||'')&&!!(localStorage.getItem('hal:elevenvoice')||''));}catch(e){return elServer;}}
+  (function probeVoice(){try{fetch('/api/tts').then(function(r){return r.json();}).then(function(j){if(j&&j.serverVoice){elServer=true;try{populateVoices();}catch(e){}try{updateSpeakUI();}catch(e){}}}).catch(function(){});}catch(e){}})();
   function populateVoices(){var vs=ttsVoices();document.querySelectorAll('.hal-voice').forEach(function(sel){
     var hasEl=elConfigured();
-    if(!vs.length&&!hasEl){sel.style.display='none';return;}sel.style.display='';
+    // JP's voice is the only choice once it's available — hide the picker entirely.
+    if(hasEl){sel.style.display='none';return;}
+    if(!vs.length){sel.style.display='none';return;}sel.style.display='';
     var cur='';try{cur=localStorage.getItem('hal:voice')||'';}catch(e){}
     var html='';
     if(hasEl)html+='<option value="elevenlabs"'+(cur==='elevenlabs'?' selected':'')+'>🎙 My ElevenLabs voice</option>';
@@ -2410,7 +2417,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   window.halRefreshVoices=populateVoices;
   try{if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=populateVoices;}catch(e){}
   /* ---- ElevenLabs (custom/cloned voice) via same-origin /api/tts proxy ---- */
-  function elOn(){try{return localStorage.getItem('hal:voice')==='elevenlabs'&&elConfigured();}catch(e){return false;}}
+  // Prefer JP's ElevenLabs voice whenever it's available — no "other choices" to pick.
+  function elOn(){try{return elConfigured();}catch(e){return false;}}
   var elCtx=null,elSrc=null,speechGen=0; // speechGen bumps on every stop so late-arriving audio won't start
   // Speak via ElevenLabs. Returns a promise; opts.onAnalyser(analyser) gives real
   // amplitude for the orb; opts.onEnd fires when playback finishes.

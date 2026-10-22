@@ -8,6 +8,17 @@
 
 export async function onRequest(context) {
   const { request, env } = context;
+
+  // GET /api/tts — capability probe so the browser knows JP's voice is configured
+  // server-side (ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID secrets). This lets Hal
+  // use JP's voice with no in-browser key — so it works on iPhone and survives a
+  // hard reset that wipes localStorage.
+  if (request.method === "GET") {
+    const serverVoice = !!(env && env.ELEVENLABS_API_KEY && env.ELEVENLABS_VOICE_ID);
+    return new Response(JSON.stringify({ ok: true, serverVoice }), {
+      status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  }
   if (request.method !== "POST") return jerr("Method not allowed", 405);
 
   let body;
@@ -15,7 +26,8 @@ export async function onRequest(context) {
 
   const key = (body && body.key) || (env && env.ELEVENLABS_API_KEY) || "";
   if (!key) return jerr("No ElevenLabs API key provided", 401);
-  const voiceId = (body && body.voiceId) || "";
+  // Voice id: the browser's own, else JP's server-configured voice (the default).
+  const voiceId = (body && body.voiceId) || (env && env.ELEVENLABS_VOICE_ID) || "";
   if (!voiceId) return jerr("No ElevenLabs voice id provided", 400);
 
   // Verify mode: confirm the key + voice via GET /v1/voices/{id} (per ElevenLabs).
