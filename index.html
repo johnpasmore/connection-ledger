@@ -2776,6 +2776,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
 /* ===== Cloudflare D1 cloud sync (localStorage-first, graceful fallback) ===== */
 (function(){
   var cloudOn=true,lastSig=null;
+  // Richness of the last cloud copy we trust — so a suddenly-sparse local state
+  // (e.g. an identity-bucket swap or a cleared browser) can never silently
+  // overwrite a full one on auto-save. Updated on every trusted get/put.
+  var cloudContacts=0,cloudPrio=0;
+  function statsOf(arr){var c=0,p=0;if(Array.isArray(arr)){c=arr.length;for(var i=0;i<arr.length;i++){if(arr[i]&&arr[i].priority)p++;}}return {contacts:c,priorities:p};}
+  function localStats(){try{return statsOf(window.ledgerAll?window.ledgerAll():JSON.parse(localStorage.getItem('ledger:contacts')||'[]'));}catch(e){return {contacts:0,priorities:0};}}
+  function cloudStatsOf(d){try{return statsOf(d&&(d.ledger||d.contacts));}catch(e){return {contacts:0,priorities:0};}}
   function sig(){try{return (localStorage.getItem('ledger:contacts')||'')+'\u0001'+(localStorage.getItem('router:records')||'')+'|'+(localStorage.getItem('ledger:accounts')||'');}catch(e){return '';}}
   function payload(){function p(k){try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return [];}}var ms=null;try{ms=JSON.parse(localStorage.getItem('ledger:msgstats')||'null');}catch(e){}var mraw=null;try{mraw=localStorage.getItem('ledger:messages')||null;}catch(e){}return {ledger:(window.ledgerAll?window.ledgerAll():p('ledger:contacts')),router:p('router:records'),msgstats:ms,accounts:(function(){try{return JSON.parse(localStorage.getItem('ledger:accounts')||'null');}catch(e){return null;}})(),messagesRaw:mraw};}
   function setStatus(t){var el=document.getElementById('cloudStatus');if(el)el.textContent='Cloud: '+t;}
@@ -2786,10 +2793,21 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   async function cloudPut(){var packed=await gzipB64(JSON.stringify(payload()));var r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:packed,enc:'gzip'})});if(!r.ok){var t='';try{t=await r.text();}catch(e){}throw new Error(r.status+' '+t.slice(0,160));}lastSig=sig();return r.json();}
   async function unpack(r){if(!r||r.data==null)return null;var d=r.data;if(typeof d==='string'){try{return JSON.parse(await gunzipB64(d));}catch(e){try{return JSON.parse(d);}catch(e2){return null;}}}return d;}
   var sb=document.getElementById('cloudSaveBtn'),lb=document.getElementById('cloudLoadBtn');
-  if(sb)sb.onclick=async function(){setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('cloud error: '+(e&&e.message?e.message:e));}};
-  if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var d=await unpack(await cloudGet());if(!d){setStatus('nothing saved in cloud yet');return;}await applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
-  (async function boot(){setStatus('checking…');try{var d=await unpack(await cloudGet());var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));if(d&&empty){await applyCloud(d);setStatus('loaded — reloading…');setTimeout(function(){location.reload();},700);return;}lastSig=sig();setStatus('connected ✓');}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
-  setInterval(async function(){if(!cloudOn)return;var s=sig();if(s===lastSig)return;setStatus('saving…');try{await cloudPut();setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — will retry');}},20000);
+  // Explicit Save is always honored (deliberate intent) and refreshes the trust baseline.
+  if(sb)sb.onclick=async function(){var ls=localStats();if(cloudPrio>=5&&ls.priorities===0&&!confirm('Heads up: this browser has 0 priority stars but your cloud copy has '+cloudPrio+'. Saving now will overwrite the cloud with an empty list. Continue?'))return;setStatus('saving…');try{await cloudPut();cloudContacts=ls.contacts;cloudPrio=ls.priorities;setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('cloud error: '+(e&&e.message?e.message:e));}};
+  if(lb)lb.onclick=async function(){if(!confirm('Load your cloud copy? This replaces what is in this browser.'))return;setStatus('loading…');try{var r=await cloudGet();var d=await unpack(r);if(!d){setStatus('nothing saved in cloud yet');return;}await applyCloud(d);var cs=cloudStatsOf(d);cloudContacts=cs.contacts;cloudPrio=cs.priorities;setStatus('loaded '+cs.priorities+'★ — reloading…');setTimeout(function(){location.reload();},700);}catch(e){setStatus('offline');}};
+  (async function boot(){setStatus('checking…');try{var r=await cloudGet();var d=await unpack(r);var cs=cloudStatsOf(d);var ls=localStats();var empty=!(localStorage.getItem('ledger:contacts')||localStorage.getItem('router:records'));
+    // Restore from cloud when local is empty, OR when local looks wiped (no priority
+    // stars + almost no contacts) while the cloud copy clearly has them — this is the
+    // identity-bucket-swap recovery, and the server may have served a sibling snapshot.
+    var localWiped=(ls.priorities===0&&ls.contacts<3&&cs.priorities>0);
+    if(d&&(empty||localWiped)){await applyCloud(d);cloudContacts=cs.contacts;cloudPrio=cs.priorities;setStatus((r&&r.recoveredFrom?('recovered '+cs.priorities+'★ from '+r.recoveredFrom):('loaded '+cs.priorities+'★'))+' — reloading…');setTimeout(function(){location.reload();},700);return;}
+    cloudContacts=cs.contacts;cloudPrio=cs.priorities;lastSig=sig();setStatus('connected ✓'+(cs.priorities?(' · '+cs.priorities+'★'):''));}catch(e){cloudOn=false;setStatus('offline (local only)');}})();
+  setInterval(async function(){if(!cloudOn)return;var s=sig();if(s===lastSig)return;var ls=localStats();
+    // Shrink-guard: refuse to auto-overwrite a healthy cloud copy with a suddenly
+    // sparse local state. Only the explicit ☁ Save button can push a shrink.
+    if((cloudPrio>=5&&ls.priorities===0)||(cloudContacts>=10&&ls.contacts<cloudContacts*0.5)){lastSig=s;setStatus('⚠ auto-save paused — this browser’s list shrank (now '+ls.contacts+' contacts, '+ls.priorities+'★ vs cloud '+cloudContacts+'/'+cloudPrio+'★). Click ⤓ Load from cloud to restore, or ☁ Save to overwrite.');return;}
+    setStatus('saving…');try{await cloudPut();cloudContacts=ls.contacts;cloudPrio=ls.priorities;setStatus('saved ✓ '+new Date().toLocaleTimeString());}catch(e){setStatus('offline — will retry');}},20000);
 })();
 
 /* ===== Follow-ups tab — Google Calendar + Gmail (read-only, in-browser) ===== */
