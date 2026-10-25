@@ -1769,6 +1769,20 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     evs.sort(function(x,y){return (x.date<y.date)?-1:(x.date>y.date)?1:0;});
     return 'CALENDAR — meetings on JP’s calendar related to this account:\n'+evs.slice(0,8).map(function(e){return '- '+e.date+' ('+(e.past?'already happened':'upcoming')+'): '+e.summary;}).join('\n');
   }
+  // Calendar lines for a chat lookup entity (name + optional domain). Best-effort:
+  // if the stored Google grant lacks Calendar scope, /api/calendar/search returns
+  // 403 and this quietly returns '' (JP re-grants by reconnecting Google on Recap).
+  async function entCalLines(ent,dom){
+    var terms=[];if(ent)terms.push(ent);if(dom&&dom.toLowerCase()!==String(ent||'').toLowerCase())terms.push(dom);
+    var uniq=[],seenT={};terms.forEach(function(t){t=String(t||'').trim();if(t.replace(/[^A-Za-z0-9]/g,'').length<3)return;var k=t.toLowerCase();if(!seenT[k]){seenT[k]=1;uniq.push(t);}});
+    uniq=uniq.slice(0,2);if(!uniq.length)return '';
+    var lists=await Promise.all(uniq.map(function(t){return fetch('/api/calendar/search?q='+encodeURIComponent(t),{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});}));
+    var seen={},evs=[];
+    lists.forEach(function(j){if(j&&j.ok&&j.events)j.events.forEach(function(e){var k=e.date+'|'+e.summary;if(!seen[k]){seen[k]=1;evs.push(e);}});});
+    if(!evs.length)return '';
+    evs.sort(function(x,y){return (x.date<y.date)?-1:(x.date>y.date)?1:0;});
+    return '\n\n[CALENDAR CONTEXT — events on JP’s calendar matching “'+ent+'”. Events marked "already happened" are DONE: do NOT suggest preparing for or attending them — suggest the follow-up instead. Only "upcoming" events are still ahead]:\n'+evs.slice(0,8).map(function(e){return '- '+e.date+' ('+(e.past?'already happened':'upcoming')+'): '+e.summary;}).join('\n');
+  }
   async function buildBrief(a,force){
     var gq=acctQuery(a,'newer_than:1y');
     if(!gq)return {skip:'no domains or name'};
@@ -1905,7 +1919,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function sys(){
     var me=(window.gMyEmail&&window.gMyEmail())||'john@latimer.ai';
-    return 'You are Hal, the AI sales partner inside Latimer.AI’s sales console. You work side by side with JP ('+me+'), the founder and seller. Today is '+new Date().toDateString()+'.\n\n'
+    var td=new Date();var tdISO=new Date(td.getTime()-td.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    return 'You are Hal, the AI sales partner inside Latimer.AI’s sales console. You work side by side with JP ('+me+'), the founder and seller. Today is '+td.toDateString()+' ('+tdISO+').\n\n'
+      +'TEMPORAL AWARENESS — READ CAREFULLY. Today is '+td.toDateString()+' ('+tdISO+'). The emails, briefs, next-steps, and notes you see were often written WEEKS AGO and may describe trips, campus visits, meetings, or calls that were PLANNED for dates that have since passed. Before you suggest ANY action, compare its date to today. If an event was scheduled for a date ON OR BEFORE '+tdISO+', it HAS ALREADY HAPPENED — never tell JP to prepare for it, confirm a time for it, travel to it, or attend it. Treat it as done and suggest the follow-up that comes AFTER it instead (send a recap, a thank-you, or the agreed next step). Only suggest preparing for or confirming events dated AFTER today. If a plan mentions a place or meeting but you cannot tell whether it already happened, say so and ask JP rather than assuming it is still upcoming. When the CALENDAR CONTEXT below marks an event "already happened," trust that over any older email that discussed it as upcoming.\n\n'
       +(window.halCompanyContext?window.halCompanyContext():'')+'\n\n'
       +'You already know the pipeline from the account briefs below. You can ALSO pull JP’s actual recent email on demand: whenever he asks about a specific account, person, or organization (a school, a name, a company, an .edu/.org, or an email domain), the app runs a live full-text search of his Gmail and shows the REAL matching threads — date, sender → recipient, subject, and a short snippet — in a "Recent email" section beneath your reply. So if JP asks whether you can pull actual emails or past conversations, the answer is YES: tell him to name the school, person, or organization and you’ll surface the real threads (you read message metadata and snippets across his whole mailbox, not full stored bodies). NEVER tell JP you "can’t access his email" or "can’t access email history" — you can. If a request is too broad to search on its own (a whole city, region, state, or "everyone"), do NOT refuse or claim you lack access: instead ask him which specific school, person, or organization to pull, and meanwhile suggest the most relevant accounts from the briefs below. Never ask JP to paste email in; reason from what you have, and say plainly when something is not in your notes. Be concise, warm, and specific. Rank by importance, urgency, and who owes a reply. Give concrete next actions, not generic advice.\n\n'
       +'If an account lists JP’S CORRECTIONS, they are ground truth: trust them over the brief, and if JP corrects you in this chat, accept it gracefully and use it for the rest of the conversation.\n\n'
@@ -2370,6 +2386,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // Email threads (when pulled) are rendered deterministically by emailFooter; the
     // model only gets them as CONTEXT below and must not re-list them.
     if(data)out+='\n\n[EMAIL CONTEXT — Gmail threads matching “'+ent+'” (whole mailbox). Use these to inform your "Best next steps" (who to follow up with, what to reference). Do NOT print a "Recent email" section or re-list these threads — the app displays the full list automatically beneath your reply, so listing them again would duplicate. Also do NOT add these email senders to the LinkedIn connections list]:\n'+data;
+    // Calendar context so Hal knows which meetings/visits already happened (best-effort).
+    try{var cal=await entCalLines(ent,dom);if(cal)out+=cal;}catch(e){}
     return out;
   }
   function clearChat(){hist=[];saveHist();try{elStop();}catch(e){}paint();}
