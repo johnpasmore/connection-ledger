@@ -183,6 +183,8 @@
   .hal-speak{border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);border-radius:16px;padding:4px 11px;font-size:12px;font-family:var(--sans);cursor:pointer}
   .hal-speak:hover{border-color:var(--accent);color:var(--accent)}
   .hal-speak.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .hal-stop{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:16px;padding:4px 11px;font-size:12px;font-family:var(--sans);cursor:pointer}
+  .hal-stop:hover{filter:brightness(1.05)}
   .hal-pop-actions .hal-speak{padding:2px 8px;font-size:13px}
   .hal-voice{font-family:var(--sans);font-size:12px;color:var(--ink-soft);background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:4px 9px;cursor:pointer;max-width:150px}
   .hal-convo-ctrls .hal-voice{max-width:200px}
@@ -324,7 +326,7 @@
   <section class="panel active" id="panel-hal">
     <p class="lede">Hal is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
     <div class="hal-chat">
-      <div class="hal-tools"><button type="button" id="hal-lookup" class="hal-clear" title="Ask Hal about any org or person in your email">🔎 Look up</button><button type="button" id="hal-attach" class="hal-clear" title="Attach a CSV list, then ask “Who should I add?”">📎 Attach CSV</button><span id="hal-csvchip" class="hal-clear" style="display:none"></span><input type="file" id="hal-file" accept=".csv" class="hidden"><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
+      <div class="hal-tools"><button type="button" id="hal-lookup" class="hal-clear" title="Ask Hal about any org or person in your email">🔎 Look up</button><button type="button" id="hal-attach" class="hal-clear" title="Attach a CSV list, then ask “Who should I add?”">📎 Attach CSV</button><span id="hal-csvchip" class="hal-clear" style="display:none"></span><input type="file" id="hal-file" accept=".csv" class="hidden"><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" class="hal-stop" title="Stop Hal speaking" style="display:none">⏹ Stop</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
@@ -2460,11 +2462,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var an=elCtx.createAnalyser();an.fftSize=512;src.connect(an);an.connect(elCtx.destination);
     elSrc=src;
     if(opts.onAnalyser)opts.onAnalyser(an);
-    src.onended=function(){if(opts.onEnd)opts.onEnd();};
-    src.start();
+    src.onended=function(){setStopUI(false);if(opts.onEnd)opts.onEnd();};
+    src.start();setStopUI(true);
     return {durationSec:audio.duration};
   }
-  function elStop(){speechGen++;try{if(elSrc){elSrc.stop();elSrc=null;}}catch(e){}try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}}
+  function setStopUI(on){try{document.querySelectorAll('.hal-stop').forEach(function(b){b.style.display=on?'':'none';});}catch(e){}}
+  function elStop(){speechGen++;try{if(elSrc){elSrc.stop();elSrc=null;}}catch(e){}try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}setStopUI(false);}
   // Test/sample playback for the settings "Test voice" button (uses form values).
   window.halVerifyVoice=async function(cfg){
     var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({verify:true,key:cfg.key,voiceId:cfg.voiceId})});
@@ -2485,9 +2488,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     speechGen++; // latest utterance wins — aborts any in-flight filler so it can't overlap the reply
     if(elOn()){elSpeak(s.slice(0,2000),{}).catch(function(err){ // surface the reason once, then fall back to the browser voice so Hal never goes silent
       if(!elWarned){elWarned=true;if(window.toast)window.toast('ElevenLabs voice failed ('+(err&&err.message?err.message:err)+') — using the browser voice. Check the key/voice on Lead Router.');}
-      try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);window.speechSynthesis.speak(u);}}catch(e){}
+      try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);u.onend=function(){setStopUI(false);};u.onerror=function(){setStopUI(false);};window.speechSynthesis.speak(u);setStopUI(true);}}catch(e){}
     });return;}
-    if(!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var u2=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u2);window.speechSynthesis.speak(u2);}catch(e){}
+    if(!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var u2=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u2);u2.onend=function(){setStopUI(false);};u2.onerror=function(){setStopUI(false);};window.speechSynthesis.speak(u2);setStopUI(true);}catch(e){}
   }
   function setMicUI(on){document.querySelectorAll('.hal-mic').forEach(function(m){m.classList.toggle('listening',on);m.title=on?'Listening… tap to stop':'Talk to Hal';});}
   function stopVoice(){if(rec){try{rec.stop();}catch(e){}}}
@@ -2506,6 +2509,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function wireVoice(root){
     (root||document).querySelectorAll('.hal-mic').forEach(function(m){if(m._wired)return;m._wired=1;if(!SR){m.style.display='none';return;}m.onclick=function(){var bar=m.closest('.hal-bar,.hal-pop-bar');startVoice(bar&&bar.querySelector('textarea'));};});
     (root||document).querySelectorAll('.hal-speak').forEach(function(b){if(b._wired)return;b._wired=1;b.onclick=toggleSpeak;});
+    (root||document).querySelectorAll('.hal-stop').forEach(function(b){if(b._wired)return;b._wired=1;b.onclick=function(){try{elStop();}catch(e){}};});
     (root||document).querySelectorAll('.hal-talk').forEach(function(b){if(b._wired)return;b._wired=1;if(!SR){b.style.display='none';return;}b.onclick=convoStart;});
     updateSpeakUI();
   }
