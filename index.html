@@ -2365,6 +2365,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       if(!dom&&/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(ent)){dom=ent.toLowerCase();} // ent itself is a domain
       if(/^(none|empty|n\/?a|no\b|nothing|sorry|i\b|there|the |here|based |it )/i.test(ent)||/latimer/i.test(ent)||ent.length>60)ent='';
     }catch(e){}
+    if(!ent){
+      // Fallback: the classifier often declines a BARE FIRST NAME (e.g. "Lauren"),
+      // treating it as personal. If JP explicitly asks to find email/conversations
+      // with a name, pull that name straight from the question and search it.
+      var m2=String(q||'').match(/\b(?:e-?mails?|conversations?|correspondence|threads?|messages?|notes?|anything|chats?|exchanges?)\b[\s\S]{0,40}?\b(?:from|with|about|to|for|of|by|w\/)\s+([A-Za-z][\w.'’\-]*(?:\s+[A-Z][\w.'’\-]*){0,2})/i);
+      if(!m2)m2=String(q||'').match(/\b(?:from|with|about|regarding|re:?)\s+([A-Z][a-z][\w.'’\-]*(?:\s+[A-Z][\w.'’\-]*){0,2})/);
+      if(m2){var cand=m2[1].trim().replace(/[.,;:!?]+$/,'');if(cand&&!/^(the|a|an|my|our|your|his|her|their|any|some|me|them|it|this|that|latimer|anyone|someone|everyone)$/i.test(cand))ent=cand;}
+    }
     if(!ent)return '';
     // Search email for the name AND the domain (if any), merging both result sets so
     // both "Arizona State University" mentions and asu.edu addresses surface.
@@ -2400,7 +2408,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   /* ---- Voice: talk to Hal + hear replies (Web Speech API, no external service) ---- */
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   var rec=null,listening=false,voiceInput=null;
-  function speakOn(){try{return localStorage.getItem('hal:speak')==='1';}catch(e){return false;}}
+  function speakOn(){try{var v=localStorage.getItem('hal:speak');return v===null?true:v==='1';}catch(e){return true;}}
   function stripForSpeech(t){t=(t||'').replace(/```email[\s\S]*?```/gi,'. I’ve drafted an email you can review on screen. ');t=t.replace(/```[\s\S]*?```/g,' ');
     t=t.replace(/[*_#>`]/g,'');
     t=t.replace(/([^\d\n])\s+[1-9]\.\s+/g,'$1. ');   // drop numbered-list markers so speech reads naturally
