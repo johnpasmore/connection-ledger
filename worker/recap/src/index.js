@@ -277,6 +277,11 @@ function fmtData(data) {
 }
 
 async function anthropic(env, sys, user) {
+  // Stream the response. A non-streaming recap (Opus, up to 3000 tokens over a full
+  // week of accounts) can take long enough that Cloudflare — which fronts the
+  // Anthropic API — returns a 524 origin-timeout, whose plain-text body then fails
+  // JSON.parse ("Unexpected token 'e', \"error code: 524\"…"). Streaming keeps bytes
+  // flowing so the connection never idle-times-out; we accumulate the text deltas.
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -289,11 +294,34 @@ async function anthropic(env, sys, user) {
       max_tokens: 3000,
       system: sys,
       messages: [{ role: "user", content: user }],
+      stream: true,
     }),
   });
-  const j = await r.json();
-  if (!r.ok) throw new Error("anthropic " + r.status + " " + JSON.stringify(j).slice(0, 200));
-  return (j.content || []).map((c) => c.text || "").join("").trim();
+  if (!r.ok || !r.body) {
+    let t = ""; try { t = await r.text(); } catch (e) {}
+    throw new Error("anthropic " + r.status + " " + t.replace(/\s+/g, " ").slice(0, 200));
+  }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", out = "", apiErr = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      let ev; try { ev = JSON.parse(payload); } catch (e) { continue; }
+      if (ev.type === "content_block_delta" && ev.delta && typeof ev.delta.text === "string") out += ev.delta.text;
+      else if (ev.type === "error" && ev.error) apiErr = ev.error.message || JSON.stringify(ev.error);
+    }
+  }
+  if (!out && apiErr) throw new Error("anthropic stream error: " + apiErr.slice(0, 200));
+  return out.trim();
 }
 
 async function latimer(env, sys, user) {
