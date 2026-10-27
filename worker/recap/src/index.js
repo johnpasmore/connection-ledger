@@ -119,23 +119,32 @@ async function run(env, { source, force }) {
 // bucket has the most domained accounts. Returns a `buckets` diagnostic too.
 async function loadAccountsBest(env, userEmail) {
   const domained = (a) => a.filter((x) => Array.isArray(x.domains) && x.domains.length).length;
+  // JP's CRM data lives under his Access identity (johnpasmore@gmail.com), while the
+  // worker's configured user (john@latimer.ai) bucket is empty. Teammates have their
+  // OWN buckets (e.g. barika@latimer.ai) — JP's recap must never be built from those.
+  // So try JP's buckets in a fixed order first, and exclude teammates from the
+  // last-resort richest-bucket scan.
+  const TEAM = new Set(["barika@latimer.ai", "scott@latimer.ai"]);
+  const buckets = [];
+  const seen = new Set();
+  // Preferred, in order: explicit override, the configured user, the pre-Access
+  // default, then JP's Access-identity bucket (where his accounts actually are).
+  const prefer = [env.RECAP_ACCOUNTS_EMAIL, userEmail, "default", "johnpasmore@gmail.com"].filter(Boolean);
+  for (const key of prefer) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const a = await parseBucket(env, key);
+    buckets.push({ key, total: a.length, withDomains: domained(a) });
+    if (domained(a)) return { accounts: a, used: key, buckets };
+  }
 
-  const primary = await parseBucket(env, userEmail);
-  if (domained(primary)) return { accounts: primary, used: userEmail, buckets: [{ key: userEmail, total: primary.length, withDomains: domained(primary) }] };
-
-  const def = await parseBucket(env, "default");
-  const buckets = [
-    { key: userEmail, total: primary.length, withDomains: domained(primary) },
-    { key: "default", total: def.length, withDomains: domained(def) },
-  ];
-  if (domained(def)) return { accounts: def, used: "default", buckets };
-
-  // Last resort: scan every bucket and pick the richest one.
+  // Last resort: richest non-team bucket we haven't already tried.
   let rows;
   try { rows = await env.DB.prepare("SELECT user_email FROM app_state").all(); } catch (e) { rows = { results: [] }; }
   let best = [], bestKey = null;
   for (const r of (rows.results || [])) {
-    if (r.user_email === userEmail || r.user_email === "default") continue;
+    if (seen.has(r.user_email) || TEAM.has(r.user_email)) continue;
+    seen.add(r.user_email);
     const a = await parseBucket(env, r.user_email);
     buckets.push({ key: r.user_email, total: a.length, withDomains: domained(a) });
     if (domained(a) > domained(best)) { best = a; bestKey = r.user_email; }
