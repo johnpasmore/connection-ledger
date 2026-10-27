@@ -57,6 +57,12 @@ export async function onRequestGet(context) {
     { reason: "body", q: qq },
   ];
   if (multi) queries.push({ reason: "body", q: q }); // unquoted — tokens AND'd across the whole message
+  // Spelling tolerance: also retrieve on the most distinctive token alone (usually
+  // the surname, which is likelier spelled right). Combined with fuzzy matching
+  // below, "Stacy Stewart" still surfaces "Stacey" — the surname pulls candidates,
+  // the fuzzy check keeps the ones whose other tokens are within one typo.
+  const longest = multi ? qTokens.slice().sort((a, b) => b.length - a.length)[0] : "";
+  if (longest && longest.length >= 4) queries.push({ reason: "address", q: "(from:" + longest + " OR to:" + longest + " OR cc:" + longest + ")" });
 
   // Collect ids per reason (address/subject first so they win the per-thread cap).
   const reasonsById = new Map();
@@ -84,12 +90,19 @@ export async function onRequestGet(context) {
   const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const rawLc = String(q).toLowerCase();
   const termTokens = norm(q).split(" ").filter((t) => t.length >= 2);
+  // A term token matches a field token when identical, or (for words ≥4 chars) within
+  // one edit — a single typo/variant like Stacy↔Stacey, Kathryn↔Kathryn. A short token
+  // must match exactly. allIn requires EVERY term token to match some field token.
+  const tokMatch = (t, ft) => {
+    for (const f of ft) { if (f === t) return true; if (t.length >= 4 && f.length >= 4 && within1(t, f)) return true; }
+    return false;
+  };
   const allIn = (text) => {
     const lc = String(text || "").toLowerCase();
     if (rawLc && lc.indexOf(rawLc) >= 0) return true; // exact substring (covers short terms like "3M")
     if (!termTokens.length) return false;
-    const h = " " + norm(text) + " ";
-    return termTokens.every((t) => h.indexOf(" " + t + " ") >= 0);
+    const ft = norm(text).split(" ").filter(Boolean);
+    return termTokens.every((t) => tokMatch(t, ft));
   };
   // Fetch message metadata in parallel batches (was one-at-a-time — the main latency source).
   const metas = await fetchInBatches(ids, 10, (id) => gFetch(
@@ -171,6 +184,17 @@ async function gFetch(accessToken, url) {
   return r.json();
 }
 
+// True when strings are equal or within a single edit (insert/delete/substitute).
+function within1(a, b) {
+  if (a === b) return true;
+  const la = a.length, lb = b.length;
+  if (Math.abs(la - lb) > 1) return false;
+  let i = 0;
+  while (i < la && i < lb && a[i] === b[i]) i++;
+  if (la === lb) return a.slice(i + 1) === b.slice(i + 1); // substitution
+  if (la < lb) return a.slice(i) === b.slice(i + 1);       // insertion into a
+  return a.slice(i + 1) === b.slice(i);                    // deletion from a
+}
 function msg(e) { return String(e && e.message ? e.message : e); }
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
