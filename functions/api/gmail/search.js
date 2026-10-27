@@ -43,12 +43,20 @@ export async function onRequestGet(context) {
 
   // Gmail-quote the term for phrase matching in subject/body; use the bare term for
   // the address operators (from:/to:/cc: match names and addresses containing it).
+  // For a MULTI-WORD term (usually a person's name) also run an UNQUOTED search:
+  // Gmail ANDs the tokens, so it matches "Last, First" headers and
+  // "First.Last@domain" addresses that an exact-phrase search misses — e.g.
+  // "Stacey Stewart" finds From: "Stewart, Stacey <Stacey.Stewart@madd.org>".
+  const qTokens = q.split(/\s+/).filter(Boolean);
+  const multi = qTokens.length > 1;
+  const grp = multi ? "(" + q + ")" : q; // from:(a b) requires both tokens in the field
   const qq = /["]/.test(q) ? q : '"' + q + '"';
   const queries = [
-    { reason: "address", q: "(from:" + q + " OR to:" + q + " OR cc:" + q + ")" },
+    { reason: "address", q: "(from:" + grp + " OR to:" + grp + " OR cc:" + grp + ")" },
     { reason: "subject", q: "subject:" + qq },
     { reason: "body", q: qq },
   ];
+  if (multi) queries.push({ reason: "body", q: q }); // unquoted — tokens AND'd across the whole message
 
   // Collect ids per reason (address/subject first so they win the per-thread cap).
   const reasonsById = new Map();
@@ -69,7 +77,20 @@ export async function onRequestGet(context) {
   // Fetch metadata + snippet for the union (bounded), then rank.
   const ids = order.slice(0, 40);
   const messages = [];
-  const rx = safeRegex(q);
+  // Token-based match: the term matches a field when its exact text appears OR when
+  // ALL of its significant tokens appear there (treating . , @ as separators). This
+  // is what makes "Stacey Stewart" match "Stewart, Stacey" and
+  // "stacey.stewart@madd.org" — the old exact-substring check dropped both.
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const rawLc = String(q).toLowerCase();
+  const termTokens = norm(q).split(" ").filter((t) => t.length >= 2);
+  const allIn = (text) => {
+    const lc = String(text || "").toLowerCase();
+    if (rawLc && lc.indexOf(rawLc) >= 0) return true; // exact substring (covers short terms like "3M")
+    if (!termTokens.length) return false;
+    const h = " " + norm(text) + " ";
+    return termTokens.every((t) => h.indexOf(" " + t + " ") >= 0);
+  };
   // Fetch message metadata in parallel batches (was one-at-a-time — the main latency source).
   const metas = await fetchInBatches(ids, 10, (id) => gFetch(
     accessToken,
@@ -87,10 +108,10 @@ export async function onRequestGet(context) {
       // matched "body" because the term sat deep in a quoted footer (not in the
       // subject, addresses, or the visible snippet) is dropped as noise.
       const reasons = [];
-      if (rx.test(from) || rx.test(to) || rx.test(cc)) reasons.push("address");
-      if (rx.test(subject)) reasons.push("subject");
-      if (rx.test(snippet)) reasons.push("body");
-      if (!reasons.length) continue; // term only in deep quoted body — skip
+      if (allIn(from) || allIn(to) || allIn(cc)) reasons.push("address");
+      if (allIn(subject)) reasons.push("subject");
+      if (allIn(snippet)) reasons.push("body");
+      if (!reasons.length) continue; // none of the term's tokens really appear — skip as noise
       let when = H.date ? new Date(H.date) : (full.internalDate ? new Date(+full.internalDate) : null);
       messages.push({
         date: when && !isNaN(when) ? when.toISOString().slice(0, 10) : "",
@@ -104,11 +125,6 @@ export async function onRequestGet(context) {
   messages.sort((a, b) => (w(b) - w(a)) || (b.date < a.date ? -1 : b.date > a.date ? 1 : 0));
   const top = messages.slice(0, limit);
   return json({ ok: true, count: top.length, messages: top });
-}
-
-function safeRegex(term) {
-  const esc = String(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  try { return new RegExp(esc, "i"); } catch (e) { return /$a^/; }
 }
 
 // Run fn over items with bounded concurrency (parallel batches), preserving order.
