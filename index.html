@@ -2482,8 +2482,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var audio=await ctx.decodeAudioData(arr);var src=ctx.createBufferSource();src.buffer=audio;src.connect(ctx.destination);src.start();return true;
   };
   var elWarned=false;
-  function speak(t){
-    if(!speakOn())return;
+  function speak(t,force){
+    if(!force&&!speakOn())return; // force: used in hands-free conversation mode, where voice is always on
     var s=stripForSpeech(t);if(!s)return;
     speechGen++; // latest utterance wins — aborts any in-flight filler so it can't overlap the reply
     if(elOn()){elSpeak(s.slice(0,2000),{}).catch(function(err){ // surface the reason once, then fall back to the browser voice so Hal never goes silent
@@ -2587,6 +2587,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   async function convoTurn(userText){
     convoBump();convo.state='thinking';convoStatus('Hal is thinking…');convoCap('You: '+userText);
+    try{speak(thinkLineFor(userText),true);}catch(e){} // say a thinking statement aloud before the reply so there's no silent gap
     hist.push({role:'user',content:userText});saveHist();paint();
     var reply='';
     try{var extra='';try{extra=await autoLookupContext(userText);}catch(_){}
@@ -2622,6 +2623,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function setCap(cap,s){if(cap)cap.innerHTML=fmtCaption(s);}
   function convoSay(text){
     if(!convo.open)return;
+    speechGen++; // supersede the spoken thinking filler so the reply wins cleanly
     convoBump();convo.state='speaking';convoStatus('Hal is speaking…');
     var spoken=stripForSpeech(text).slice(0,4000);
     var capFull=captionText(text);
