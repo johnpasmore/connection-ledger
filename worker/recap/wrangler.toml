@@ -36,8 +36,8 @@ RECAP_RECIPIENT  = "john@latimer.ai"   # where the weekly email is sent
 #   RECAP_ENC_KEY           (same random string set on the Pages project)
 #   ANTHROPIC_API_KEY       (preferred model key)  — or —  LATIMER_API_KEY
 #   RECAP_RUN_KEY           (random string; lets you hit /run?key=… to test)
-#   TWILIO_ACCOUNT_SID      (SMS reminders — same values as the Pages project)
-#   TWILIO_AUTH_TOKEN
-#   TWILIO_FROM_NUMBER      (or TWILIO_MESSAGING_SERVICE_SID)
+#   SMS reminders read the Twilio details saved on Settings → Texting (decrypted
+#   with RECAP_ENC_KEY above). TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
+#   TWILIO_FROM_NUMBER secrets here override them if set.
 # Optional:
 #   ANTHROPIC_MODEL, LATIMER_MODEL, LATIMER_VERSION, HAL_COMPANY_CONTEXT

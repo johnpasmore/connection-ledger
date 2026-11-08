@@ -23,8 +23,8 @@
 //   HAL_COMPANY_CONTEXT (optional, mirrors "Hal's context")
 //
 // SMS reminders (see SMS-SETUP.md): the every-minute cron "* * * * *" sends any
-// reminder JP set by text whose time has come. Needs TWILIO_ACCOUNT_SID,
-// TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER (or TWILIO_MESSAGING_SERVICE_SID).
+// reminder set by text whose time has come, using the Twilio details saved on
+// Settings → Texting (or TWILIO_* secrets, which override them).
 
 import { sendDueReminders } from "../../../functions/api/sms/_lib.js";
 

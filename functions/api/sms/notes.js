@@ -3,14 +3,14 @@
 // POST {action:'cancel', id} → cancel a pending reminder
 // POST {action:'delete', id} → delete a note or reminder
 
-import { ensureSmsSchema, parseUsers } from "./_lib.js";
+import { ensureSmsSchema, twilioConfig } from "./_lib.js";
 
 export async function onRequest(context) {
   const { request, env } = context;
   if (!env.DB) return json({ error: "D1 binding 'DB' not found" }, 500);
   const email = (request.headers.get("Cf-Access-Authenticated-User-Email") || "default").toLowerCase();
   // Before Access was on, JP's data lived under "default"; his texts are stored
-  // under the email in SMS_USERS, so let either identity see his own rows.
+  // under the email his texting code belongs to, so let either identity see his own rows.
   const owners = ownersFor(env, email);
 
   try {
@@ -26,10 +26,7 @@ export async function onRequest(context) {
         .all();
       return json({
         notes: rows.results || [],
-        configured: {
-          twilio: !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN),
-          phones: Object.keys(parseUsers(env.SMS_USERS)).filter((p) => owners.includes(parseUsers(env.SMS_USERS)[p])).map(mask),
-        },
+        configured: await configured(env, owners),
       });
     }
     if (request.method === "POST") {
@@ -50,6 +47,22 @@ export async function onRequest(context) {
   } catch (err) {
     return json({ error: String(err && err.message ? err.message : err) }, 500);
   }
+}
+
+// What the empty state needs: is Twilio set up, and does this user have a code?
+async function configured(env, owners) {
+  const cfg = await twilioConfig(env);
+  const marks = owners.map(() => "?").join(",");
+  const me = await env.DB
+    .prepare("SELECT code, phone FROM sms_routes WHERE user_email IN (" + marks + ") LIMIT 1")
+    .bind(...owners)
+    .first();
+  return {
+    twilio: !!(cfg.accountSid && cfg.authToken),
+    number: cfg.fromNumber || "",
+    code: me ? me.code : "",
+    phones: me && me.phone ? [mask(me.phone)] : [],
+  };
 }
 
 // The signed-in email, plus JP's known identities when the caller is JP.

@@ -2,14 +2,17 @@
 //
 // This route must BYPASS Cloudflare Access (Twilio can't sign in), so it guards
 // itself instead: every request must carry a valid X-Twilio-Signature made with
-// TWILIO_AUTH_TOKEN, and the sender's number must be listed in SMS_USERS.
-// Anything else gets an empty TwiML response — no reply, nothing stored.
-//
+// the Twilio auth token. Then the text's leading code decides where it goes:
+//   • a person's code  → saved here as a note / reminder (phone-locked if set)
+//   • an app's code    → forwarded, re-signed, to that app's webhook
+//   • no known code    → forwarded to the "no code" URL if one is set; otherwise a
+//                        known phone gets a nudge to use its code, others nothing.
 // Replies go back inline as TwiML, so confirming a note costs no extra API call.
 
 import {
-  ensureSmsSchema, userForPhone, normalizePhone, validTwilioRequest, classify, parseWhen,
-  reminderText, interpretWithModel, formatLocal, twiml, HELP_TEXT, DEFAULT_TZ,
+  ensureSmsSchema, normalizePhone, validTwilioRequest, classify, parseWhen, reminderText,
+  interpretWithModel, formatLocal, twiml, helpText, DEFAULT_TZ, twilioConfig, loadRoutes,
+  splitCode, forwardToApp,
 } from "./_lib.js";
 
 export async function onRequestPost(context) {
@@ -20,32 +23,44 @@ export async function onRequestPost(context) {
   const params = {};
   for (const [k, v] of form.entries()) params[k] = String(v);
 
+  await ensureSmsSchema(env);
+  const cfg = await twilioConfig(env);
+  if (!cfg.authToken) return new Response("Twilio auth token not configured", { status: 503 });
+
   const url = env.SMS_WEBHOOK_URL || request.url;
-  const ok = await validTwilioRequest(env.TWILIO_AUTH_TOKEN, url, params, request.headers.get("X-Twilio-Signature"));
+  const ok = await validTwilioRequest(cfg.authToken, url, params, request.headers.get("X-Twilio-Signature"));
   if (!ok) return new Response("Invalid signature", { status: 403 });
 
   const phone = normalizePhone(params.From);
-  const user = userForPhone(env, phone);
-  if (!user) return twiml(""); // unknown sender: say nothing
+  const routes = await loadRoutes(env);
+  const { code, rest } = splitCode(params.Body, new Set(routes.keys()));
+  const route = code ? routes.get(code) : null;
 
-  const body = (params.Body || "").trim();
-  if (!body) return twiml("Empty text — nothing saved. " + HELP_TEXT);
+  if (route && route.forward_url) return forwardToApp(cfg, route.forward_url, { ...params, Body: rest });
+
+  if (!route) {
+    if (cfg.fallbackUrl) return forwardToApp(cfg, cfg.fallbackUrl, params);
+    const mine = [...routes.values()].find((r) => r.user_email && r.phone && r.phone === phone);
+    return twiml(mine ? "Start your text with your code — e.g. \"" + mine.code + " " + (rest || "remind me…") + "\"" : "");
+  }
+
+  // A person's code. If it's phone-locked, it only works from that phone.
+  if (route.phone && route.phone !== phone) return twiml("");
+  if (!rest) return twiml(helpText(code));
 
   try {
-    await ensureSmsSchema(env);
-    const reply = await handle(env, user, phone, body, new Date());
-    return twiml(reply);
+    return twiml(await handle(env, route.user_email, phone, rest, new Date(), code));
   } catch (e) {
     return twiml("Sorry — couldn't save that (" + String(e && e.message ? e.message : e).slice(0, 80) + "). Try again?");
   }
 }
 
 // Exported for tests: decide what to do with one text and return the reply.
-export async function handle(env, user, phone, body, now) {
+export async function handle(env, user, phone, body, now, code = "") {
   const tz = env.SMS_TZ || DEFAULT_TZ;
   const c = classify(body);
 
-  if (c.kind === "command" && c.command === "help") return HELP_TEXT;
+  if (c.kind === "command" && c.command === "help") return helpText(code);
   if (c.kind === "command" && c.command === "list") return listReply(env, user, tz);
   if (c.kind === "command" && c.command === "cancel") {
     const r = await env.DB
@@ -65,10 +80,10 @@ export async function handle(env, user, phone, body, now) {
     if (!at || at <= now) {
       const id = await insert(env, { user, phone, body, kind: "note", now });
       return "Saved as note #" + id + ", but I couldn't tell when to remind you. " +
-        "Try e.g. \"remind me tomorrow 9am to " + text + "\".";
+        "Try e.g. \"" + (code ? code + " " : "") + "remind me tomorrow 9am to " + text + "\".";
     }
     const id = await insert(env, { user, phone, body, kind: "reminder", text, at, now });
-    return "⏰ Got it — I'll text you " + formatLocal(at, tz) + ": " + text + " (#" + id + ", reply \"cancel " + id + "\" to stop)";
+    return "⏰ Got it — I'll text you " + formatLocal(at, tz) + ": " + text + " (#" + id + ", reply \"" + (code ? code + " " : "") + "cancel " + id + "\" to stop)";
   }
 
   const id = await insert(env, { user, phone, body, kind: "note", now });

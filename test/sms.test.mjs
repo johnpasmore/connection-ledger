@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHmac } from "node:crypto";
 
 import {
-  normalizePhone, parseUsers, twilioSignature, validTwilioRequest, zonedToUtc, zonedParts,
+  normalizePhone, splitCode, codeProblem, twilioConfig, twilioSignature, validTwilioRequest, zonedToUtc, zonedParts,
   classify, parseWhen, reminderText, sendDueReminders,
 } from "../functions/api/sms/_lib.js";
 import { handle, onRequestPost } from "../functions/api/sms/inbound.js";
@@ -37,11 +37,27 @@ function fakeD1() {
 const NOW = new Date("2026-11-11T15:00:00Z");
 const et = (d) => { const p = zonedParts(d, TZ); return [p.y, p.m, p.d, p.h, p.min]; };
 
-test("normalizePhone and parseUsers", () => {
+test("normalizePhone", () => {
   assert.equal(normalizePhone("(555) 123-4567"), "+15551234567");
   assert.equal(normalizePhone("+1 555 123 4567"), "+15551234567");
-  const m = parseUsers("+15551234567=John@Latimer.ai, 555-765-4321 = barika@latimer.ai");
-  assert.deepEqual(m, { "+15551234567": "john@latimer.ai", "+15557654321": "barika@latimer.ai" });
+  assert.equal(normalizePhone("(339) 300-5973"), "+13393005973");
+});
+
+test("splitCode reads a leading code only when it is registered", () => {
+  const codes = new Set(["jp7", "ops"]);
+  assert.deepEqual(splitCode("jp7 remind me at 3pm", codes), { code: "jp7", rest: "remind me at 3pm" });
+  assert.deepEqual(splitCode("JP7: list", codes), { code: "jp7", rest: "list" });
+  assert.deepEqual(splitCode("#jp7 note", codes), { code: "jp7", rest: "note" });
+  assert.deepEqual(splitCode("jp7", codes), { code: "jp7", rest: "" });
+  assert.deepEqual(splitCode("jp77 hello", codes), { code: null, rest: "jp77 hello" });
+  assert.deepEqual(splitCode("remind me at 3pm", codes), { code: null, rest: "remind me at 3pm" });
+});
+
+test("codeProblem rejects bad and reserved codes", () => {
+  assert.equal(codeProblem("jp7"), "");
+  assert.match(codeProblem("j"), /2–12/);
+  assert.match(codeProblem("jp-7"), /2–12/);
+  assert.match(codeProblem("remind"), /command word/);
 });
 
 test("Twilio signature matches a reference HMAC-SHA1 of url + sorted params", async () => {
@@ -111,28 +127,128 @@ test("handle(): notes, reminders, list, cancel", async () => {
   assert.equal(env.DB.raw.prepare("SELECT status FROM sms_notes WHERE id = 2").get().status, "cancelled");
 });
 
-test("inbound webhook rejects bad signatures and ignores unknown senders", async () => {
-  const env = { DB: fakeD1(), TWILIO_AUTH_TOKEN: "tok", SMS_USERS: "+15551234567=john@latimer.ai" };
-  const url = "https://ledger.example/api/sms/inbound";
-  const post = async (params, sig) => {
-    const body = new URLSearchParams(params);
-    const request = new Request(url, {
-      method: "POST", body,
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Twilio-Signature": sig ?? (await twilioSignature("tok", url, params)) },
-    });
-    return onRequestPost({ request, env });
+// Signed POST to /api/sms/inbound, as Twilio would send it.
+const HOOK = "https://ledger.example/api/sms/inbound";
+async function inbound(env, params, sig) {
+  const request = new Request(HOOK, {
+    method: "POST",
+    body: new URLSearchParams(params),
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Twilio-Signature": sig ?? (await twilioSignature("tok", HOOK, params)) },
+  });
+  const res = await onRequestPost({ request, env });
+  return { status: res.status, xml: await res.text() };
+}
+async function routedEnv(extra = {}) {
+  const env = { DB: fakeD1(), TWILIO_AUTH_TOKEN: "tok", ...extra };
+  const { ensureSmsSchema } = await import("../functions/api/sms/_lib.js");
+  await ensureSmsSchema(env);
+  const ins = env.DB.raw.prepare("INSERT INTO sms_routes (code, user_email, phone, forward_url, label) VALUES (?,?,?,?,?)");
+  ins.run("jp7", "john@latimer.ai", "+15551234567", null, null);
+  ins.run("bk", "barika@latimer.ai", null, null, null);
+  ins.run("ops", null, null, "https://ops.example/sms", "Ops bot");
+  return env;
+}
+
+test("inbound: signature and code routing", async () => {
+  const env = await routedEnv();
+  const JP = "+15551234567";
+
+  assert.equal((await inbound(env, { From: JP, Body: "jp7 hi" }, "forged")).status, 403);
+
+  // JP's code from JP's phone → saved under JP, code stripped from the stored text.
+  const ok = await inbound(env, { From: JP, Body: "jp7 note to self <b>&</b>" });
+  assert.match(ok.xml, /<Message>📝 Saved note #1\.<\/Message>/);
+  assert.deepEqual({ ...env.DB.raw.prepare("SELECT user_email, body FROM sms_notes").get() },
+    { user_email: "john@latimer.ai", body: "note to self <b>&</b>" });
+
+  // JP's code from someone else's phone → ignored (code is phone-locked).
+  assert.doesNotMatch((await inbound(env, { From: "+19998887777", Body: "jp7 sneaky" })).xml, /<Message>/);
+
+  // Barika's code isn't phone-locked → works from any phone, filed under her.
+  await inbound(env, { From: "+19998887777", Body: "bk remind me in 2 hours to call Spelman" });
+  assert.equal(env.DB.raw.prepare("SELECT user_email FROM sms_notes WHERE id = 2").get().user_email, "barika@latimer.ai");
+
+  // JP forgets his code → nudge; a stranger with no code → silence.
+  assert.match((await inbound(env, { From: JP, Body: "call Scott" })).xml, /Start your text with your code — e\.g\. &quot;jp7 call Scott&quot;/);
+  assert.doesNotMatch((await inbound(env, { From: "+19998887777", Body: "hello" })).xml, /<Message>/);
+
+  // Code alone → help using that code.
+  assert.match((await inbound(env, { From: JP, Body: "jp7" })).xml, /jp7 remind me tomorrow 9am/);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) n FROM sms_notes").get().n, 2);
+});
+
+test("inbound: another app's code is forwarded, re-signed, and its reply relayed", async () => {
+  const env = await routedEnv();
+  const realFetch = globalThis.fetch;
+  let got = null;
+  globalThis.fetch = async (url, init) => {
+    got = { url, sig: init.headers["X-Twilio-Signature"], params: Object.fromEntries(new URLSearchParams(init.body)) };
+    return new Response("<Response><Message>ops ok</Message></Response>", { headers: { "Content-Type": "text/xml" } });
   };
+  try {
+    const r = await inbound(env, { From: "+15551234567", Body: "ops status please", MessageSid: "SM1" });
+    assert.equal(r.xml, "<Response><Message>ops ok</Message></Response>");
+    assert.equal(got.url, "https://ops.example/sms");
+    assert.equal(got.params.Body, "status please");
+    assert.equal(got.sig, await twilioSignature("tok", "https://ops.example/sms", got.params), "re-signed for the target URL");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
 
-  assert.equal((await post({ From: "+15551234567", Body: "hi" }, "forged")).status, 403);
+test("inbound: texts with no code go to the fallback app when one is set", async () => {
+  const env = await routedEnv();
+  env.DB.raw.prepare("INSERT INTO sms_settings (id, fallback_url) VALUES (1, 'https://legacy.example/hook')").run();
+  const realFetch = globalThis.fetch;
+  let url = null, body = null;
+  globalThis.fetch = async (u, init) => { url = u; body = Object.fromEntries(new URLSearchParams(init.body)).Body; return new Response("<Response/>"); };
+  try {
+    await inbound(env, { From: "+15551234567", Body: "plain text" });
+    assert.equal(url, "https://legacy.example/hook");
+    assert.equal(body, "plain text");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
 
-  const stranger = await post({ From: "+19998887777", Body: "hi" });
-  assert.equal(stranger.status, 200);
-  assert.doesNotMatch(await stranger.text(), /<Message>/);
+test("settings API: saves codes and an encrypted token, never returns the token", async () => {
+  const { onRequest } = await import("../functions/api/sms/settings.js");
+  const env = { DB: fakeD1(), RECAP_ENC_KEY: "k".repeat(40) };
+  const call = async (method, body, who = "john@latimer.ai") => {
+    const res = await onRequest({ env, request: new Request("https://ledger.example/api/sms/settings", {
+      method, body: body ? JSON.stringify(body) : undefined,
+      headers: { "Content-Type": "application/json", "Cf-Access-Authenticated-User-Email": who },
+    }) });
+    return { status: res.status, j: await res.json() };
+  };
+  const token = "0123456789abcdef0123456789abcdef";
+  let r = await call("PUT", {
+    twilio: { accountSid: "AC" + "a".repeat(32), authToken: token, fromNumber: "(339) 300-5973" },
+    me: { code: "JP7", phone: "555 123 4567" },
+    apps: [{ code: "ops", label: "Ops", forward_url: "https://ops.example/sms" }],
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.j));
+  assert.equal(r.j.twilio.fromNumber, "+13393005973");
+  assert.equal(r.j.twilio.hasAuthToken, true);
+  assert.deepEqual(r.j.me, { code: "jp7", phone: "+15551234567" });
+  assert.deepEqual(r.j.apps, [{ code: "ops", label: "Ops", forward_url: "https://ops.example/sms" }]);
+  assert.ok(!JSON.stringify(r.j).includes(token), "token never echoed");
+  const stored = env.DB.raw.prepare("SELECT enc_auth_token FROM sms_settings").get().enc_auth_token;
+  assert.ok(stored && !stored.includes(token), "stored encrypted");
+  assert.equal((await twilioConfig(env)).authToken, token, "decrypts for sending");
 
-  const ok = await post({ From: "+15551234567", Body: "note to self <b>&</b>" });
-  const xml = await ok.text();
-  assert.match(xml, /<Message>📝 Saved note #1\.<\/Message>/);
-  assert.equal(env.DB.raw.prepare("SELECT body FROM sms_notes").get().body, "note to self <b>&</b>");
+  // Saving again without a token keeps the saved one.
+  await call("PUT", { twilio: { accountSid: "AC" + "a".repeat(32), fromNumber: "+13393005973" } });
+  assert.equal((await twilioConfig(env)).authToken, token);
+
+  // Someone else can't take JP's code or an app's code.
+  assert.match((await call("PUT", { me: { code: "jp7" } }, "barika@latimer.ai")).j.error, /already in use/);
+  assert.match((await call("PUT", { apps: [{ code: "jp7", forward_url: "https://x.example" }] }, "barika@latimer.ai")).j.error, /personal code/);
+  assert.match((await call("PUT", { me: { code: "remind" } }, "barika@latimer.ai")).j.error, /command word/);
+
+  // Env vars win over Settings.
+  env.TWILIO_AUTH_TOKEN = "f".repeat(32);
+  assert.equal((await twilioConfig(env)).authToken, "f".repeat(32));
 });
 
 test("sendDueReminders sends once, retries failures, gives up after 3", async () => {
@@ -155,7 +271,7 @@ test("sendDueReminders sends once, retries failures, gives up after 3", async ()
   };
   try {
     assert.deepEqual(await sendDueReminders(env, NOW), [{ id: 1, sent: true }]);
-    assert.deepEqual(sent, [{ To: "+15551234567", Body: "⏰ Reminder: call Scott", From: "+18005550000" }]);
+    assert.deepEqual(sent, [{ To: "+15551234567", Body: "⏰ Hal reminder: call Scott", From: "+18005550000" }]);
     assert.deepEqual(await sendDueReminders(env, NOW), [], "already sent → not resent");
 
     fail = true;

@@ -212,6 +212,15 @@
   .nt-pill{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--ink-soft);margin-left:6px}
   .nt-pill.pending{background:var(--accent);color:var(--paper)}
   .nt-acts{display:flex;gap:6px}
+  .sms-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px 16px;margin-bottom:12px}
+  .sms-card h4{margin:0 0 4px;font-size:14px}
+  .sms-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 14px;margin-top:10px}
+  .sms-grid label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:4px}
+  .sms-grid input{width:100%;box-sizing:border-box;font-size:13.5px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+  .sms-app{display:grid;grid-template-columns:110px 1fr 2fr auto;gap:8px;margin-top:8px;align-items:center}
+  .sms-app input{min-width:0;font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+  @media (max-width:640px){.sms-app{grid-template-columns:1fr 1fr}.sms-app input[data-k="forward_url"]{grid-column:1/-1}}
+  .sms-hook{font-family:var(--mono);font-size:12px;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:4px 8px;user-select:all;word-break:break-all}
   /* Recap email */
   .rc-bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:16px 0 14px}
   .rc-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
@@ -356,6 +365,7 @@
     <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Google — Calendar &amp; Gmail (in-browser)</div><div id="set-google"></div><p class="note" style="margin-top:8px">Read-only calendar + sent mail, straight from your browser to Google. Powers Hal’s live reads on Accounts and Follow-ups.</p></div>
     <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">LinkedIn imports</div><div id="set-uploads" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"></div><p class="note" style="margin-top:8px">Import your LinkedIn export CSVs — Connections, Invitations, and Messages. Data stays in your browser.</p></div>
     <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Weekly recap &amp; server-side email</div><p class="note">The Monday-7am recap and Hal’s server-side Gmail search use a one-time offline Google grant — connect it on <b>Conversations → Recap email</b>.</p></div>
+    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Texting (Twilio) · notes &amp; reminders</div><div id="set-sms"><p class="note">Loading…</p></div></div>
   </section>
 
   <!-- ============ LEDGER TAB ============ -->
@@ -545,7 +555,7 @@
 
   <!-- ============ NOTES TAB (texts & reminders via Twilio) ============ -->
   <section class="panel" id="panel-notes">
-    <p class="lede">Text anything to your Hal number and it lands here as a note. Ask for a reminder — <i>“remind me tomorrow 9am to call Scott”</i> — and Hal texts you back at that time. Text <b>list</b> for what’s pending, <b>cancel 12</b> to stop reminder #12.</p>
+    <p class="lede">Text your code plus anything to the Twilio number and it lands here as a note. Ask for a reminder — <i>“jp7 remind me tomorrow 9am to call Scott”</i> — and Hal texts you back at that time. <b>jp7 list</b> shows what’s pending, <b>jp7 cancel 12</b> stops reminder #12. Set your code in <a href="#settings" onclick="activateTab('settings');return false">Settings</a>.</p>
     <div class="rc-bar">
       <span class="rc-lbl">Show</span>
       <button class="btn sm rc-period on" data-nf="all">All</button>
@@ -3447,7 +3457,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var host=$('nt-list');if(!host)return;
     var list=rows.filter(function(r){return filter==='all'||r.kind===filter;});
     if(!list.length){
-      host.innerHTML='<p class="note">'+(rows.length?'Nothing in this view.':(cfg&&!cfg.twilio?'Texting isn’t set up yet — see <b>SMS-SETUP.md</b> in the repo.':'No texts yet. Send one to your Hal number.'))+'</p>';
+      var empty=rows.length?'Nothing in this view.':
+        (cfg&&!cfg.twilio)?'Texting isn’t set up yet — add your Twilio details in <a href="#settings" onclick="activateTab(\'settings\');return false">Settings</a>.':
+        (cfg&&!cfg.code)?'Pick your texting code in <a href="#settings" onclick="activateTab(\'settings\');return false">Settings</a>, then text it to '+esc(cfg.number||'your Twilio number')+'.':
+        'No texts yet. Text <b>'+esc(cfg?cfg.code:'')+' …</b> to '+esc((cfg&&cfg.number)||'your Twilio number')+'.';
+      host.innerHTML='<p class="note">'+empty+'</p>';
       return;
     }
     host.innerHTML=list.map(function(r){
@@ -3471,7 +3485,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var j=await r.json();
       if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
       rows=j.notes||[];cfg=j.configured||null;
-      var ph=cfg&&cfg.phones&&cfg.phones.length?'Texts from '+cfg.phones.join(', '):'';
+      var ph=cfg&&cfg.code?'Your code: '+cfg.code+(cfg.phones&&cfg.phones.length?' (from '+cfg.phones.join(', ')+')':''):'';
       status(rows.length+' item'+(rows.length===1?'':'s')+(ph?' · '+ph:''));
     }catch(e){status('Couldn’t load: '+(e&&e.message?e.message:e));}
     render();
@@ -3490,6 +3504,72 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var host=$('nt-list');if(host)host.addEventListener('click',function(e){var b=e.target.closest('[data-act]');if(b)act(b.getAttribute('data-act'),+b.getAttribute('data-id'));});
   // Deep link (/#notes) activates the tab before this script runs — catch up.
   var pn=$('panel-notes');if(pn&&pn.classList.contains('active'))load();
+})();
+
+/* =================== SETTINGS — Texting (Twilio) → /api/sms/settings =================== */
+(function(){
+  var DEFAULT_NUMBER='+13393005973';
+  var host=document.getElementById('set-sms');if(!host)return;
+  function esc(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var st=null;
+  function appRow(a){return '<div class="sms-app"><input data-k="code" placeholder="code" value="'+esc(a.code)+'"><input data-k="label" placeholder="what it is" value="'+esc(a.label)+'"><input data-k="forward_url" placeholder="https://other-app/webhook" value="'+esc(a.forward_url)+'"><button class="btn sm ghost" data-rm title="Remove">✕</button></div>';}
+  function render(){
+    var t=st.twilio||{},me=st.me||{code:'',phone:''};
+    var hook=location.origin+'/api/sms/inbound';
+    var tokenPh=t.hasAuthToken?'saved ✓ — leave blank to keep':(t.canStoreToken?'32-character token':'needs RECAP_ENC_KEY secret first');
+    host.innerHTML=
+      '<div class="sms-card"><h4>Twilio account</h4>'+
+        '<p class="note" style="margin:0">Shared by everyone on this console. The Auth Token is stored encrypted and never shown again.'+(t.fromEnv?' <b>Cloudflare environment variables are set and take priority over these fields.</b>':'')+(t.tokenError?' <b style="color:var(--accent)">'+esc(t.tokenError)+'</b>':'')+'</p>'+
+        '<div class="sms-grid">'+
+          '<div><label>Twilio number</label><input id="sms-from" placeholder="+1…" value="'+esc(t.fromNumber||DEFAULT_NUMBER)+'"></div>'+
+          '<div><label>Account SID</label><input id="sms-sid" placeholder="AC…" autocomplete="off" value="'+esc(t.accountSid)+'"></div>'+
+          '<div><label>Auth Token</label><input id="sms-token" type="password" autocomplete="new-password" placeholder="'+esc(tokenPh)+'"'+(t.canStoreToken?'':' disabled')+'></div>'+
+        '</div>'+
+        '<p class="note" style="margin:10px 0 0">In Twilio, set the number’s <i>A message comes in</i> webhook (HTTP POST) to <span class="sms-hook">'+esc(hook)+'</span></p>'+
+      '</div>'+
+      '<div class="sms-card"><h4>Your texting code</h4>'+
+        '<p class="note" style="margin:0">Several people and apps can share one number — start every text with your code so it reaches you. Lock it to your cell so the code only works from your phone.</p>'+
+        '<div class="sms-grid">'+
+          '<div><label>Your code</label><input id="sms-code" placeholder="e.g. jp7" maxlength="12" value="'+esc(me.code)+'"></div>'+
+          '<div><label>Your cell (recommended)</label><input id="sms-phone" placeholder="+1…" value="'+esc(me.phone)+'"></div>'+
+        '</div>'+
+        '<p class="note" style="margin:10px 0 0" id="sms-example"></p>'+
+      '</div>'+
+      '<div class="sms-card"><h4>Other apps on this number</h4>'+
+        '<p class="note" style="margin:0">Texts starting with one of these codes are passed to that app’s webhook (code removed, re-signed so its Twilio check still passes), and its reply goes back to the sender.</p>'+
+        '<div id="sms-apps">'+(st.apps||[]).map(appRow).join('')+'</div>'+
+        '<button class="btn sm" id="sms-addapp" style="margin-top:8px">+ Add app</button>'+
+        '<div class="sms-grid"><div style="grid-column:1/-1"><label>Texts with no code go to (optional webhook)</label><input id="sms-fallback" placeholder="https://… — leave blank to ignore them" value="'+esc(t.fallbackUrl)+'"></div></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;align-items:center"><button class="btn primary sm" id="sms-save">Save texting settings</button><span id="sms-msg" style="font-size:12.5px;color:var(--ink-soft)"></span></div>';
+    var codeEl=document.getElementById('sms-code');
+    function example(){var c=(codeEl.value||'').trim().toLowerCase()||'jp7';document.getElementById('sms-example').innerHTML='Try: <b>'+esc(c)+' remind me tomorrow 9am to call Scott</b> · <b>'+esc(c)+' list</b> · <b>'+esc(c)+' cancel 12</b>';}
+    codeEl.oninput=example;example();
+    document.getElementById('sms-addapp').onclick=function(){document.getElementById('sms-apps').insertAdjacentHTML('beforeend',appRow({code:'',label:'',forward_url:''}));};
+    document.getElementById('sms-apps').onclick=function(e){var b=e.target.closest('[data-rm]');if(b)b.parentNode.remove();};
+    document.getElementById('sms-save').onclick=save;
+  }
+  function msg(t,bad){var e=document.getElementById('sms-msg');if(e){e.textContent=t||'';e.style.color=bad?'var(--accent)':'var(--ink-soft)';}}
+  async function call(method,body){
+    var r=await fetch('/api/sms/settings',{method:method,credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+    var j=await r.json().catch(function(){return {};});
+    if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+    return j;
+  }
+  async function save(){
+    var v=function(id){var e=document.getElementById(id);return e?e.value.trim():'';};
+    var apps=[].map.call(document.querySelectorAll('#sms-apps .sms-app'),function(row){var o={};row.querySelectorAll('input').forEach(function(i){o[i.getAttribute('data-k')]=i.value.trim();});return o;});
+    var body={twilio:{accountSid:v('sms-sid'),fromNumber:v('sms-from'),fallbackUrl:v('sms-fallback')},me:{code:v('sms-code'),phone:v('sms-phone')},apps:apps};
+    var tok=v('sms-token');if(tok)body.twilio.authToken=tok;
+    msg('Saving…');
+    try{st=await call('PUT',body);render();msg('Saved ✓');if(window.toast)toast('Texting settings saved');}
+    catch(e){msg(e.message,true);}
+  }
+  async function load(){
+    try{st=await call('GET');render();}
+    catch(e){host.innerHTML='<p class="note">Couldn’t load texting settings: '+esc(e.message)+'</p>';}
+  }
+  load();
 })();
 </script>
 </body>

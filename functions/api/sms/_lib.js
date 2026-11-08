@@ -3,20 +3,29 @@
 // The cron Worker (worker/recap) imports this file too, so the parsing, storage
 // and Twilio send logic lives in exactly one place.
 //
+// One Twilio number can serve several people and several apps. Each text starts
+// with a short CODE that says whose it is:
+//   "jp7 remind me tomorrow 9am to call Scott"  → JP's notes/reminders here
+//   "ops status"                                 → forwarded to another app's webhook
+// Codes live in sms_routes (set on the Settings tab). A person's code can be tied
+// to their phone so it only works from that number.
+//
 // Flow:
-//   • JP texts the Twilio number  → Twilio POSTs /api/sms/inbound
-//   • inbound.js verifies the Twilio signature, maps the sender's number to a
-//     user (SMS_USERS), and stores the text in sms_notes as a 'note' or, when he
-//     asks to be reminded, a 'reminder' with a remind_at time
+//   • someone texts the Twilio number → Twilio POSTs /api/sms/inbound
+//   • inbound.js verifies the Twilio signature, reads the leading code, and either
+//     stores the text in sms_notes (a person's code) or forwards it (an app's code)
 //   • the Worker's every-minute cron sends due reminders back by SMS
 //
-// Env (Pages project AND the Worker, where noted):
-//   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN      (both)  — auth token is a Secret
-//   TWILIO_FROM_NUMBER  or TWILIO_MESSAGING_SERVICE_SID   (Worker; Pages for replies)
-//   SMS_USERS   "+15551234567=john@latimer.ai,+1555…=…"  (Pages) — allowlist
-//   SMS_TZ      IANA zone for "tomorrow 9am" (default America/New_York)
+// Twilio credentials come from the Settings tab (sms_settings; the auth token is
+// AES-GCM encrypted with RECAP_ENC_KEY) or, if set, these env vars — env wins:
+//   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER / TWILIO_MESSAGING_SERVICE_SID
+// Other env:
+//   RECAP_ENC_KEY    needed (Pages AND Worker) to store/read the token from Settings
+//   SMS_TZ           IANA zone for "tomorrow 9am" (default America/New_York)
 //   SMS_WEBHOOK_URL  optional exact public URL Twilio calls (signature check)
 //   ANTHROPIC_API_KEY  optional — lets Hal read free-form times ("next Tues after lunch")
+
+import { encryptToken, decryptToken } from "../recap/_lib.js";
 
 export const DEFAULT_TZ = "America/New_York";
 
@@ -34,6 +43,16 @@ export async function ensureSmsSchema(env) {
     ),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sms_due ON sms_notes(status, remind_at)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sms_user ON sms_notes(user_email, created_at DESC)"),
+    // Single row (id = 1): the Twilio account this console uses.
+    env.DB.prepare(
+      "CREATE TABLE IF NOT EXISTS sms_settings (id INTEGER PRIMARY KEY CHECK (id = 1), account_sid TEXT, " +
+        "enc_auth_token TEXT, from_number TEXT, fallback_url TEXT, updated_by TEXT, updated_at TEXT)"
+    ),
+    // Codes: a person (user_email, optional phone lock) or another app (forward_url).
+    env.DB.prepare(
+      "CREATE TABLE IF NOT EXISTS sms_routes (code TEXT PRIMARY KEY, user_email TEXT, phone TEXT, " +
+        "forward_url TEXT, label TEXT, updated_at TEXT)"
+    ),
   ]);
   schemaReady.add(env.DB);
 }
@@ -50,25 +69,86 @@ export function normalizePhone(p) {
   return "+" + digits;
 }
 
-// SMS_USERS = "+15551234567=john@latimer.ai, +15557654321=barika@latimer.ai"
-export function parseUsers(raw) {
-  const map = {};
-  String(raw || "")
-    .split(/[,\n;]/)
-    .map((x) => x.trim())
-    .filter(Boolean)
-    .forEach((pair) => {
-      const i = pair.indexOf("=");
-      if (i < 0) return;
-      const phone = normalizePhone(pair.slice(0, i));
-      const email = pair.slice(i + 1).trim().toLowerCase();
-      if (phone && email) map[phone] = email;
-    });
+// ---- codes ------------------------------------------------------------------------
+// Words a text can start with that must never be read as a code.
+const RESERVED = new Set(["list", "help", "notes", "reminders", "cancel", "delete", "stop", "start",
+  "unstop", "remind", "reminder", "remember", "please", "commands", "yes", "no", "info"]);
+
+export function normCode(c) {
+  return String(c || "").trim().replace(/^#/, "").toLowerCase();
+}
+
+// Returns an error message, or "" if the code is usable.
+export function codeProblem(code) {
+  if (!/^[a-z0-9]{2,12}$/.test(code)) return "Codes are 2–12 letters or digits.";
+  if (RESERVED.has(code)) return "\"" + code + "\" is a command word — pick another code.";
+  return "";
+}
+
+// Split "jp7: remind me…" / "#JP7 remind me…" into {code, rest}. The first word
+// is only a code if it is in `codes`; otherwise code is null and rest is the text.
+export function splitCode(body, codes) {
+  const t = String(body || "").trim();
+  const m = t.match(/^#?([A-Za-z0-9]{2,12})[:,.\-]?(?:\s+|$)([\s\S]*)$/);
+  if (m && codes.has(m[1].toLowerCase())) return { code: m[1].toLowerCase(), rest: m[2].trim() };
+  return { code: null, rest: t };
+}
+
+export async function loadRoutes(env) {
+  const r = await env.DB.prepare("SELECT code, user_email, phone, forward_url, label FROM sms_routes").all();
+  const map = new Map();
+  (r.results || []).forEach((x) => map.set(x.code, x));
   return map;
 }
 
-export function userForPhone(env, phone) {
-  return parseUsers(env && env.SMS_USERS)[normalizePhone(phone)] || null;
+// ---- Twilio account ----------------------------------------------------------------
+// Env vars win (so a deployment can pin them); otherwise the Settings row.
+export async function twilioConfig(env) {
+  let row = null;
+  try { row = await env.DB.prepare("SELECT * FROM sms_settings WHERE id = 1").first(); } catch (e) {}
+  let token = env.TWILIO_AUTH_TOKEN || "";
+  let tokenError = "";
+  if (!token && row && row.enc_auth_token) {
+    if (!env.RECAP_ENC_KEY) tokenError = "RECAP_ENC_KEY not set — can't read the saved Twilio token";
+    else {
+      try { token = await decryptToken(env.RECAP_ENC_KEY, row.enc_auth_token); }
+      catch (e) { tokenError = "saved Twilio token can't be decrypted (RECAP_ENC_KEY changed?)"; }
+    }
+  }
+  return {
+    accountSid: env.TWILIO_ACCOUNT_SID || (row && row.account_sid) || "",
+    authToken: token,
+    fromNumber: env.TWILIO_FROM_NUMBER || (row && row.from_number) || "",
+    messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID || "",
+    fallbackUrl: (row && row.fallback_url) || "",
+    fromEnv: !!(env.TWILIO_ACCOUNT_SID || env.TWILIO_AUTH_TOKEN),
+    tokenError,
+  };
+}
+
+export async function saveTwilioSettings(env, { accountSid, authToken, fromNumber, fallbackUrl }, by) {
+  const cur = (await env.DB.prepare("SELECT * FROM sms_settings WHERE id = 1").first()) || {};
+  let enc = cur.enc_auth_token || null;
+  if (authToken) {
+    if (!env.RECAP_ENC_KEY) throw new Error("Set the RECAP_ENC_KEY secret on the Pages project first — the token is stored encrypted with it.");
+    enc = await encryptToken(env.RECAP_ENC_KEY, authToken);
+  }
+  await env.DB
+    .prepare(
+      "INSERT INTO sms_settings (id, account_sid, enc_auth_token, from_number, fallback_url, updated_by, updated_at) " +
+        "VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_sid = excluded.account_sid, " +
+        "enc_auth_token = excluded.enc_auth_token, from_number = excluded.from_number, " +
+        "fallback_url = excluded.fallback_url, updated_by = excluded.updated_by, updated_at = excluded.updated_at"
+    )
+    .bind(
+      accountSid !== undefined ? accountSid : cur.account_sid || null,
+      enc,
+      fromNumber !== undefined ? fromNumber : cur.from_number || null,
+      fallbackUrl !== undefined ? fallbackUrl : cur.fallback_url || null,
+      by,
+      new Date().toISOString()
+    )
+    .run();
 }
 
 // ---- Twilio signature (X-Twilio-Signature) -------------------------------------
@@ -292,19 +372,22 @@ function xmlEscape(s) {
   return String(s).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" }[c]));
 }
 
-export const HELP_TEXT =
-  "Text anything to save it as a note. " +
-  "\"Remind me tomorrow 9am to call Scott\" sets a reminder I'll text back. " +
-  "\"list\" shows what's pending, \"cancel 12\" cancels reminder #12.";
+export function helpText(code) {
+  const c = code ? code + " " : "";
+  return "Start each text with your code. \"" + c + "<anything>\" saves a note. " +
+    "\"" + c + "remind me tomorrow 9am to call Scott\" sets a reminder I'll text back. " +
+    "\"" + c + "list\" shows what's pending, \"" + c + "cancel 12\" cancels reminder #12.";
+}
 
 // ---- outbound SMS (Twilio REST) ------------------------------------------------
-export async function sendSms(env, to, body) {
-  const sid = env.TWILIO_ACCOUNT_SID, token = env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token) throw new Error("TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN not set");
+// `cfg` comes from twilioConfig().
+export async function sendSms(cfg, to, body) {
+  const sid = cfg.accountSid, token = cfg.authToken;
+  if (!sid || !token) throw new Error(cfg.tokenError || "Twilio Account SID / Auth Token not set (Settings → Texting)");
   const form = new URLSearchParams({ To: to, Body: body });
-  if (env.TWILIO_MESSAGING_SERVICE_SID) form.set("MessagingServiceSid", env.TWILIO_MESSAGING_SERVICE_SID);
-  else if (env.TWILIO_FROM_NUMBER) form.set("From", env.TWILIO_FROM_NUMBER);
-  else throw new Error("set TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID");
+  if (cfg.messagingServiceSid) form.set("MessagingServiceSid", cfg.messagingServiceSid);
+  else if (cfg.fromNumber) form.set("From", cfg.fromNumber);
+  else throw new Error("Twilio number not set (Settings → Texting)");
   const r = await fetch("https://api.twilio.com/2010-04-01/Accounts/" + encodeURIComponent(sid) + "/Messages.json", {
     method: "POST",
     headers: {
@@ -318,12 +401,39 @@ export async function sendSms(env, to, body) {
   return j;
 }
 
+// ---- forwarding to another app on the same number ----------------------------------
+// Re-signs the request for the target URL with the same auth token, so the other
+// app's own Twilio signature check still passes, and relays its TwiML back.
+export async function forwardToApp(cfg, url, params) {
+  const sig = await twilioSignature(cfg.authToken, url, params);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Twilio-Signature": sig },
+      body: new URLSearchParams(params),
+    });
+    const text = await r.text();
+    if (!r.ok) return twiml("");
+    return new Response(text, {
+      headers: { "Content-Type": r.headers.get("content-type") || "text/xml; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  } catch (e) {
+    return twiml("");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---- due reminders (called by the Worker's every-minute cron) -------------------
 // Claims each due row (pending → sending) before sending, so two overlapping cron
 // runs can never text the same reminder twice. A failed send goes back to pending
 // and is retried on the next run, up to 3 attempts.
 export async function sendDueReminders(env, now = new Date()) {
   await ensureSmsSchema(env);
+  const cfg = await twilioConfig(env);
   const due = await env.DB
     .prepare("SELECT id, phone, remind_text, body, attempts FROM sms_notes WHERE status = 'pending' AND kind = 'reminder' AND remind_at <= ? ORDER BY remind_at LIMIT 25")
     .bind(now.toISOString())
@@ -336,7 +446,7 @@ export async function sendDueReminders(env, now = new Date()) {
       .run();
     if (!claim.meta || !claim.meta.changes) continue;
     try {
-      await sendSms(env, row.phone, "⏰ Reminder: " + (row.remind_text || row.body));
+      await sendSms(cfg, row.phone, "⏰ Hal reminder: " + (row.remind_text || row.body));
       await env.DB
         .prepare("UPDATE sms_notes SET status = 'sent', sent_at = ?, attempts = attempts + 1, detail = NULL WHERE id = ?")
         .bind(new Date().toISOString(), row.id)
