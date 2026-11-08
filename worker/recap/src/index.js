@@ -21,13 +21,24 @@
 //   ANTHROPIC_API_KEY  (or)  LATIMER_API_KEY [+ LATIMER_MODEL]
 //   RECAP_RUN_KEY        RECAP_RECIPIENT (default john@latimer.ai)
 //   HAL_COMPANY_CONTEXT (optional, mirrors "Hal's context")
+//
+// SMS reminders (see SMS-SETUP.md): the every-minute cron "* * * * *" sends any
+// reminder JP set by text whose time has come. Needs TWILIO_ACCOUNT_SID,
+// TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER (or TWILIO_MESSAGING_SERVICE_SID).
+
+import { sendDueReminders } from "../../../functions/api/sms/_lib.js";
 
 const SCOTT = "scott@latimer.ai";
 const BARIKA = "barika@latimer.ai";
 const TZ = "America/New_York";
+const REMINDER_CRON = "* * * * *"; // must match wrangler.toml
 
 export default {
   async scheduled(event, env, ctx) {
+    if (event.cron === REMINDER_CRON) {
+      ctx.waitUntil(sendDueReminders(env).catch((e) => console.error("sms reminders:", e)));
+      return;
+    }
     ctx.waitUntil(run(env, { source: "cron", force: false }));
   },
 
@@ -43,6 +54,13 @@ export default {
         status: result.ok === false ? 500 : 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+    if (url.pathname === "/reminders") {
+      if (!env.RECAP_RUN_KEY || url.searchParams.get("key") !== env.RECAP_RUN_KEY) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const sent = await sendDueReminders(env);
+      return new Response(JSON.stringify({ ok: true, sent }, null, 2), { headers: { "Content-Type": "application/json" } });
     }
     if (url.pathname === "/health") return new Response("ok");
     return new Response("Not found", { status: 404 });

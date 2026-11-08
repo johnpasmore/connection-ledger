@@ -203,6 +203,15 @@
   .hal-convo-ctrls{margin-top:6px}
   .hal-think{align-self:flex-start;font-size:13px;color:var(--faint);font-style:italic}
   #hal-setup{color:var(--accent);font-weight:600}
+  /* Notes (texts & reminders) */
+  .nt-row{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:11px 14px;margin-bottom:8px}
+  .nt-ico{font-size:16px;line-height:1.4}
+  .nt-main{flex:1;min-width:0}
+  .nt-body{font-size:14px;line-height:1.5;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .nt-meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px}
+  .nt-pill{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--ink-soft);margin-left:6px}
+  .nt-pill.pending{background:var(--accent);color:var(--paper)}
+  .nt-acts{display:flex;gap:6px}
   /* Recap email */
   .rc-bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:16px 0 14px}
   .rc-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
@@ -313,6 +322,9 @@
         <button class="navitem" data-tab="priority">Priority <span id="pr-badge" class="navbadge" style="display:none"></span></button>
         <button class="navitem" data-tab="recap">Recap email</button>
       </div>
+    </div>
+    <div class="navgroup">
+      <button class="navtop" data-tab="notes">Notes</button>
     </div>
     <div class="navgroup">
       <button class="navtop" data-tab="dashboard">Analytics</button>
@@ -531,6 +543,20 @@
     </div>
   </section>
 
+  <!-- ============ NOTES TAB (texts & reminders via Twilio) ============ -->
+  <section class="panel" id="panel-notes">
+    <p class="lede">Text anything to your Hal number and it lands here as a note. Ask for a reminder — <i>“remind me tomorrow 9am to call Scott”</i> — and Hal texts you back at that time. Text <b>list</b> for what’s pending, <b>cancel 12</b> to stop reminder #12.</p>
+    <div class="rc-bar">
+      <span class="rc-lbl">Show</span>
+      <button class="btn sm rc-period on" data-nf="all">All</button>
+      <button class="btn sm rc-period" data-nf="reminder">Reminders</button>
+      <button class="btn sm rc-period" data-nf="note">Notes</button>
+      <button class="btn sm" id="nt-refresh">Refresh</button>
+      <span id="nt-status" style="font-size:12.5px;color:var(--ink-soft)"></span>
+    </div>
+    <div id="nt-list"></div>
+  </section>
+
   <!-- ============ DASHBOARD TAB ============ -->
   <!-- ============ ACCOUNTS TAB ============ -->
   <section class="panel" id="panel-accounts">
@@ -705,6 +731,7 @@ function activateTab(tab){
   if(tab==='accounts'&&window.renderAccounts)window.renderAccounts();
   if(tab==='hal'&&window.renderHal)window.renderHal();
   if(tab==='recap'&&window.renderRecap)window.renderRecap();
+  if(tab==='notes'&&window.renderNotes)window.renderNotes();
   if(tab==='settings'&&window.renderSettings)window.renderSettings();
   if(window.halSyncFab)window.halSyncFab();
 }
@@ -3407,6 +3434,62 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var reset=$('decks-resettargets');if(reset)reset.onclick=function(){saveTargets(DEFAULT_TARGETS.slice());syncTargetsUI();toast('Restored default list');};
   var filt=$('decks-filter');if(filt)filt.oninput=function(){filterText=filt.value;render();};
   var filtClr=$('decks-filter-clear');if(filtClr)filtClr.onclick=function(){filterText='';if(filt){filt.value='';filt.focus();}render();};
+})();
+
+/* =================== NOTES — texts & reminders (Twilio → /api/sms/*) =================== */
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  function esc(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var rows=[],filter='all',cfg=null;
+  function when(iso){if(!iso)return '';var d=new Date(iso);return isNaN(d)?'':d.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+  function status(t){var e=$('nt-status');if(e)e.textContent=t||'';}
+  function render(){
+    var host=$('nt-list');if(!host)return;
+    var list=rows.filter(function(r){return filter==='all'||r.kind===filter;});
+    if(!list.length){
+      host.innerHTML='<p class="note">'+(rows.length?'Nothing in this view.':(cfg&&!cfg.twilio?'Texting isn’t set up yet — see <b>SMS-SETUP.md</b> in the repo.':'No texts yet. Send one to your Hal number.'))+'</p>';
+      return;
+    }
+    host.innerHTML=list.map(function(r){
+      var isRem=r.kind==='reminder';
+      var main=isRem?(r.remind_text||r.body):r.body;
+      var meta='#'+r.id+' · texted '+when(r.created_at);
+      if(isRem)meta+=' · '+(r.status==='sent'?'sent '+when(r.sent_at):'for '+when(r.remind_at));
+      if(r.detail&&r.status!=='sent')meta+=' · '+r.detail;
+      var pill=isRem?'<span class="nt-pill '+esc(r.status)+'">'+esc(r.status)+'</span>':'';
+      var acts=(isRem&&r.status==='pending'?'<button class="btn sm" data-act="cancel" data-id="'+r.id+'">Cancel</button>':'')+
+        '<button class="btn sm ghost" data-act="delete" data-id="'+r.id+'" title="Delete">✕</button>';
+      return '<div class="nt-row"><div class="nt-ico">'+(isRem?'⏰':'📝')+'</div><div class="nt-main"><div class="nt-body">'+esc(main)+pill+'</div>'+
+        (isRem&&r.remind_text&&r.remind_text!==r.body?'<div class="nt-meta">“'+esc(r.body)+'”</div>':'')+
+        '<div class="nt-meta">'+esc(meta)+'</div></div><div class="nt-acts">'+acts+'</div></div>';
+    }).join('');
+  }
+  async function load(){
+    status('Loading…');
+    try{
+      var r=await fetch('/api/sms/notes',{credentials:'same-origin'});
+      var j=await r.json();
+      if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+      rows=j.notes||[];cfg=j.configured||null;
+      var ph=cfg&&cfg.phones&&cfg.phones.length?'Texts from '+cfg.phones.join(', '):'';
+      status(rows.length+' item'+(rows.length===1?'':'s')+(ph?' · '+ph:''));
+    }catch(e){status('Couldn’t load: '+(e&&e.message?e.message:e));}
+    render();
+  }
+  async function act(action,id){
+    if(action==='delete'&&!confirm('Delete #'+id+'?'))return;
+    try{
+      var r=await fetch('/api/sms/notes',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action,id:id})});
+      if(!r.ok){var j=await r.json().catch(function(){return {};});throw new Error(j.error||('HTTP '+r.status));}
+    }catch(e){status('Failed: '+(e&&e.message?e.message:e));return;}
+    load();
+  }
+  window.renderNotes=load;
+  document.querySelectorAll('#panel-notes [data-nf]').forEach(function(b){b.onclick=function(){filter=b.getAttribute('data-nf');document.querySelectorAll('#panel-notes [data-nf]').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
+  var rb=$('nt-refresh');if(rb)rb.onclick=load;
+  var host=$('nt-list');if(host)host.addEventListener('click',function(e){var b=e.target.closest('[data-act]');if(b)act(b.getAttribute('data-act'),+b.getAttribute('data-id'));});
+  // Deep link (/#notes) activates the tab before this script runs — catch up.
+  var pn=$('panel-notes');if(pn&&pn.classList.contains('active'))load();
 })();
 </script>
 </body>

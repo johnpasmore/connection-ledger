@@ -13,8 +13,11 @@ compatibility_flags = ["nodejs_compat"]
 # exactly one firing sends each Monday), and a weekly dedupe prevents double-sends.
 # Firing daily (not "* * 1") avoids any ambiguity in how the dashboard interprets the
 # cron day-of-week (it rendered "* * 1" as Sunday) and is inherently DST-proof.
+#
+# "* * * * *" is the SMS reminder sweep: every minute it texts any reminder that
+# has come due (see SMS-SETUP.md). scheduled() routes on event.cron.
 [triggers]
-crons = ["0 11,12 * * *"]
+crons = ["0 11,12 * * *", "* * * * *"]
 
 # Bind the SAME D1 database the Pages app uses.
 # Fill in database_id from: Cloudflare dashboard → Storage & Databases → D1 → ledger.
@@ -33,5 +36,8 @@ RECAP_RECIPIENT  = "john@latimer.ai"   # where the weekly email is sent
 #   RECAP_ENC_KEY           (same random string set on the Pages project)
 #   ANTHROPIC_API_KEY       (preferred model key)  — or —  LATIMER_API_KEY
 #   RECAP_RUN_KEY           (random string; lets you hit /run?key=… to test)
+#   TWILIO_ACCOUNT_SID      (SMS reminders — same values as the Pages project)
+#   TWILIO_AUTH_TOKEN
+#   TWILIO_FROM_NUMBER      (or TWILIO_MESSAGING_SERVICE_SID)
 # Optional:
 #   ANTHROPIC_MODEL, LATIMER_MODEL, LATIMER_VERSION, HAL_COMPANY_CONTEXT

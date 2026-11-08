@@ -65,3 +65,24 @@ CREATE TABLE IF NOT EXISTS recap_log (
   detail     TEXT,
   sent_at    TEXT
 );
+
+-- Notes & reminders by text (Twilio). One row per text JP sends to the Twilio
+-- number. kind 'note' just saves it; kind 'reminder' is texted back at remind_at
+-- by the cron Worker. status: 'saved' (notes) | 'pending' | 'sending' | 'sent' |
+-- 'cancelled' | 'error'. Auto-created on first use; see SMS-SETUP.md.
+CREATE TABLE IF NOT EXISTS sms_notes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_email  TEXT NOT NULL,       -- from SMS_USERS (phone → email)
+  phone       TEXT NOT NULL,       -- E.164 sender, where reminders go back to
+  body        TEXT NOT NULL,       -- the text exactly as sent
+  kind        TEXT NOT NULL,       -- 'note' | 'reminder'
+  remind_text TEXT,                -- what to remind about (reminders only)
+  remind_at   TEXT,                -- ISO UTC time to send (reminders only)
+  status      TEXT NOT NULL,
+  attempts    INTEGER DEFAULT 0,
+  detail      TEXT,                -- last send error, if any
+  created_at  TEXT NOT NULL,
+  sent_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sms_due  ON sms_notes(status, remind_at);
+CREATE INDEX IF NOT EXISTS idx_sms_user ON sms_notes(user_email, created_at DESC);

@@ -23,6 +23,8 @@ Live app: `connection-ledger.pages.dev` · Repo: `johnpasmore/connection-ledger`
 - **Conversations** — inbound-email triage (Lead Router), calendar follow-ups,
   a starred priority list, and a **recap email** generator.
 - **Analytics** — rolling volume + success-rate dashboard.
+- **Notes** — text a note or "remind me tomorrow 9am to …" to the Twilio number;
+  notes land here and reminders are texted back (setup: `SMS-SETUP.md`).
 
 ## Navigation
 
@@ -44,6 +46,7 @@ Deliberately simple and cheap to run:
   - `dashboard.js` — monthly invite/connection aggregates (SQL GROUP BY).
   - `latimer.js` — same-origin proxy to the Latimer completion API (avoids CORS).
   - `tts.js` — same-origin proxy to ElevenLabs text-to-speech (avoids CORS; also verifies a voice via `GET /v1/voices/{id}`).
+  - `sms/inbound.js` — Twilio webhook (signature-checked, bypasses Access); `sms/notes.js` — the Notes tab.
 - **Database:** Cloudflare D1 (SQLite), binding `DB`. Tables in `schema.sql`
   (`app_state` blob + `contacts` rows); schema auto-creates on first use.
 - **Storage model:** localStorage-first, cloud sync to D1 every ~20s with a boot
