@@ -1,0 +1,10 @@
+# Files the root Worker (wrangler.jsonc, assets directory ".") must never
+# publish. Same syntax as .gitignore.
+.git
+.wrangler
+**/.wrangler
+node_modules
+.dev.vars*
+.env*
+worker
+test
