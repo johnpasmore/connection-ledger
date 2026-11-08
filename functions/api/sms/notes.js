@@ -49,7 +49,7 @@ export async function onRequest(context) {
   }
 }
 
-// What the empty state needs: is Twilio set up, and does this user have a code?
+// What the empty state needs: is Twilio set up, and is this user's phone registered?
 async function configured(env, owners) {
   const cfg = await twilioConfig(env);
   const marks = owners.map(() => "?").join(",");
@@ -60,7 +60,8 @@ async function configured(env, owners) {
   return {
     twilio: !!(cfg.accountSid && cfg.authToken),
     number: cfg.fromNumber || "",
-    code: me ? me.code : "",
+    registered: !!(me && (me.phone || me.code)),
+    code: (me && me.code) || "",
     phones: me && me.phone ? [mask(me.phone)] : [],
   };
 }

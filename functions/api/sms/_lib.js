@@ -3,17 +3,19 @@
 // The cron Worker (worker/recap) imports this file too, so the parsing, storage
 // and Twilio send logic lives in exactly one place.
 //
-// One Twilio number can serve several people and several apps. Each text starts
-// with a short CODE that says whose it is:
-//   "jp7 remind me tomorrow 9am to call Scott"  → JP's notes/reminders here
-//   "ops status"                                 → forwarded to another app's webhook
-// Codes live in sms_routes (set on the Settings tab). A person's code can be tied
-// to their phone so it only works from that number.
+// One Twilio number can serve several people and several apps:
+//   • People are recognised by the number they text from (Twilio's From), so
+//     "remind me tomorrow 9am to call Scott" from JP's cell is JP's reminder.
+//   • Other apps sharing the number get a CODE; a text starting with it
+//     ("ops status") is forwarded to that app's webhook.
+//   • A person may also have an optional code, to text from a phone that isn't
+//     registered ("jp7 remind me…" from any phone).
+// All of this lives in sms_routes, edited on the Settings tab.
 //
 // Flow:
 //   • someone texts the Twilio number → Twilio POSTs /api/sms/inbound
-//   • inbound.js verifies the Twilio signature, reads the leading code, and either
-//     stores the text in sms_notes (a person's code) or forwards it (an app's code)
+//   • inbound.js verifies the Twilio signature, then: a leading app code → forward;
+//     a leading personal code, or a registered phone → store in sms_notes
 //   • the Worker's every-minute cron sends due reminders back by SMS
 //
 // Twilio credentials come from the Settings tab (sms_settings; the auth token is
@@ -48,10 +50,11 @@ export async function ensureSmsSchema(env) {
       "CREATE TABLE IF NOT EXISTS sms_settings (id INTEGER PRIMARY KEY CHECK (id = 1), account_sid TEXT, " +
         "enc_auth_token TEXT, from_number TEXT, fallback_url TEXT, updated_by TEXT, updated_at TEXT)"
     ),
-    // Codes: a person (user_email, optional phone lock) or another app (forward_url).
+    // A person (user_email + phone, optional code) or another app (code + forward_url).
+    // UNIQUE allows many NULLs, so people without a code are fine.
     env.DB.prepare(
-      "CREATE TABLE IF NOT EXISTS sms_routes (code TEXT PRIMARY KEY, user_email TEXT, phone TEXT, " +
-        "forward_url TEXT, label TEXT, updated_at TEXT)"
+      "CREATE TABLE IF NOT EXISTS sms_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, " +
+        "user_email TEXT UNIQUE, phone TEXT UNIQUE, forward_url TEXT, label TEXT, updated_at TEXT)"
     ),
   ]);
   schemaReady.add(env.DB);
@@ -94,11 +97,15 @@ export function splitCode(body, codes) {
   return { code: null, rest: t };
 }
 
+// { byCode: Map(code → route), byPhone: Map(phone → person route) }
 export async function loadRoutes(env) {
   const r = await env.DB.prepare("SELECT code, user_email, phone, forward_url, label FROM sms_routes").all();
-  const map = new Map();
-  (r.results || []).forEach((x) => map.set(x.code, x));
-  return map;
+  const byCode = new Map(), byPhone = new Map();
+  (r.results || []).forEach((x) => {
+    if (x.code) byCode.set(x.code, x);
+    if (x.user_email && x.phone) byPhone.set(x.phone, x);
+  });
+  return { byCode, byPhone };
 }
 
 // ---- Twilio account ----------------------------------------------------------------
@@ -374,7 +381,7 @@ function xmlEscape(s) {
 
 export function helpText(code) {
   const c = code ? code + " " : "";
-  return "Start each text with your code. \"" + c + "<anything>\" saves a note. " +
+  return "Text anything to save a note. " +
     "\"" + c + "remind me tomorrow 9am to call Scott\" sets a reminder I'll text back. " +
     "\"" + c + "list\" shows what's pending, \"" + c + "cancel 12\" cancels reminder #12.";
 }

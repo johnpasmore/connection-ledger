@@ -2,11 +2,11 @@
 //
 // This route must BYPASS Cloudflare Access (Twilio can't sign in), so it guards
 // itself instead: every request must carry a valid X-Twilio-Signature made with
-// the Twilio auth token. Then the text's leading code decides where it goes:
-//   • a person's code  → saved here as a note / reminder (phone-locked if set)
-//   • an app's code    → forwarded, re-signed, to that app's webhook
-//   • no known code    → forwarded to the "no code" URL if one is set; otherwise a
-//                        known phone gets a nudge to use its code, others nothing.
+// the Twilio auth token. Then, in order:
+//   • starts with an app's code     → forwarded, re-signed, to that app's webhook
+//   • starts with a person's code   → saved as that person's note / reminder
+//   • sent from a registered phone  → saved as that person's note / reminder
+//   • anything else                 → the "no code" webhook if set, else ignored
 // Replies go back inline as TwiML, so confirming a note costs no extra API call.
 
 import {
@@ -32,24 +32,23 @@ export async function onRequestPost(context) {
   if (!ok) return new Response("Invalid signature", { status: 403 });
 
   const phone = normalizePhone(params.From);
-  const routes = await loadRoutes(env);
-  const { code, rest } = splitCode(params.Body, new Set(routes.keys()));
-  const route = code ? routes.get(code) : null;
+  const { byCode, byPhone } = await loadRoutes(env);
+  const { code, rest } = splitCode(params.Body, new Set(byCode.keys()));
+  const coded = code ? byCode.get(code) : null;
 
-  if (route && route.forward_url) return forwardToApp(cfg, route.forward_url, { ...params, Body: rest });
+  if (coded && coded.forward_url) return forwardToApp(cfg, coded.forward_url, { ...params, Body: rest });
 
-  if (!route) {
+  // Whose text: a personal code wins (so it works from any phone), else the phone.
+  const person = coded || byPhone.get(phone) || null;
+  if (!person) {
     if (cfg.fallbackUrl) return forwardToApp(cfg, cfg.fallbackUrl, params);
-    const mine = [...routes.values()].find((r) => r.user_email && r.phone && r.phone === phone);
-    return twiml(mine ? "Start your text with your code — e.g. \"" + mine.code + " " + (rest || "remind me…") + "\"" : "");
+    return twiml("");
   }
-
-  // A person's code. If it's phone-locked, it only works from that phone.
-  if (route.phone && route.phone !== phone) return twiml("");
-  if (!rest) return twiml(helpText(code));
+  const text = coded ? rest : String(params.Body || "").trim();
+  if (!text) return twiml(helpText(coded ? code : ""));
 
   try {
-    return twiml(await handle(env, route.user_email, phone, rest, new Date(), code));
+    return twiml(await handle(env, person.user_email, phone, text, new Date(), coded ? code : ""));
   } catch (e) {
     return twiml("Sorry — couldn't save that (" + String(e && e.message ? e.message : e).slice(0, 80) + "). Try again?");
   }

@@ -555,7 +555,7 @@
 
   <!-- ============ NOTES TAB (texts & reminders via Twilio) ============ -->
   <section class="panel" id="panel-notes">
-    <p class="lede">Text your code plus anything to the Twilio number and it lands here as a note. Ask for a reminder — <i>“jp7 remind me tomorrow 9am to call Scott”</i> — and John texts you back at that time. <b>jp7 list</b> shows what’s pending, <b>jp7 cancel 12</b> stops reminder #12. Set your code in <a href="#settings" onclick="activateTab('settings');return false">Settings</a>.</p>
+    <p class="lede">Text anything to the Twilio number from your cell and it lands here as a note. Ask for a reminder — <i>“remind me tomorrow 9am to call Scott”</i> — and John texts you back at that time. <b>list</b> shows what’s pending, <b>cancel 12</b> stops reminder #12. Register your cell in <a href="#settings" onclick="activateTab('settings');return false">Settings</a>.</p>
     <div class="rc-bar">
       <span class="rc-lbl">Show</span>
       <button class="btn sm rc-period on" data-nf="all">All</button>
@@ -3459,8 +3459,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!list.length){
       var empty=rows.length?'Nothing in this view.':
         (cfg&&!cfg.twilio)?'Texting isn’t set up yet — add your Twilio details in <a href="#settings" onclick="activateTab(\'settings\');return false">Settings</a>.':
-        (cfg&&!cfg.code)?'Pick your texting code in <a href="#settings" onclick="activateTab(\'settings\');return false">Settings</a>, then text it to '+esc(cfg.number||'your Twilio number')+'.':
-        'No texts yet. Text <b>'+esc(cfg?cfg.code:'')+' …</b> to '+esc((cfg&&cfg.number)||'your Twilio number')+'.';
+        (cfg&&!cfg.registered)?'Add your cell in <a href="#settings" onclick="activateTab(\'settings\');return false">Settings</a>, then text '+esc(cfg.number||'your Twilio number')+'.':
+        'No texts yet. Text anything to '+esc((cfg&&cfg.number)||'your Twilio number')+' from your cell.';
       host.innerHTML='<p class="note">'+empty+'</p>';
       return;
     }
@@ -3485,7 +3485,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       var j=await r.json();
       if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
       rows=j.notes||[];cfg=j.configured||null;
-      var ph=cfg&&cfg.code?'Your code: '+cfg.code+(cfg.phones&&cfg.phones.length?' (from '+cfg.phones.join(', ')+')':''):'';
+      var ph=cfg&&cfg.phones&&cfg.phones.length?'From '+cfg.phones.join(', ')+(cfg.code?' · code '+cfg.code:''):'';
       status(rows.length+' item'+(rows.length===1?'':'s')+(ph?' · '+ph:''));
     }catch(e){status('Couldn’t load: '+(e&&e.message?e.message:e));}
     render();
@@ -3527,23 +3527,23 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
         '</div>'+
         '<p class="note" style="margin:10px 0 0">In Twilio, set the number’s <i>A message comes in</i> webhook (HTTP POST) to <span class="sms-hook">'+esc(hook)+'</span></p>'+
       '</div>'+
-      '<div class="sms-card"><h4>Your texting code</h4>'+
-        '<p class="note" style="margin:0">Several people and apps can share one number — start every text with your code so it reaches you. Lock it to your cell so the code only works from your phone.</p>'+
+      '<div class="sms-card"><h4>Your phone</h4>'+
+        '<p class="note" style="margin:0">Texts from this number are yours — notes land on your Notes tab and reminders come back here. A code is optional: start a text with it to reach you from any other phone.</p>'+
         '<div class="sms-grid">'+
-          '<div><label>Your code</label><input id="sms-code" placeholder="e.g. jp7" maxlength="12" value="'+esc(me.code)+'"></div>'+
-          '<div><label>Your cell (recommended)</label><input id="sms-phone" placeholder="+1…" value="'+esc(me.phone)+'"></div>'+
+          '<div><label>Your cell</label><input id="sms-phone" placeholder="+1…" value="'+esc(me.phone)+'"></div>'+
+          '<div><label>Code (optional)</label><input id="sms-code" placeholder="e.g. jp7" maxlength="12" value="'+esc(me.code)+'"></div>'+
         '</div>'+
         '<p class="note" style="margin:10px 0 0" id="sms-example"></p>'+
       '</div>'+
       '<div class="sms-card"><h4>Other apps on this number</h4>'+
-        '<p class="note" style="margin:0">Texts starting with one of these codes are passed to that app’s webhook (code removed, re-signed so its Twilio check still passes), and its reply goes back to the sender.</p>'+
+        '<p class="note" style="margin:0">Give each app a code. Texts starting with it are passed to that app’s webhook (code removed, re-signed so its Twilio check still passes), and its reply goes back to the sender.</p>'+
         '<div id="sms-apps">'+(st.apps||[]).map(appRow).join('')+'</div>'+
         '<button class="btn sm" id="sms-addapp" style="margin-top:8px">+ Add app</button>'+
-        '<div class="sms-grid"><div style="grid-column:1/-1"><label>Texts with no code go to (optional webhook)</label><input id="sms-fallback" placeholder="https://… — leave blank to ignore them" value="'+esc(t.fallbackUrl)+'"></div></div>'+
+        '<div class="sms-grid"><div style="grid-column:1/-1"><label>Texts from unregistered phones go to (optional webhook)</label><input id="sms-fallback" placeholder="https://… — leave blank to ignore them" value="'+esc(t.fallbackUrl)+'"></div></div>'+
       '</div>'+
       '<div style="display:flex;gap:10px;align-items:center"><button class="btn primary sm" id="sms-save">Save texting settings</button><span id="sms-msg" style="font-size:12.5px;color:var(--ink-soft)"></span></div>';
     var codeEl=document.getElementById('sms-code');
-    function example(){var c=(codeEl.value||'').trim().toLowerCase()||'jp7';document.getElementById('sms-example').innerHTML='Try: <b>'+esc(c)+' remind me tomorrow 9am to call Scott</b> · <b>'+esc(c)+' list</b> · <b>'+esc(c)+' cancel 12</b>';}
+    function example(){var c=(codeEl.value||'').trim().toLowerCase();var n=esc((t.fromNumber||DEFAULT_NUMBER));document.getElementById('sms-example').innerHTML='From your cell, text '+n+': <b>remind me tomorrow 9am to call Scott</b> · <b>list</b> · <b>cancel 12</b>'+(c?' — from another phone, start with <b>'+esc(c)+'</b>':'');}
     codeEl.oninput=example;example();
     document.getElementById('sms-addapp').onclick=function(){document.getElementById('sms-apps').insertAdjacentHTML('beforeend',appRow({code:'',label:'',forward_url:''}));};
     document.getElementById('sms-apps').onclick=function(e){var b=e.target.closest('[data-rm]');if(b)b.parentNode.remove();};

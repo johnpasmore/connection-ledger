@@ -149,32 +149,38 @@ async function routedEnv(extra = {}) {
   return env;
 }
 
-test("inbound: signature and code routing", async () => {
+test("inbound: people are known by phone; codes are optional", async () => {
   const env = await routedEnv();
-  const JP = "+15551234567";
+  const JP = "+15551234567", STRANGER = "+19998887777";
 
-  assert.equal((await inbound(env, { From: JP, Body: "jp7 hi" }, "forged")).status, 403);
+  assert.equal((await inbound(env, { From: JP, Body: "hi" }, "forged")).status, 403);
 
-  // JP's code from JP's phone → saved under JP, code stripped from the stored text.
-  const ok = await inbound(env, { From: JP, Body: "jp7 note to self <b>&</b>" });
+  // JP's registered phone, no code → saved under JP.
+  const ok = await inbound(env, { From: JP, Body: "note to self <b>&</b>" });
   assert.match(ok.xml, /<Message>📝 Saved note #1\.<\/Message>/);
-  assert.deepEqual({ ...env.DB.raw.prepare("SELECT user_email, body FROM sms_notes").get() },
+  assert.deepEqual({ ...env.DB.raw.prepare("SELECT user_email, body FROM sms_notes WHERE id = 1").get() },
     { user_email: "john@latimer.ai", body: "note to self <b>&</b>" });
 
-  // JP's code from someone else's phone → ignored (code is phone-locked).
-  assert.doesNotMatch((await inbound(env, { From: "+19998887777", Body: "jp7 sneaky" })).xml, /<Message>/);
+  // JP's phone with his code also works; the code is stripped.
+  await inbound(env, { From: JP, Body: "jp7 remind me in 2 hours to call Scott" });
+  assert.equal(env.DB.raw.prepare("SELECT remind_text FROM sms_notes WHERE id = 2").get().remind_text, "call Scott");
 
-  // Barika's code isn't phone-locked → works from any phone, filed under her.
-  await inbound(env, { From: "+19998887777", Body: "bk remind me in 2 hours to call Spelman" });
-  assert.equal(env.DB.raw.prepare("SELECT user_email FROM sms_notes WHERE id = 2").get().user_email, "barika@latimer.ai");
+  // From another phone, the code is how JP is recognised; replies go to that phone.
+  const away = await inbound(env, { From: STRANGER, Body: "jp7 remind me in 1 hour to pay invoice" });
+  assert.match(away.xml, /jp7 cancel 3/);
+  assert.deepEqual({ ...env.DB.raw.prepare("SELECT user_email, phone FROM sms_notes WHERE id = 3").get() },
+    { user_email: "john@latimer.ai", phone: STRANGER });
 
-  // JP forgets his code → nudge; a stranger with no code → silence.
-  assert.match((await inbound(env, { From: JP, Body: "call Scott" })).xml, /Start your text with your code — e\.g\. &quot;jp7 call Scott&quot;/);
-  assert.doesNotMatch((await inbound(env, { From: "+19998887777", Body: "hello" })).xml, /<Message>/);
+  // Barika has a code but no phone → her code works from any phone.
+  await inbound(env, { From: STRANGER, Body: "bk call Spelman" });
+  assert.equal(env.DB.raw.prepare("SELECT user_email FROM sms_notes WHERE id = 4").get().user_email, "barika@latimer.ai");
 
-  // Code alone → help using that code.
-  assert.match((await inbound(env, { From: JP, Body: "jp7" })).xml, /jp7 remind me tomorrow 9am/);
-  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) n FROM sms_notes").get().n, 2);
+  // Unregistered phone, no code → silence, nothing stored.
+  assert.doesNotMatch((await inbound(env, { From: STRANGER, Body: "hello" })).xml, /<Message>/);
+
+  // Empty text from JP's phone → help without a code prefix.
+  assert.match((await inbound(env, { From: JP, Body: "" })).xml, /&quot;remind me tomorrow 9am/);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) n FROM sms_notes").get().n, 4);
 });
 
 test("inbound: another app's code is forwarded, re-signed, and its reply relayed", async () => {
@@ -196,14 +202,16 @@ test("inbound: another app's code is forwarded, re-signed, and its reply relayed
   }
 });
 
-test("inbound: texts with no code go to the fallback app when one is set", async () => {
+test("inbound: texts from unregistered phones go to the fallback app when one is set", async () => {
   const env = await routedEnv();
   env.DB.raw.prepare("INSERT INTO sms_settings (id, fallback_url) VALUES (1, 'https://legacy.example/hook')").run();
   const realFetch = globalThis.fetch;
   let url = null, body = null;
   globalThis.fetch = async (u, init) => { url = u; body = Object.fromEntries(new URLSearchParams(init.body)).Body; return new Response("<Response/>"); };
   try {
-    await inbound(env, { From: "+15551234567", Body: "plain text" });
+    await inbound(env, { From: "+15551234567", Body: "mine" });
+    assert.equal(url, null, "a registered phone is never sent to the fallback");
+    await inbound(env, { From: "+19998887777", Body: "plain text" });
     assert.equal(url, "https://legacy.example/hook");
     assert.equal(body, "plain text");
   } finally {
@@ -245,6 +253,11 @@ test("settings API: saves codes and an encrypted token, never returns the token"
   assert.match((await call("PUT", { me: { code: "jp7" } }, "barika@latimer.ai")).j.error, /already in use/);
   assert.match((await call("PUT", { apps: [{ code: "jp7", forward_url: "https://x.example" }] }, "barika@latimer.ai")).j.error, /personal code/);
   assert.match((await call("PUT", { me: { code: "remind" } }, "barika@latimer.ai")).j.error, /command word/);
+  assert.match((await call("PUT", { me: { phone: "(555) 123-4567" } }, "barika@latimer.ai")).j.error, /already registered/);
+
+  // Phone only, no code, is a full registration.
+  r = await call("PUT", { me: { phone: "+15557654321" } }, "barika@latimer.ai");
+  assert.deepEqual(r.j.me, { code: "", phone: "+15557654321" });
 
   // Env vars win over Settings.
   env.TWILIO_AUTH_TOKEN = "f".repeat(32);

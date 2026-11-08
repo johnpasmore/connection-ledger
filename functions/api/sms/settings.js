@@ -3,7 +3,7 @@
 //
 // GET → {
 //   twilio: { accountSid, hasAuthToken, fromNumber, fallbackUrl, fromEnv, tokenError, canStoreToken },
-//   me:     { code, phone } | null,        ← the signed-in user's own code
+//   me:     { phone, code } | null,        ← the signed-in user's cell (+ optional code)
 //   apps:   [{ code, label, forward_url }], ← other apps sharing the number
 //   taken:  ["jp7", …]                     ← every code in use (so the UI can warn)
 // }
@@ -38,6 +38,7 @@ export async function onRequest(context) {
 async function read(env, email) {
   const cfg = await twilioConfig(env);
   const rows = ((await env.DB.prepare("SELECT code, user_email, phone, forward_url, label FROM sms_routes ORDER BY code").all()).results) || [];
+  const codes = rows.filter((r) => r.code).map((r) => r.code);
   const me = rows.find((r) => r.user_email === email);
   return {
     twilio: {
@@ -49,16 +50,16 @@ async function read(env, email) {
       tokenError: cfg.tokenError,
       canStoreToken: !!env.RECAP_ENC_KEY,
     },
-    me: me ? { code: me.code, phone: me.phone || "" } : null,
+    me: me ? { code: me.code || "", phone: me.phone || "" } : null,
     apps: rows.filter((r) => r.forward_url).map((r) => ({ code: r.code, label: r.label || "", forward_url: r.forward_url })),
-    taken: rows.map((r) => r.code),
+    taken: codes,
   };
 }
 
 // Returns an error string for bad input, or "" when saved.
 async function write(env, email, b) {
   const now = new Date().toISOString();
-  const rows = ((await env.DB.prepare("SELECT code, user_email, forward_url FROM sms_routes").all()).results) || [];
+  const rows = ((await env.DB.prepare("SELECT code, user_email, phone, forward_url FROM sms_routes").all()).results) || [];
 
   // Validate everything before writing anything.
   let me = null;
@@ -72,6 +73,7 @@ async function write(env, email, b) {
       if (owner && owner.user_email !== email) return "\"" + code + "\" is already in use — pick another code.";
     }
     if (phone && !/^\+\d{8,15}$/.test(phone)) return "That phone number doesn't look right.";
+    if (phone && rows.find((r) => r.phone === phone && r.user_email !== email)) return "That phone is already registered to someone else.";
     me = { code, phone };
   }
 
@@ -113,10 +115,10 @@ async function write(env, email, b) {
   if (twilio) await saveTwilioSettings(env, twilio, email);
   if (me) {
     await env.DB.prepare("DELETE FROM sms_routes WHERE user_email = ?").bind(email).run();
-    if (me.code) {
+    if (me.code || me.phone) {
       await env.DB
         .prepare("INSERT INTO sms_routes (code, user_email, phone, updated_at) VALUES (?, ?, ?, ?)")
-        .bind(me.code, email, me.phone || null, now)
+        .bind(me.code || null, email, me.phone || null, now)
         .run();
     }
   }
