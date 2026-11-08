@@ -3,7 +3,8 @@
 //
 // GET → {
 //   twilio: { accountSid, hasAuthToken, fromNumber, fallbackUrl, fromEnv, tokenError, canStoreToken },
-//   me:     { phone, code } | null,        ← the signed-in user's cell (+ optional code)
+//   me:     { phone, code, consentAt } | null,  ← the signed-in user's cell (+ optional code)
+//   consentText: "By saving your number…"  ← shown beside the phone field; saving = agreeing
 //   apps:   [{ code, label, forward_url }], ← other apps sharing the number
 //   taken:  ["jp7", …]                     ← every code in use (so the UI can warn)
 // }
@@ -13,7 +14,7 @@
 //       me?: {code, phone},
 //       apps?: [{code, label, forward_url}] }   ← replaces the whole app list
 
-import { ensureSmsSchema, twilioConfig, saveTwilioSettings, normCode, codeProblem, normalizePhone } from "./_lib.js";
+import { ensureSmsSchema, twilioConfig, saveTwilioSettings, normCode, codeProblem, normalizePhone, CONSENT_TEXT } from "./_lib.js";
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -37,7 +38,7 @@ export async function onRequest(context) {
 
 async function read(env, email) {
   const cfg = await twilioConfig(env);
-  const rows = ((await env.DB.prepare("SELECT code, user_email, phone, forward_url, label FROM sms_routes ORDER BY code").all()).results) || [];
+  const rows = ((await env.DB.prepare("SELECT code, user_email, phone, forward_url, label, consent_at FROM sms_routes ORDER BY code").all()).results) || [];
   const codes = rows.filter((r) => r.code).map((r) => r.code);
   const me = rows.find((r) => r.user_email === email);
   return {
@@ -50,7 +51,8 @@ async function read(env, email) {
       tokenError: cfg.tokenError,
       canStoreToken: !!env.RECAP_ENC_KEY,
     },
-    me: me ? { code: me.code || "", phone: me.phone || "" } : null,
+    me: me ? { code: me.code || "", phone: me.phone || "", consentAt: me.consent_at || null } : null,
+    consentText: CONSENT_TEXT,
     apps: rows.filter((r) => r.forward_url).map((r) => ({ code: r.code, label: r.label || "", forward_url: r.forward_url })),
     taken: codes,
   };
@@ -59,7 +61,7 @@ async function read(env, email) {
 // Returns an error string for bad input, or "" when saved.
 async function write(env, email, b) {
   const now = new Date().toISOString();
-  const rows = ((await env.DB.prepare("SELECT code, user_email, phone, forward_url FROM sms_routes").all()).results) || [];
+  const rows = ((await env.DB.prepare("SELECT code, user_email, phone, forward_url, consent_at FROM sms_routes").all()).results) || [];
 
   // Validate everything before writing anything.
   let me = null;
@@ -114,11 +116,15 @@ async function write(env, email, b) {
 
   if (twilio) await saveTwilioSettings(env, twilio, email);
   if (me) {
+    // Saving a number under the consent wording is the opt-in, so record when.
+    // Keep the original date while the number stays the same.
+    const prev = rows.find((r) => r.user_email === email);
+    const consentAt = !me.phone ? null : (prev && prev.phone === me.phone && prev.consent_at) || now;
     await env.DB.prepare("DELETE FROM sms_routes WHERE user_email = ?").bind(email).run();
     if (me.code || me.phone) {
       await env.DB
-        .prepare("INSERT INTO sms_routes (code, user_email, phone, updated_at) VALUES (?, ?, ?, ?)")
-        .bind(me.code || null, email, me.phone || null, now)
+        .prepare("INSERT INTO sms_routes (code, user_email, phone, consent_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+        .bind(me.code || null, email, me.phone || null, consentAt, now)
         .run();
     }
   }

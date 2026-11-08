@@ -3535,6 +3535,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
           '<div><label>Your cell</label><input id="sms-phone" placeholder="+1…" value="'+esc(me.phone)+'"></div>'+
           '<div><label>Code (optional)</label><input id="sms-code" placeholder="e.g. jp7" maxlength="12" value="'+esc(me.code)+'"></div>'+
         '</div>'+
+        '<p class="note" style="margin:10px 0 0;padding:8px 10px;border-left:3px solid var(--line);background:var(--paper)">'+esc(st.consentText||'')+(me.consentAt?' <span style="color:var(--faint)">· Agreed '+esc(new Date(me.consentAt).toLocaleDateString())+'</span>':'')+'</p>'+
         '<p class="note" style="margin:10px 0 0" id="sms-example"></p>'+
       '</div>'+
       '<div class="sms-card"><h4>Other apps on this number</h4>'+

@@ -6,12 +6,21 @@ that time — browser closed or not.
 
 | You text (from your cell) | What happens |
 |---|---|
-| `Howard wants a pilot in Jan` | Saved as a note → "📝 Saved note #14." |
-| `remind me tomorrow 9am to call Scott` | Reminder → "⏰ Got it — I'll text you Thu, Nov 12, 9:00 AM: call Scott (#15…)" and at 9:00 ET: "⏰ John reminder: call Scott" |
+| `Howard wants a pilot in Jan` | Saved as a note → "Latimer: Saved note #14. Reply STOP to opt out." |
+| `remind me tomorrow 9am to call Scott` | Reminder → "Latimer: Got it, I'll text you Thu, Nov 12, 9:00 AM: call Scott (#15)…" and at 9:00 ET: "Latimer: Reminder: call Scott" |
 | `remind me in 20 min to send the deck` | Same, 20 minutes from now |
 | `list` | Pending reminders + latest notes |
 | `cancel 15` | Cancels reminder #15 |
 | `help` | The commands above |
+
+**Carrier registration (A2P 10DLC).** Every outgoing text starts with
+"Latimer: " and the wording matches the sample messages registered with the
+campaign, so keep them in step: change `functions/api/sms/inbound.js` and the
+campaign samples together. The consent wording on Settings → Texting
+(`CONSENT_TEXT` in `functions/api/sms/_lib.js`) is quoted in the campaign's
+opt-in description; saving a number records the date (`sms_routes.consent_at`).
+Set `SMS_SUPPORT_CONTACT` (e.g. a support email) on the Pages project to add a
+contact to the HELP reply.
 
 **Who's texting.** Twilio sends the sender's number with every text, and only
 signed requests are accepted, so your registered cell is how the console knows a

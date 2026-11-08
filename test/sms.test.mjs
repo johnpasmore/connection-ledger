@@ -113,17 +113,20 @@ test("handle(): notes, reminders, list, cancel", async () => {
   await ensureSmsSchema(env);
   const u = "john@latimer.ai", ph = "+15551234567";
 
-  assert.match(await handle(env, u, ph, "Howard wants a pilot in Jan", NOW), /Saved note #1/);
+  // Replies match the samples registered with carriers word for word.
+  assert.equal(await handle(env, u, ph, "Howard wants a pilot in Jan", NOW), "Latimer: Saved note #1. Reply STOP to opt out.");
   const r = await handle(env, u, ph, "remind me tomorrow at 9am to call Scott", NOW);
-  assert.match(r, /I'll text you Thu, Nov 12, 9:00 AM: call Scott \(#2/);
+  assert.equal(r, "Latimer: Got it, I'll text you Thu, Nov 12, 9:00 AM: call Scott (#2). Reply \"cancel 2\" to stop it, STOP to opt out.");
   assert.match(await handle(env, u, ph, "remind me to call Scott", NOW), /couldn't tell when/);
 
   const list = await handle(env, u, ph, "list", NOW);
-  assert.match(list, /#2 .* — call Scott/);
+  assert.match(list, /^Latimer: Your reminders: #2 Thu, Nov 12, 9:00 AM - call Scott\. Latest notes: /);
   assert.match(list, /#1 Howard wants a pilot/);
+  assert.match(await handle(env, u, ph, "help", NOW), /^Latimer\.AI notes & reminders\..*Reply STOP to opt out\.$/);
+  assert.match(await handle({ ...env, SMS_SUPPORT_CONTACT: "help@example.com" }, u, ph, "help", NOW), /Help: help@example\.com\./);
 
-  assert.match(await handle(env, "other@latimer.ai", ph, "cancel 2", NOW), /No pending reminder #2/);
-  assert.match(await handle(env, u, ph, "cancel 2", NOW), /Cancelled reminder #2/);
+  assert.equal(await handle(env, "other@latimer.ai", ph, "cancel 2", NOW), "Latimer: No pending reminder #2.");
+  assert.equal(await handle(env, u, ph, "cancel 2", NOW), "Latimer: Cancelled reminder #2.");
   assert.equal(env.DB.raw.prepare("SELECT status FROM sms_notes WHERE id = 2").get().status, "cancelled");
 });
 
@@ -157,7 +160,7 @@ test("inbound: people are known by phone; codes are optional", async () => {
 
   // JP's registered phone, no code → saved under JP.
   const ok = await inbound(env, { From: JP, Body: "note to self <b>&</b>" });
-  assert.match(ok.xml, /<Message>📝 Saved note #1\.<\/Message>/);
+  assert.match(ok.xml, /<Message>Latimer: Saved note #1\. Reply STOP to opt out\.<\/Message>/);
   assert.deepEqual({ ...env.DB.raw.prepare("SELECT user_email, body FROM sms_notes WHERE id = 1").get() },
     { user_email: "john@latimer.ai", body: "note to self <b>&</b>" });
 
@@ -238,7 +241,10 @@ test("settings API: saves codes and an encrypted token, never returns the token"
   assert.equal(r.status, 200, JSON.stringify(r.j));
   assert.equal(r.j.twilio.fromNumber, "+13393005973");
   assert.equal(r.j.twilio.hasAuthToken, true);
-  assert.deepEqual(r.j.me, { code: "jp7", phone: "+15551234567" });
+  const firstConsent = r.j.me.consentAt;
+  assert.ok(firstConsent, "saving a phone records consent");
+  assert.deepEqual(r.j.me, { code: "jp7", phone: "+15551234567", consentAt: firstConsent });
+  assert.match(r.j.consentText, /^By saving your number you agree to receive notes and reminder texts from Latimer\.AI\..*Reply STOP to opt out, HELP for help\.$/);
   assert.deepEqual(r.j.apps, [{ code: "ops", label: "Ops", forward_url: "https://ops.example/sms" }]);
   assert.ok(!JSON.stringify(r.j).includes(token), "token never echoed");
   const stored = env.DB.raw.prepare("SELECT enc_auth_token FROM sms_settings").get().enc_auth_token;
@@ -249,6 +255,11 @@ test("settings API: saves codes and an encrypted token, never returns the token"
   await call("PUT", { twilio: { accountSid: "AC" + "a".repeat(32), fromNumber: "+13393005973" } });
   assert.equal((await twilioConfig(env)).authToken, token);
 
+  // Re-saving the same phone keeps the original consent date.
+  await new Promise((res) => setTimeout(res, 5));
+  r = await call("PUT", { me: { code: "jp7", phone: "+15551234567" } });
+  assert.equal(r.j.me.consentAt, firstConsent);
+
   // Someone else can't take JP's code or an app's code.
   assert.match((await call("PUT", { me: { code: "jp7" } }, "barika@latimer.ai")).j.error, /already in use/);
   assert.match((await call("PUT", { apps: [{ code: "jp7", forward_url: "https://x.example" }] }, "barika@latimer.ai")).j.error, /personal code/);
@@ -257,7 +268,9 @@ test("settings API: saves codes and an encrypted token, never returns the token"
 
   // Phone only, no code, is a full registration.
   r = await call("PUT", { me: { phone: "+15557654321" } }, "barika@latimer.ai");
-  assert.deepEqual(r.j.me, { code: "", phone: "+15557654321" });
+  assert.equal(r.j.me.phone, "+15557654321");
+  assert.equal(r.j.me.code, "");
+  assert.ok(r.j.me.consentAt);
 
   // Env vars win over Settings.
   env.TWILIO_AUTH_TOKEN = "f".repeat(32);
@@ -284,7 +297,7 @@ test("sendDueReminders sends once, retries failures, gives up after 3", async ()
   };
   try {
     assert.deepEqual(await sendDueReminders(env, NOW), [{ id: 1, sent: true }]);
-    assert.deepEqual(sent, [{ To: "+15551234567", Body: "⏰ John reminder: call Scott", From: "+18005550000" }]);
+    assert.deepEqual(sent, [{ To: "+15551234567", Body: "Latimer: Reminder: call Scott", From: "+18005550000" }]);
     assert.deepEqual(await sendDueReminders(env, NOW), [], "already sent → not resent");
 
     fail = true;
