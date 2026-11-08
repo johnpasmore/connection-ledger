@@ -57,6 +57,8 @@ export async function ensureSmsSchema(env) {
         "user_email TEXT UNIQUE, phone TEXT UNIQUE, forward_url TEXT, label TEXT, updated_at TEXT)"
     ),
   ]);
+  // Added after sms_routes first shipped: when the person agreed to texts.
+  try { await env.DB.prepare("ALTER TABLE sms_routes ADD COLUMN consent_at TEXT").run(); } catch (e) {}
   schemaReady.add(env.DB);
 }
 
@@ -379,11 +381,24 @@ function xmlEscape(s) {
   return String(s).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" }[c]));
 }
 
-export function helpText(code) {
+// Every text we send starts with this, as registered with carriers (A2P 10DLC).
+export const BRAND = "Latimer: ";
+
+// The consent wording shown where people register their phone (Settings → Texting).
+// The A2P campaign quotes it word for word, so change both together.
+export const CONSENT_TEXT =
+  "By saving your number you agree to receive notes and reminder texts from Latimer.AI. " +
+  "Message frequency varies with your use. Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
+
+// HELP reply. Carriers expect the program name, how to opt out, and a contact;
+// set SMS_SUPPORT_CONTACT (e.g. an email) to include one.
+export function helpText(code, env) {
   const c = code ? code + " " : "";
-  return "Text anything to save a note. " +
-    "\"" + c + "remind me tomorrow 9am to call Scott\" sets a reminder I'll text back. " +
-    "\"" + c + "list\" shows what's pending, \"" + c + "cancel 12\" cancels reminder #12.";
+  const contact = env && env.SMS_SUPPORT_CONTACT ? " Help: " + env.SMS_SUPPORT_CONTACT + "." : "";
+  return "Latimer.AI notes & reminders. Text anything to save a note; " +
+    "\"" + c + "remind me tomorrow 9am to call Scott\" sets a reminder; " +
+    "\"" + c + "list\" shows them; \"" + c + "cancel 12\" stops #12." + contact +
+    " Msg & data rates may apply. Reply STOP to opt out.";
 }
 
 // ---- outbound SMS (Twilio REST) ------------------------------------------------
@@ -453,7 +468,7 @@ export async function sendDueReminders(env, now = new Date()) {
       .run();
     if (!claim.meta || !claim.meta.changes) continue;
     try {
-      await sendSms(cfg, row.phone, "⏰ John reminder: " + (row.remind_text || row.body));
+      await sendSms(cfg, row.phone, BRAND + "Reminder: " + (row.remind_text || row.body));
       await env.DB
         .prepare("UPDATE sms_notes SET status = 'sent', sent_at = ?, attempts = attempts + 1, detail = NULL WHERE id = ?")
         .bind(new Date().toISOString(), row.id)

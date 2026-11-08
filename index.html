@@ -28,11 +28,13 @@
   h1{font-family:var(--sans);font-weight:800;font-size:33px;letter-spacing:-.025em;line-height:1.02;color:var(--ink)}
   .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:18px 0 26px}
   .navgroup{position:relative}
-  .navtop{font-family:inherit;font-size:14px;font-weight:600;color:var(--ink-soft);background:none;border:none;padding:11px 16px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s;display:flex;align-items:center;gap:5px}
+  .navtop{font-family:inherit;font-size:14px;font-weight:600;color:var(--ink-soft);background:none;border:none;padding:11px 16px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s;display:flex;align-items:center;position:relative}
   .navtop:hover{color:var(--ink)}
   .navtop.active{color:var(--ink);border-bottom-color:var(--accent)}
-  .navtop .caret{font-size:9px;color:var(--faint);transition:transform .15s}
-  .navgroup:hover .navtop .caret{transform:rotate(180deg)}
+  /* The caret hangs in the right padding (out of flow), so every label is the
+     same distance from its neighbours whether or not it has a dropdown. */
+  .navtop .caret{position:absolute;right:4px;top:50%;font-size:9px;color:var(--faint);transform:translateY(-50%);transition:transform .15s}
+  .navgroup:hover .navtop .caret{transform:translateY(-50%) rotate(180deg)}
   .navmenu{position:absolute;top:100%;left:0;min-width:190px;background:var(--surface);border:1px solid var(--line);border-radius:9px;box-shadow:0 12px 34px rgba(0,0,0,.14);padding:6px;z-index:200;display:none;flex-direction:column;gap:2px}
   .navgroup:hover .navmenu{display:flex}
   .navmenu.open{display:flex}
@@ -3533,6 +3535,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
           '<div><label>Your cell</label><input id="sms-phone" placeholder="+1…" value="'+esc(me.phone)+'"></div>'+
           '<div><label>Code (optional)</label><input id="sms-code" placeholder="e.g. jp7" maxlength="12" value="'+esc(me.code)+'"></div>'+
         '</div>'+
+        '<p class="note" style="margin:10px 0 0;padding:8px 10px;border-left:3px solid var(--line);background:var(--paper)">'+esc(st.consentText||'')+(me.consentAt?' <span style="color:var(--faint)">· Agreed '+esc(new Date(me.consentAt).toLocaleDateString())+'</span>':'')+'</p>'+
         '<p class="note" style="margin:10px 0 0" id="sms-example"></p>'+
       '</div>'+
       '<div class="sms-card"><h4>Other apps on this number</h4>'+

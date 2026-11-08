@@ -11,7 +11,7 @@
 
 import {
   ensureSmsSchema, normalizePhone, validTwilioRequest, classify, parseWhen, reminderText,
-  interpretWithModel, formatLocal, twiml, helpText, DEFAULT_TZ, twilioConfig, loadRoutes,
+  interpretWithModel, formatLocal, twiml, helpText, BRAND, DEFAULT_TZ, twilioConfig, loadRoutes,
   splitCode, forwardToApp,
 } from "./_lib.js";
 
@@ -45,12 +45,12 @@ export async function onRequestPost(context) {
     return twiml("");
   }
   const text = coded ? rest : String(params.Body || "").trim();
-  if (!text) return twiml(helpText(coded ? code : ""));
+  if (!text) return twiml(helpText(coded ? code : "", env));
 
   try {
     return twiml(await handle(env, person.user_email, phone, text, new Date(), coded ? code : ""));
   } catch (e) {
-    return twiml("Sorry — couldn't save that (" + String(e && e.message ? e.message : e).slice(0, 80) + "). Try again?");
+    return twiml(BRAND + "Sorry, couldn't save that (" + String(e && e.message ? e.message : e).slice(0, 80) + "). Try again?");
   }
 }
 
@@ -59,14 +59,14 @@ export async function handle(env, user, phone, body, now, code = "") {
   const tz = env.SMS_TZ || DEFAULT_TZ;
   const c = classify(body);
 
-  if (c.kind === "command" && c.command === "help") return helpText(code);
+  if (c.kind === "command" && c.command === "help") return helpText(code, env);
   if (c.kind === "command" && c.command === "list") return listReply(env, user, tz);
   if (c.kind === "command" && c.command === "cancel") {
     const r = await env.DB
       .prepare("UPDATE sms_notes SET status = 'cancelled' WHERE id = ? AND user_email = ? AND kind = 'reminder' AND status = 'pending'")
       .bind(c.id, user)
       .run();
-    return r.meta && r.meta.changes ? "Cancelled reminder #" + c.id + "." : "No pending reminder #" + c.id + ".";
+    return BRAND + (r.meta && r.meta.changes ? "Cancelled reminder #" + c.id + "." : "No pending reminder #" + c.id + ".");
   }
 
   if (c.kind === "reminder") {
@@ -78,15 +78,16 @@ export async function handle(env, user, phone, body, now, code = "") {
 
     if (!at || at <= now) {
       const id = await insert(env, { user, phone, body, kind: "note", now });
-      return "Saved as note #" + id + ", but I couldn't tell when to remind you. " +
+      return BRAND + "Saved as note #" + id + ", but I couldn't tell when to remind you. " +
         "Try e.g. \"" + (code ? code + " " : "") + "remind me tomorrow 9am to " + text + "\".";
     }
     const id = await insert(env, { user, phone, body, kind: "reminder", text, at, now });
-    return "⏰ Got it — I'll text you " + formatLocal(at, tz) + ": " + text + " (#" + id + ", reply \"" + (code ? code + " " : "") + "cancel " + id + "\" to stop)";
+    return BRAND + "Got it, I'll text you " + formatLocal(at, tz) + ": " + text + " (#" + id + "). " +
+      "Reply \"" + (code ? code + " " : "") + "cancel " + id + "\" to stop it, STOP to opt out.";
   }
 
   const id = await insert(env, { user, phone, body, kind: "note", now });
-  return "📝 Saved note #" + id + ".";
+  return BRAND + "Saved note #" + id + ". Reply STOP to opt out.";
 }
 
 async function insert(env, { user, phone, body, kind, text, at, now }) {
@@ -109,15 +110,12 @@ async function listReply(env, user, tz) {
     .prepare("SELECT id, body FROM sms_notes WHERE user_email = ? AND kind = 'note' ORDER BY created_at DESC LIMIT 3")
     .bind(user)
     .all();
-  const lines = [];
   const pr = pending.results || [], nr = notes.results || [];
-  if (pr.length) {
-    lines.push("Reminders:");
-    pr.forEach((r) => lines.push("#" + r.id + " " + formatLocal(new Date(r.remind_at), tz) + " — " + r.remind_text));
-  } else lines.push("No pending reminders.");
+  let out = pr.length
+    ? "Your reminders: " + pr.map((r) => "#" + r.id + " " + formatLocal(new Date(r.remind_at), tz) + " - " + r.remind_text).join("; ") + "."
+    : "No pending reminders.";
   if (nr.length) {
-    lines.push("Latest notes:");
-    nr.forEach((n) => lines.push("#" + n.id + " " + (n.body.length > 60 ? n.body.slice(0, 57) + "…" : n.body)));
+    out += " Latest notes: " + nr.map((n) => "#" + n.id + " " + (n.body.length > 60 ? n.body.slice(0, 57) + "…" : n.body)).join("; ");
   }
-  return lines.join("\n");
+  return BRAND + out;
 }
