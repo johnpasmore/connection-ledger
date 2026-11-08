@@ -152,7 +152,7 @@
   .hal-row span:first-child{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-right:6px}
   .hal-next{font-size:13px;color:var(--ink);line-height:1.5;margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
   .hal-next b{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-right:6px;font-weight:600}
-  /* Hal chat */
+  /* John chat */
   .hal-chat{display:flex;flex-direction:column;gap:12px;max-width:820px;margin:0 auto}
   #panel-hal>.lede{max-width:820px;margin-left:auto;margin-right:auto}
   .hal-log{display:flex;flex-direction:column;gap:14px;min-height:280px;padding:4px 2px}
@@ -203,6 +203,24 @@
   .hal-convo-ctrls{margin-top:6px}
   .hal-think{align-self:flex-start;font-size:13px;color:var(--faint);font-style:italic}
   #hal-setup{color:var(--accent);font-weight:600}
+  /* Notes (texts & reminders) */
+  .nt-row{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:11px 14px;margin-bottom:8px}
+  .nt-ico{font-size:16px;line-height:1.4}
+  .nt-main{flex:1;min-width:0}
+  .nt-body{font-size:14px;line-height:1.5;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .nt-meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px}
+  .nt-pill{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--ink-soft);margin-left:6px}
+  .nt-pill.pending{background:var(--accent);color:var(--paper)}
+  .nt-acts{display:flex;gap:6px}
+  .sms-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px 16px;margin-bottom:12px}
+  .sms-card h4{margin:0 0 4px;font-size:14px}
+  .sms-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 14px;margin-top:10px}
+  .sms-grid label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:4px}
+  .sms-grid input{width:100%;box-sizing:border-box;font-size:13.5px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+  .sms-app{display:grid;grid-template-columns:110px 1fr 2fr auto;gap:8px;margin-top:8px;align-items:center}
+  .sms-app input{min-width:0;font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+  @media (max-width:640px){.sms-app{grid-template-columns:1fr 1fr}.sms-app input[data-k="forward_url"]{grid-column:1/-1}}
+  .sms-hook{font-family:var(--mono);font-size:12px;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:4px 8px;user-select:all;word-break:break-all}
   /* Recap email */
   .rc-bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:16px 0 14px}
   .rc-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
@@ -219,7 +237,7 @@
   .corr-item{font-size:12.5px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-left:3px solid var(--ink);border-radius:6px;padding:6px 9px;margin-bottom:5px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;line-height:1.45}
   .corr-del{border:none;background:none;color:var(--faint);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}.corr-del:hover{color:var(--accent)}
   .corr-add{border:1px dashed var(--line);background:none;color:var(--ink-soft);cursor:pointer;font-size:12px;font-family:var(--sans);border-radius:6px;padding:5px 10px;margin-top:2px}.corr-add:hover{border-color:var(--accent);color:var(--accent)}
-  /* Pop-up Ask Hal */
+  /* Pop-up Ask John */
   .hal-fab{position:fixed;right:20px;bottom:20px;z-index:900;display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;border:none;border-radius:24px;padding:11px 18px;font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.22)}
   .hal-fab:hover{filter:brightness(1.05)}
   .hal-fab span{letter-spacing:.01em}
@@ -293,7 +311,7 @@
   </div>
   <nav class="tabs">
     <div class="navgroup">
-      <button class="navtop active" data-tab="hal">Hal</button>
+      <button class="navtop active" data-tab="hal">John</button>
     </div>
     <div class="navgroup">
       <button class="navtop" data-tab="accounts">Accounts</button>
@@ -315,6 +333,9 @@
       </div>
     </div>
     <div class="navgroup">
+      <button class="navtop" data-tab="notes">Notes</button>
+    </div>
+    <div class="navgroup">
       <button class="navtop" data-tab="dashboard">Analytics</button>
     </div>
     <div class="navgroup">
@@ -324,14 +345,14 @@
 
   <!-- ============ HAL TAB ============ -->
   <section class="panel active" id="panel-hal">
-    <p class="lede">Hal is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
+    <p class="lede">John is your sales partner. He’s read your key accounts — and, once you connect Google, your recent email with them — so you can ask what to do next and draft the emails together. <span id="hal-setup"></span></p>
     <div class="hal-chat">
-      <div class="hal-tools"><button type="button" id="hal-lookup" class="hal-clear" title="Ask Hal about any org or person in your email">🔎 Look up</button><button type="button" id="hal-attach" class="hal-clear" title="Attach a CSV list, then ask “Who should I add?”">📎 Attach CSV</button><span id="hal-csvchip" class="hal-clear" style="display:none"></span><input type="file" id="hal-file" accept=".csv" class="hidden"><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="hal-speak" title="Read Hal’s replies aloud">🔊 Speak: off</button><button type="button" class="hal-stop" title="Stop Hal speaking" style="display:none">⏹ Stop</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
+      <div class="hal-tools"><button type="button" id="hal-lookup" class="hal-clear" title="Ask John about any org or person in your email">🔎 Look up</button><button type="button" id="hal-attach" class="hal-clear" title="Attach a CSV list, then ask “Who should I add?”">📎 Attach CSV</button><span id="hal-csvchip" class="hal-clear" style="display:none"></span><input type="file" id="hal-file" accept=".csv" class="hidden"><select class="hal-voice" title="John’s voice"></select><button type="button" class="hal-speak" title="Read John’s replies aloud">🔊 Speak: off</button><button type="button" class="hal-stop" title="Stop John speaking" style="display:none">⏹ Stop</button><button type="button" id="hal-clear" class="hal-clear" title="Clear this conversation">🗑 Clear chat</button></div>
       <div id="hal-log" class="hal-log"></div>
       <div class="hal-chips" id="hal-chips"></div>
       <div class="hal-bar">
-        <textarea id="hal-q" rows="1" placeholder="Ask Hal…"></textarea>
-        <button type="button" class="hal-talk" title="Hands-free conversation with Hal">🎙 Talk</button>
+        <textarea id="hal-q" rows="1" placeholder="Ask John…"></textarea>
+        <button type="button" class="hal-talk" title="Hands-free conversation with John">🎙 Talk</button>
         <button class="btn primary" id="hal-send">Send</button>
       </div>
     </div>
@@ -340,10 +361,11 @@
   <!-- ============ SETTINGS TAB ============ -->
   <section class="panel" id="panel-settings">
     <p class="lede">Everything you connect and upload, in one place — your AI engine &amp; voice keys, Google connection, and LinkedIn imports. All of it stays in your browser.</p>
-    <div style="margin:20px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">AI engine &amp; voice · Hal’s context</div><div id="set-ai"></div></div>
-    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Google — Calendar &amp; Gmail (in-browser)</div><div id="set-google"></div><p class="note" style="margin-top:8px">Read-only calendar + sent mail, straight from your browser to Google. Powers Hal’s live reads on Accounts and Follow-ups.</p></div>
+    <div style="margin:20px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">AI engine &amp; voice · John’s context</div><div id="set-ai"></div></div>
+    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Google — Calendar &amp; Gmail (in-browser)</div><div id="set-google"></div><p class="note" style="margin-top:8px">Read-only calendar + sent mail, straight from your browser to Google. Powers John’s live reads on Accounts and Follow-ups.</p></div>
     <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">LinkedIn imports</div><div id="set-uploads" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"></div><p class="note" style="margin-top:8px">Import your LinkedIn export CSVs — Connections, Invitations, and Messages. Data stays in your browser.</p></div>
-    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Weekly recap &amp; server-side email</div><p class="note">The Monday-7am recap and Hal’s server-side Gmail search use a one-time offline Google grant — connect it on <b>Conversations → Recap email</b>.</p></div>
+    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Weekly recap &amp; server-side email</div><p class="note">The Monday-7am recap and John’s server-side Gmail search use a one-time offline Google grant — connect it on <b>Conversations → Recap email</b>.</p></div>
+    <div style="margin:26px 0 6px"><div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px">Texting (Twilio) · notes &amp; reminders</div><div id="set-sms"><p class="note">Loading…</p></div></div>
   </section>
 
   <!-- ============ LEDGER TAB ============ -->
@@ -402,7 +424,7 @@
     <div class="keybar" id="lr-keybar">
       <div class="f"><label class="fld">Anthropic API key</label><input id="lr-apikey" type="password" placeholder="sk-ant-…"></div>
       <div class="f"><label class="fld">Model</label><input id="lr-model" placeholder="claude-sonnet-4-5"></div>
-      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal engine — which model powers Hal (briefs + chat)</label>
+      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">John engine — which model powers John (briefs + chat)</label>
         <select id="lr-halprovider" style="font-family:var(--sans);font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink)">
           <option value="anthropic">Claude (Anthropic key above)</option>
           <option value="latimer">Latimer (GPT models)</option>
@@ -412,16 +434,16 @@
         <select id="lr-latimermodel" style="font-family:var(--sans);font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink)">
           <option value="gpt-5">gpt-5</option><option value="gpt-5.6-sol">gpt-5.6-sol</option><option value="gpt-5.4">gpt-5.4</option><option value="gpt-5.1">gpt-5.1</option><option value="gpt-5-mini">gpt-5-mini</option><option value="gpt-4o">gpt-4o</option><option value="gpt-4o-mini">gpt-4o-mini</option><option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
         </select></div>
-      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal’s voice — ElevenLabs (optional; for a custom/cloned voice)</label>
+      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">John’s voice — ElevenLabs (optional; for a custom/cloned voice)</label>
         <div class="note" style="margin:2px 0 6px">Add your key + voice ID, then pick <b>“My ElevenLabs voice”</b> from the voice selector next to the chat. Leave blank to use a browser voice.</div></div>
       <div class="f"><label class="fld">ElevenLabs API key (starts with sk_)</label><input id="lr-elkey" type="password" placeholder="sk_… — create/rotate in ElevenLabs → API Keys (not the key ID)"></div>
       <div class="f"><label class="fld">ElevenLabs voice ID</label><input id="lr-elvoice" placeholder="voice id"></div>
       <div class="f" style="flex-basis:100%"><button type="button" class="btn sm" id="lr-eltest">🔊 Test voice</button> <span id="lr-elteststatus" style="font-size:12.5px;color:var(--ink-soft);margin-left:8px"></span></div>
-      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">Hal’s context — company facts Hal always knows (used in chat, briefs &amp; recaps)</label><textarea id="lr-company" rows="4" style="width:100%;box-sizing:border-box;font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;resize:vertical"></textarea></div>
-      <div class="f" style="flex-basis:100%"><label class="fld">Off-limits — Hal always refuses these &amp; excludes them from email lookups (domains, emails, or keywords, comma/newline separated)</label><textarea id="lr-offlimits" rows="2" placeholder="e.g. myinvestor.com, family, mychildname, drsmith@…, personal" style="width:100%;box-sizing:border-box;font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;resize:vertical"></textarea><div class="note" style="margin-top:4px">Personal life, family, medical, investors, and vendors are always off-limits regardless of this list. Add specific domains/addresses here to be sure.</div></div>
+      <div class="f" style="flex-basis:100%;border-top:1px solid var(--line);padding-top:12px;margin-top:4px"><label class="fld">John’s context — company facts John always knows (used in chat, briefs &amp; recaps)</label><textarea id="lr-company" rows="4" style="width:100%;box-sizing:border-box;font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;resize:vertical"></textarea></div>
+      <div class="f" style="flex-basis:100%"><label class="fld">Off-limits — John always refuses these &amp; excludes them from email lookups (domains, emails, or keywords, comma/newline separated)</label><textarea id="lr-offlimits" rows="2" placeholder="e.g. myinvestor.com, family, mychildname, drsmith@…, personal" style="width:100%;box-sizing:border-box;font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;resize:vertical"></textarea><div class="note" style="margin-top:4px">Personal life, family, medical, investors, and vendors are always off-limits regardless of this list. Add specific domains/addresses here to be sure.</div></div>
       <div class="f" style="flex-basis:100%"><label class="fld">Salesforce logging address (Email-to-Salesforce)</label><input id="lr-sfaddr" placeholder="emailtosalesforce@…"></div>
       <button class="btn sm primary" id="lr-savekey">Save settings</button>
-      <div class="note">Stored only in this browser, never embedded in the page. Keys go straight to their provider (Anthropic or Latimer). Switching Hal’s engine keeps everything Hal remembers — briefs, corrections, chat. The Salesforce address is the To: line when you log an activity.</div>
+      <div class="note">Stored only in this browser, never embedded in the page. Keys go straight to their provider (Anthropic or Latimer). Switching John’s engine keeps everything John remembers — briefs, corrections, chat. The Salesforce address is the To: line when you log an activity.</div>
     </div>
     <div id="vault">
       <span style="font-size:13px;font-weight:600">Saved leads: <span id="vault-count">0</span></span>
@@ -508,7 +530,7 @@
 
   <!-- ============ RECAP EMAIL TAB ============ -->
   <section class="panel" id="panel-recap">
-    <p class="lede">A recap of your email activity with prospect accounts over a period — with a section you can copy to Scott and one to copy to Barika. Hal writes it from your Gmail; it opens a prefilled email to john@latimer.ai. Connect Google first.</p>
+    <p class="lede">A recap of your email activity with prospect accounts over a period — with a section you can copy to Scott and one to copy to Barika. John writes it from your Gmail; it opens a prefilled email to john@latimer.ai. Connect Google first.</p>
     <div class="rc-bar">
       <span class="rc-lbl">Period</span>
       <button class="btn sm rc-period" data-days="7">1 week</button>
@@ -523,7 +545,7 @@
     </div>
     <div id="rc-auto" style="margin-top:22px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surface)">
       <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px">📆 Automatic weekly email <span id="rc-auto-badge" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--ink-soft)">checking…</span></div>
-      <p class="note" style="margin:6px 0 10px">Hal sends this recap to <b>john@latimer.ai</b> every <b>Monday 7:00am (ET)</b> — even with your browser closed. Connect Google once for offline read + send access; the token is stored encrypted and used only for the weekly send.</p>
+      <p class="note" style="margin:6px 0 10px">John sends this recap to <b>john@latimer.ai</b> every <b>Monday 7:00am (ET)</b> — even with your browser closed. Connect Google once for offline read + send access; the token is stored encrypted and used only for the weekly send.</p>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn sm primary" id="rc-auto-connect">Connect Google for weekly send</button>
         <span id="rc-auto-info" style="font-size:12px;color:var(--ink-soft)"></span>
@@ -531,15 +553,29 @@
     </div>
   </section>
 
+  <!-- ============ NOTES TAB (texts & reminders via Twilio) ============ -->
+  <section class="panel" id="panel-notes">
+    <p class="lede">Text anything to the Twilio number from your cell and it lands here as a note. Ask for a reminder — <i>“remind me tomorrow 9am to call Scott”</i> — and John texts you back at that time. <b>list</b> shows what’s pending, <b>cancel 12</b> stops reminder #12. Register your cell in <a href="#settings" onclick="activateTab('settings');return false">Settings</a>.</p>
+    <div class="rc-bar">
+      <span class="rc-lbl">Show</span>
+      <button class="btn sm rc-period on" data-nf="all">All</button>
+      <button class="btn sm rc-period" data-nf="reminder">Reminders</button>
+      <button class="btn sm rc-period" data-nf="note">Notes</button>
+      <button class="btn sm" id="nt-refresh">Refresh</button>
+      <span id="nt-status" style="font-size:12.5px;color:var(--ink-soft)"></span>
+    </div>
+    <div id="nt-list"></div>
+  </section>
+
   <!-- ============ DASHBOARD TAB ============ -->
   <!-- ============ ACCOUNTS TAB ============ -->
   <section class="panel" id="panel-accounts">
-    <p class="lede">Your key institutional accounts, ranked into a short "act now" list by stage, importance, and how long since your last touch. Connect Google and let Hal read the recent thread for each account — he writes a short brief (where it stands, who owes a reply, and the best next move) and remembers what he’s already read, so he only re-reads threads that changed.</p>
+    <p class="lede">Your key institutional accounts, ranked into a short "act now" list by stage, importance, and how long since your last touch. Connect Google and let John read the recent thread for each account — he writes a short brief (where it stands, who owes a reply, and the best next move) and remembers what he’s already read, so he only re-reads threads that changed.</p>
     <div class="acct-sum" id="acct-sum"></div>
     <div class="acct-bar">
       <button class="btn sm" id="acct-add">+ Add account</button>
       <button class="btn sm" id="acct-sync">↻ Refresh from Gmail</button>
-      <button class="btn sm" id="acct-hal">🧠 Have Hal read threads</button>
+      <button class="btn sm" id="acct-hal">🧠 Have John read threads</button>
       <span id="acct-gstatus" style="font-size:12px;font-weight:600"></span>
       <span id="acct-syncnote" style="font-size:12px;color:var(--faint);flex-basis:100%">Refresh pulls last-touch &amp; who-owes-a-reply from your Gmail (dates &amp; senders only, no message text). Connect Google on the Follow-ups tab first.</span>
     </div>
@@ -705,6 +741,7 @@ function activateTab(tab){
   if(tab==='accounts'&&window.renderAccounts)window.renderAccounts();
   if(tab==='hal'&&window.renderHal)window.renderHal();
   if(tab==='recap'&&window.renderRecap)window.renderRecap();
+  if(tab==='notes'&&window.renderNotes)window.renderNotes();
   if(tab==='settings'&&window.renderSettings)window.renderSettings();
   if(window.halSyncFab)window.halSyncFab();
 }
@@ -715,10 +752,10 @@ window.activateTab=activateTab;
 window.renderSettings=function(){
   var host=document.getElementById('panel-settings');if(!host||host._built)return;host._built=true;
   function link(txt){var a=document.createElement('a');a.href='#settings';a.style.cssText='font-size:12.5px;color:var(--accent);cursor:pointer;margin-left:2px';a.textContent=txt;a.onclick=function(e){e.preventDefault();activateTab('settings');};return a;}
-  // 1) AI engine + voice + Hal's context (from Lead Router "Edit API")
+  // 1) AI engine + voice + John's context (from Lead Router "Edit API")
   var kb=document.getElementById('lr-keybar'),ai=document.getElementById('set-ai');
   if(kb&&ai){kb.style.display='flex';ai.appendChild(kb);}
-  var lt=document.getElementById('lr-toggle');if(lt){lt.style.display='none';if(lt.parentNode&&!lt.parentNode._ptr){lt.parentNode._ptr=1;lt.parentNode.appendChild(link('⚙ AI keys, voice & Hal’s context are in Settings'));}}
+  var lt=document.getElementById('lr-toggle');if(lt){lt.style.display='none';if(lt.parentNode&&!lt.parentNode._ptr){lt.parentNode._ptr=1;lt.parentNode.appendChild(link('⚙ AI keys, voice & John’s context are in Settings'));}}
   // 2) Google — Calendar + Gmail (from Follow-ups "Set up")
   var fs=document.getElementById('fu-setup'),gg=document.getElementById('set-google');
   if(fs&&gg){fs.style.display='flex';gg.appendChild(fs);}
@@ -855,7 +892,7 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
     const freq={};rows.forEach(r=>{const fr=pick(r,['from']);if(fr)freq[fr]=(freq[fr]||0)+1;});
     let self='',mx=-1;for(const k in freq){if(freq[k]>mx){mx=freq[k];self=k;}}
     const conv={};let unparsed=0,newest='';
-    const recs=[]; // full message records (text) for Hal's search
+    const recs=[]; // full message records (text) for John's search
     const monthly={};const mo=k=>monthly[k]||(monthly[k]={sent:0,recv:0,started:0,replied:0});
     rows.forEach(r=>{
       const cid=pick(r,['conversation id'])||pick(r,['conversation title'])||'_';
@@ -883,7 +920,7 @@ document.addEventListener('click',function(e){if(!e.target.closest('.navgroup'))
       upsert({name,profileUrl:url,messaged:true,replied,actionDate:c.last,lastMessageDate:c.last});
     });
     try{localStorage.setItem('ledger:msgstats',JSON.stringify({months:monthly,updatedAt:new Date().toISOString()}));}catch(e){}
-    // Store the message bodies (newest first, capped) so Hal can search them.
+    // Store the message bodies (newest first, capped) so John can search them.
     // Compressed in localStorage via lsSetLarge; synced to cloud verbatim.
     try{
       recs.sort(function(a,b){return String(b.date||'').localeCompare(String(a.date||''));});
@@ -1242,7 +1279,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     const anth=!!lsGet(AKEY,'').trim(), lat=!!lsGet(LKEY,'').trim();
     const engine=prov==='latimer'?('Latimer · '+(lsGet(LMODEL,'gpt-5'))):('Claude · '+(lsGet(MKEY,'claude-sonnet-4-5')));
     const ready=prov==='latimer'?lat:anth;
-    g('lr-connstatus').textContent=(anth?'Anthropic API connected ✓':'No Anthropic key yet.')+' · Hal engine: '+engine+(ready?' ✓':' — add its key');
+    g('lr-connstatus').textContent=(anth?'Anthropic API connected ✓':'No Anthropic key yet.')+' · John engine: '+engine+(ready?' ✓':' — add its key');
     g('lr-toggle').textContent=(anth||lat)?'Edit API':'Add API';
     g('lr-keybar').style.display=(anth||lat)?'none':'flex';
   }
@@ -1491,9 +1528,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   document.addEventListener('mouseout',function(e){var el=e.target.closest?e.target.closest('[data-tip]'):null;if(!el)return;var t=document.getElementById('dash-tip');if(t)t.classList.remove('show');});
 })();
 
-/* ===== Hal model provider — swappable engine (Claude ⇄ Latimer/Gemini) =====
-   Every Hal model call (briefs + chat) routes through window.halLLM, so switching
-   engines never touches Hal's memory (briefs, corrections, history all persist). */
+/* ===== John model provider — swappable engine (Claude ⇄ Latimer/Gemini) =====
+   Every John model call (briefs + chat) routes through window.halLLM, so switching
+   engines never touches John's memory (briefs, corrections, history all persist). */
 (function(){
   function ls(k,d){try{var v=localStorage.getItem(k);return (v==null||v==='')?d:v;}catch(e){return d;}}
   function provider(){return ls('hal:provider','anthropic');}
@@ -1501,7 +1538,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function anthroModel(){return ls('router:model','claude-sonnet-4-5');}
   function latimerKey(){return ls('hal:latimerkey','');}
   function latimerModel(){return ls('hal:latimermodel','gpt-5');}
-  // Shared company/sales context injected into every Hal prompt (chat, briefs,
+  // Shared company/sales context injected into every John prompt (chat, briefs,
   // recap). Editable on the Lead Router tab (hal:company).
   var COMPANY_DEFAULT="You work for Latimer.AI and always operate from JP's sales perspective — every conversation is about selling and expanding Latimer.AI. Latimer.AI sells AI software to colleges and universities, with a focus on HBCUs and access-minded institutions. Typical deal motion: an institution starts on a trial, and the goal is to convert that trial into a PAID account priced at $3 per student per month. Keep guidance practical, specific, and oriented toward moving each account toward that paid conversion.";
   window.halCompanyDefault=COMPANY_DEFAULT;
@@ -1509,7 +1546,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   // Off-limits list (domains/emails/keywords) JP maintains; used both to filter
   // Gmail lookups and to name hard boundaries in the guardrails.
   window.halOffLimits=function(){try{return (localStorage.getItem('hal:offlimits')||'').split(/[\n,]/).map(function(s){return s.trim();}).filter(Boolean);}catch(e){return [];}};
-  // Always-on scope/privacy guardrails, appended to every Hal prompt.
+  // Always-on scope/privacy guardrails, appended to every John prompt.
   window.halGuardrails=function(){
     var ol=window.halOffLimits();
     return '\n\n=== SCOPE & PRIVACY GUARDRAILS (always follow, no exceptions) ===\n'
@@ -1519,14 +1556,14 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +(ol.length?('\n Additional hard off-limits (never discuss or reveal; treat any matching sender/domain/keyword as private): '+ol.join(', ')+'.'):'');
   };
   window.halProvider=function(){return provider();};
-  // A server-side model key (Cloudflare secret) means Hal works with NO local key on
+  // A server-side model key (Cloudflare secret) means John works with NO local key on
   // any signed-in device — e.g. JP's iPhone — without re-entering anything. Check
   // once on load which engines the server has configured (booleans only).
   window.__halServerEngine=window.__halServerEngine||{latimer:false,anthropic:false};
   try{fetch('/api/hal/engine',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(j&&j.engines){window.__halServerEngine={latimer:!!j.engines.latimer,anthropic:!!j.engines.anthropic};try{if(window.paint)window.paint();}catch(e){}}}).catch(function(){});}catch(e){}
   window.halConfigured=function(){var se=window.__halServerEngine||{};return provider()==='latimer'?(!!latimerKey()||!!se.latimer):(!!anthroKey()||!!se.anthropic);};
   window.halEngineLabel=function(){return provider()==='latimer'?('Latimer · '+latimerModel()):('Claude · '+anthroModel());};
-  window.halNeedsKeyMsg=function(){return provider()==='latimer'?'Add your Latimer API key on the Lead Router tab (choose Latimer under “Hal engine”).':'Add your Anthropic API key on the Lead Router tab.';};
+  window.halNeedsKeyMsg=function(){return provider()==='latimer'?'Add your Latimer API key on the Lead Router tab (choose Latimer under “John engine”).':'Add your Anthropic API key on the Lead Router tab.';};
   // Read the assistant text out of Latimer's response defensively (output field
   // wasn't in the docs example; try the likely names, then surface the raw shape).
   function extractLatimer(j){
@@ -1594,7 +1631,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   };
 })();
 
-/* ===== Accounts tab — key-account funnel + "Act now" prioritizer (Phase 1 of Hal) ===== */
+/* ===== Accounts tab — key-account funnel + "Act now" prioritizer (Phase 1 of John) ===== */
 (function(){
   var KEY='ledger:accounts';
   var SEED=[
@@ -1682,7 +1719,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +'<input data-f="domainsStr" style="width:150px" value="'+esc((a.domains||[]).join(', '))+'" title="Email domains (comma-separated) — used to match Gmail">'
       +'<input class="ns" data-f="nextStep" placeholder="Next step…" value="'+esc(a.nextStep||'')+'">'
       +'<button class="btn sm" data-act="touch">Log touch</button>'
-      +'<button class="btn sm" data-act="brief" title="Have Hal read this account’s recent emails">'+(a.brief?'🧠 Re-read':'🧠 Hal read')+'</button>'
+      +'<button class="btn sm" data-act="brief" title="Have John read this account’s recent emails">'+(a.brief?'🧠 Re-read':'🧠 John read')+'</button>'
       +'<button class="del" data-act="del" title="Remove">×</button>'
       +'</div></div></div>';
   }
@@ -1700,7 +1737,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       el.querySelectorAll('[data-f]').forEach(function(inp){inp.onchange=function(){var f=inp.getAttribute('data-f');if(f==='cadence')a.cadence=(+inp.value||14);else if(f==='domainsStr')a.domains=inp.value.split(',').map(function(s){return s.trim();}).filter(Boolean);else a[f]=inp.value;save();if(f==='stage'||f==='cadence')window.renderAccounts();};});
       var t=el.querySelector('[data-act="touch"]');if(t)t.onclick=function(){a.lastTouch=today();save();window.renderAccounts();if(window.toast)window.toast('Logged a touch with '+a.name);};
       var br=el.querySelector('[data-act="brief"]');if(br)br.onclick=function(){br.disabled=true;br.textContent='🧠 reading…';briefOne(a);};
-      var cor=el.querySelector('[data-act="correct"]');if(cor)cor.onclick=function(){var t=prompt('What should Hal get right about '+a.name+'?\n\nExamples:\n• "Budget is NOT confirmed yet"\n• "Main contact is the CIO, not the provost"\n• "They pushed the decision to next semester"\n\nHal treats this as ground truth over what he read.');if(!t||!t.trim())return;a.corrections=a.corrections||[];a.corrections.push({text:t.trim(),at:new Date().toISOString()});save();window.renderAccounts();if(window.toast)window.toast('Noted — Hal will use that from now on.');};
+      var cor=el.querySelector('[data-act="correct"]');if(cor)cor.onclick=function(){var t=prompt('What should John get right about '+a.name+'?\n\nExamples:\n• "Budget is NOT confirmed yet"\n• "Main contact is the CIO, not the provost"\n• "They pushed the decision to next semester"\n\nHal treats this as ground truth over what he read.');if(!t||!t.trim())return;a.corrections=a.corrections||[];a.corrections.push({text:t.trim(),at:new Date().toISOString()});save();window.renderAccounts();if(window.toast)window.toast('Noted — John will use that from now on.');};
       el.querySelectorAll('.corr-del').forEach(function(bd){bd.onclick=function(){var i=+bd.getAttribute('data-corr');if(a.corrections)a.corrections.splice(i,1);save();window.renderAccounts();};});
       var d=el.querySelector('[data-act="del"]');if(d)d.onclick=function(){if(!confirm('Remove '+a.name+' from the funnel?'))return;accts=accts.filter(function(x){return x.id!==id;});save();window.renderAccounts();};
     });
@@ -1727,7 +1764,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var gq=acctQuery(a,'newer_than:1y');
     if(!gq)return false;
     // Read via the server-side offline token (john@latimer.ai mailbox) — the same
-    // one Hal's chat search uses — so the Accounts tab sees the same email the chat
+    // one John's chat search uses — so the Accounts tab sees the same email the chat
     // does, no matter which Google account is connected in the browser.
     var j;
     try{var r=await fetch('/api/gmail/thread?max=1&gq='+encodeURIComponent(gq),{credentials:'same-origin'});if(!r.ok)return false;j=await r.json();}catch(e){return false;}
@@ -1745,8 +1782,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     try{localStorage.setItem('accounts:lastscan',String(Date.now()));}catch(e){}
     var n2=document.getElementById('acct-syncnote');if(n2)n2.textContent='Updated from Gmail · '+matched+' of '+accts.length+' had recent threads';
   }
-  /* ===== Hal's brain — per-account email brief (index + LLM summary) =====
-     Hal reads the recent thread for an account, summarizes it into a compact
+  /* ===== John's brain — per-account email brief (index + LLM summary) =====
+     John reads the recent thread for an account, summarizes it into a compact
      brief (signals only, never raw bodies), and remembers the newest message he
      saw (lastMsgId) so he doesn't re-read a thread that hasn't changed.
      The model call routes through window.halLLM — the shared, swappable engine
@@ -1757,7 +1794,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return await window.halLLM(system,[{role:'user',content:user}],maxTokens||800);
   }
   // Calendar lines for an account's brief — meetings on JP's calendar related to it,
-  // so Hal knows what already happened. Best-effort: silently empty if the offline
+  // so John knows what already happened. Best-effort: silently empty if the offline
   // Google grant has no Calendar scope yet (JP re-grants via the Recap tab's connect).
   async function acctCalLines(a){
     var terms=[];try{terms=acctSearchNames(a);}catch(e){terms=[];}
@@ -1798,7 +1835,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // server returns newest-first; the brief wants the thread oldest-first
     var convo=res.messages.slice().reverse().map(function(m){var who=m.fromMe?'ME':(m.from||'them');return '['+(m.dateISO||'').slice(0,10)+'] '+who+' — '+m.subject+'\n'+(m.body||'').slice(0,1500);}).join('\n\n---\n\n');
     var cal='';try{cal=await acctCalLines(a);}catch(e){}
-    var system='You are Hal, an AI sales partner for Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' You read the recent email thread (and any calendar meetings) with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts. IMPORTANT: if the CALENDAR shows a meeting already happened (a past date), treat it as DONE — never suggest scheduling or "setting a date" for something that already occurred; reflect that it happened and recommend the right follow-up.'+(window.halGuardrails?window.halGuardrails():'');
+    var system='You are John, an AI sales partner for Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' You read the recent email thread (and any calendar meetings) with one institutional account and produce a tight, factual brief the salesperson (JP, '+me+') can act on. Be specific and concise. Never invent facts. IMPORTANT: if the CALENDAR shows a meeting already happened (a past date), treat it as DONE — never suggest scheduling or "setting a date" for something that already occurred; reflect that it happened and recommend the right follow-up.'+(window.halGuardrails?window.halGuardrails():'');
     var corr=(a.corrections&&a.corrections.length)?('\n\nGROUND TRUTH from JP — trust these over anything the email implies, and reflect them in your brief:\n- '+a.corrections.map(function(c){return c.text;}).join('\n- ')):'';
     var user='ACCOUNT: '+a.name+' — '+stageLabel(a.stage)+', '+a.tier+' tier.\nCONTEXT NOTE: '+(a.note||'—')+corr+(cal?('\n\n'+cal):'')+'\n\nRECENT EMAIL THREAD (oldest first; "ME" = JP / Latimer):\n\n'+convo+'\n\nRespond with ONLY a JSON object, no markdown, no backticks, no preamble:\n{"summary":"one sentence on where this relationship stands right now","stageRead":"your read on the real stage / temperature in a few words","intent":"what they seem to want, or their level of interest","openQuestions":["specific unanswered questions or things awaiting action, max 3"],"whoOwesReply":"you|them|nobody","nextMove":"the single best next action JP should take","draftHint":"one-line angle for JP\'s next email"}';
     var txt=(await halComplete(system,user,800)).replace(/```json|```/g,'').trim();
@@ -1814,30 +1851,30 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var note=document.getElementById('acct-syncnote');
     if(!halKey()){if(note)note.textContent=halKeyMsg();if(window.toast)window.toast(halKeyMsg());return;}
     ensure();var did=0,cached=0,none=0;
-    var btn=document.getElementById('acct-hal');if(btn){btn.disabled=true;btn.textContent='🧠 Hal is reading…';}
+    var btn=document.getElementById('acct-hal');if(btn){btn.disabled=true;btn.textContent='🧠 John is reading…';}
     for(var i=0;i<accts.length;i++){var a=accts[i];
-      if(note)note.textContent='Hal is reading '+a.name+' ('+(i+1)+'/'+accts.length+')…';
+      if(note)note.textContent='John is reading '+a.name+' ('+(i+1)+'/'+accts.length+')…';
       try{var r=await buildBrief(a,force);if(r.ok)did++;else if(r.cached)cached++;else none++;}
       catch(e){if(String(e&&e.message).indexOf('NOKEY')>=0){if(note)note.textContent='No API key — add it on the Lead Router tab.';break;} none++;}
       save();window.renderAccounts();
     }
-    if(btn){btn.disabled=false;btn.textContent='🧠 Have Hal read threads';}
+    if(btn){btn.disabled=false;btn.textContent='🧠 Have John read threads';}
     save();window.renderAccounts();
-    var n2=document.getElementById('acct-syncnote');if(n2)n2.textContent='Hal read '+did+' updated · '+cached+' already current · '+none+' with no new thread';
+    var n2=document.getElementById('acct-syncnote');if(n2)n2.textContent='John read '+did+' updated · '+cached+' already current · '+none+' with no new thread';
   }
   async function briefOne(a){
     var note=document.getElementById('acct-syncnote');
     if(!halKey()){if(window.toast)window.toast(halKeyMsg());return;}
-    if(note)note.textContent='Hal is reading '+a.name+'…';
-    try{var r=await buildBrief(a,true);save();window.renderAccounts();if(note)note.textContent=r.ok?('Hal updated the brief for '+a.name):('No thread found for '+a.name+(r.skip?' ('+r.skip+')':''));}
-    catch(e){if(note)note.textContent='Hal error: '+(e&&e.message?e.message:e);}
+    if(note)note.textContent='John is reading '+a.name+'…';
+    try{var r=await buildBrief(a,true);save();window.renderAccounts();if(note)note.textContent=r.ok?('John updated the brief for '+a.name):('No thread found for '+a.name+(r.skip?' ('+r.skip+')':''));}
+    catch(e){if(note)note.textContent='John error: '+(e&&e.message?e.message:e);}
   }
   function halBrief(b){
     if(!b)return '';
     var owe=b.whoOwesReply==='you'?'<span class="hal-tag you">you owe a reply</span>':(b.whoOwesReply==='them'?'<span class="hal-tag them">awaiting them</span>':'');
     var oq=(b.openQuestions&&b.openQuestions.length)?'<div class="hal-row"><span>Open</span> '+b.openQuestions.map(esc).join(' · ')+'</div>':'';
     return '<div class="hal">'
-      +'<div class="hal-h">Hal’s read'+owe+'<span class="hal-when">'+(b.updatedAt?fmt(b.updatedAt):'')+'</span></div>'
+      +'<div class="hal-h">John’s read'+owe+'<span class="hal-when">'+(b.updatedAt?fmt(b.updatedAt):'')+'</span></div>'
       +'<div class="hal-sum">'+esc(b.summary||'')+'</div>'
       +(b.intent?'<div class="hal-row"><span>Intent</span> '+esc(b.intent)+'</div>':'')
       +oq
@@ -1845,11 +1882,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       +(b.draftHint?'<div class="hal-row"><span>Angle</span> '+esc(b.draftHint)+'</div>':'')
       +'</div>';
   }
-  // Persistent corrections — JP's ground truth that overrides what Hal read.
+  // Persistent corrections — JP's ground truth that overrides what John read.
   function corrHtml(a){
     var items=(a.corrections||[]).map(function(c,i){return '<div class="corr-item">“'+esc(c.text)+'”<button class="corr-del" data-corr="'+i+'" title="Remove">×</button></div>';}).join('');
-    return '<div class="corr">'+(items?'<div class="corr-h">Your corrections — Hal treats these as ground truth</div>'+items:'')
-      +'<button class="corr-add" data-act="correct">✎ Correct Hal'+(a.brief?'':' about this account')+'</button></div>';
+    return '<div class="corr">'+(items?'<div class="corr-h">Your corrections — John treats these as ground truth</div>'+items:'')
+      +'<button class="corr-add" data-act="correct">✎ Correct John'+(a.brief?'':' about this account')+'</button></div>';
   }
   function gbadge(){var el=document.getElementById('acct-gstatus');if(!el)return;var on=!!(window.gConnected&&window.gConnected());if(on){var me=(window.gMyEmail&&window.gMyEmail())||'';el.innerHTML='<span style="color:var(--ink)">●</span> <span style="color:var(--ink-soft)">Google connected'+(me?' — '+esc(me):'')+'</span>';}else{el.innerHTML='<span style="color:var(--accent)">●</span> <a href="#" id="acct-gc" style="color:var(--accent)">Connect Google</a>';var c=document.getElementById('acct-gc');if(c)c.onclick=function(e){e.preventDefault();if(window.gConnect)window.gConnect();setTimeout(gbadge,1800);};}}
   setTimeout(gbadge,1600);setTimeout(gbadge,4200);
@@ -1887,10 +1924,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   setInterval(autoScan,20*60000);     // re-check every 20 min while the tab stays open
 })();
 
-/* ===== Hal tab — chat + co-drafting (Phase 3) =====
-   Hal reasons from the account briefs already on file (the index), so he answers
+/* ===== John tab — chat + co-drafting (Phase 3) =====
+   John reasons from the account briefs already on file (the index), so he answers
    without re-reading email. The model call is isolated in halSend() — swap that
-   one function to move Hal off Claude (e.g. to LatimerAI) later. */
+   one function to move John off Claude (e.g. to LatimerAI) later. */
 (function(){
   var STAGE={paying:'Paying',trial:'Trial',prospect:'Prospect',partner:'Partner'};
   var hist=[];
@@ -1913,12 +1950,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
         var bAge=b.updatedAt?Math.floor((Date.now()-new Date(b.updatedAt))/86400000):null;
         var stale=(bAge!=null&&bAge>10);
         var staleTag=stale?(' [STALE — written '+bAge+' days ago; any trip, campus visit, or meeting it calls “upcoming” has very likely ALREADY HAPPENED by today — do NOT repeat it as an upcoming action; recommend the post-event follow-up (recap/thank-you/next step) or verify before suggesting it]'):'';
-        L.push('   Hal’s brief'+(b.updatedAt?(' ('+b.updatedAt.slice(0,10)+')'):'')+staleTag+': '+(b.summary||''));
+        L.push('   John’s brief'+(b.updatedAt?(' ('+b.updatedAt.slice(0,10)+')'):'')+staleTag+': '+(b.summary||''));
         if(b.intent)L.push('     intent: '+b.intent);
         if(b.openQuestions&&b.openQuestions.length)L.push('     open questions: '+b.openQuestions.join('; '));
         if(b.nextMove)L.push('     suggested next move'+(stale?' (from a stale brief — see note above; re-check before recommending)':'')+': '+b.nextMove);
         if(b.draftHint)L.push('     angle: '+b.draftHint);
-      }else{L.push('   (Hal hasn’t read this account’s email yet — say so if asked for specifics)');}
+      }else{L.push('   (John hasn’t read this account’s email yet — say so if asked for specifics)');}
       if(a.corrections&&a.corrections.length)L.push('   JP’S CORRECTIONS (ground truth — override the brief): '+a.corrections.map(function(c){return c.text;}).join(' | '));
       return L.join('\n');
     }).join('\n\n');
@@ -1926,7 +1963,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function sys(){
     var me=(window.gMyEmail&&window.gMyEmail())||'john@latimer.ai';
     var td=new Date();var tdISO=new Date(td.getTime()-td.getTimezoneOffset()*60000).toISOString().slice(0,10);
-    return 'You are Hal, the AI sales partner inside Latimer.AI’s sales console. You work side by side with JP ('+me+'), the founder and seller. Today is '+td.toDateString()+' ('+tdISO+').\n\n'
+    return 'You are John, the AI sales partner inside Latimer.AI’s sales console. You work side by side with JP ('+me+'), the founder and seller. Today is '+td.toDateString()+' ('+tdISO+').\n\n'
       +'TEMPORAL AWARENESS — READ CAREFULLY. Today is '+td.toDateString()+' ('+tdISO+'). The emails, briefs, next-steps, and notes you see were often written WEEKS AGO and may describe trips, campus visits, meetings, or calls that were PLANNED for dates that have since passed. Before you suggest ANY action, compare its date to today. If an event was scheduled for a date ON OR BEFORE '+tdISO+', it HAS ALREADY HAPPENED — never tell JP to prepare for it, confirm a time for it, travel to it, or attend it. Treat it as done and suggest the follow-up that comes AFTER it instead (send a recap, a thank-you, or the agreed next step). Only suggest preparing for or confirming events dated AFTER today. If a plan mentions a place or meeting but you cannot tell whether it already happened, say so and ask JP rather than assuming it is still upcoming. When the CALENDAR CONTEXT below marks an event "already happened," trust that over any older email that discussed it as upcoming. Each brief shows the date it was written in parentheses, and stale ones are tagged [STALE]; treat a stale brief’s "suggested next move" / "planned next step" as written on that old date — if it names a trip or meeting as upcoming, assume it has since happened and recommend the follow-up, not the prep.\n\n'
       +(window.halCompanyContext?window.halCompanyContext():'')+'\n\n'
       +'You already know the pipeline from the account briefs below. You can ALSO pull JP’s actual recent email on demand: whenever he asks about a specific account, person, or organization (a school, a name, a company, an .edu/.org, or an email domain), the app runs a live full-text search of his Gmail and shows the REAL matching threads — date, sender → recipient, subject, and a short snippet — in a "Recent email" section beneath your reply. So if JP asks whether you can pull actual emails or past conversations, the answer is YES: tell him to name the school, person, or organization and you’ll surface the real threads (you read message metadata and snippets across his whole mailbox, not full stored bodies). NEVER tell JP you "can’t access his email" or "can’t access email history" — you can. If a request is too broad to search on its own (a whole city, region, state, or "everyone"), do NOT refuse or claim you lack access: instead ask him which specific school, person, or organization to pull, and meanwhile suggest the most relevant accounts from the briefs below. Never ask JP to paste email in; reason from what you have, and say plainly when something is not in your notes. Be concise, warm, and specific. Rank by importance, urgency, and who owes a reply. Give concrete next actions, not generic advice.\n\n'
@@ -1979,10 +2016,10 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function bubble(role,html){
     if(role==='user')return '<div class="hal-msg user">'+html+'</div>';
-    return '<div class="hal-msg bot"><div class="who">Hal</div><div class="body">'+html+'</div></div>';
+    return '<div class="hal-msg bot"><div class="who">John</div><div class="body">'+html+'</div></div>';
   }
   var thinking=false,thinkMsg='';
-  // Friendly, first-person line shown while Hal works, so the gap isn't silent.
+  // Friendly, first-person line shown while John works, so the gap isn't silent.
   var TL={
     lookup:['Thanks, John — let me look through your email and LinkedIn conversations, then I’ll pull together a prioritized view.','On it — reading your recent email and LinkedIn history on this, then I’ll lay out the priorities.','Give me a moment — going through your email and LinkedIn so I can prioritize this for you.','Good question — let me pull your recent threads and accounts together before I answer.','Let me check what’s moved recently across your email and accounts, then I’ll walk you through it.','On it — I’ll scan where things stand and surface what matters most.','Give me a second to read the latest and think this through with you.'],
     adds:['Got it — scanning your accounts’ email, your priority contacts, and LinkedIn to build the list.','On it — pulling the real people from your account threads and checking them against your list.','Let me work through your accounts and connections and see who belongs on this list.','One moment — matching your network against the list so I don’t miss anyone.'],
@@ -2001,7 +2038,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var h=hist.length
       ? hist.map(function(t){return t.role==='user'?bubble('user',esc(t.content).replace(/\n/g,'<br>')):bubble('bot',fmtBot(t.content));}).join('')
       : ''; // empty state — no auto briefing; the suggested-prompt chips guide the user
-    if(thinking)h+='<div class="hal-think">'+esc(thinkMsg||'Hal is thinking…')+'</div>';
+    if(thinking)h+='<div class="hal-think">'+esc(thinkMsg||'John is thinking…')+'</div>';
     return h;
   }
   function paint(){
@@ -2022,13 +2059,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   }
   function greeting(){
     var A=loadAccts();
-    if(!A.length)return 'Hi JP — I’m Hal. Add your key accounts on the **Accounts** tab and I’ll help you work them. Ask me anything once they’re in.';
+    if(!A.length)return 'Hi JP — I’m John. Add your key accounts on the **Accounts** tab and I’ll help you work them. Ask me anything once they’re in.';
     function score(a){var t=a.tier==='flagship'?100:a.tier==='high'?60:30;var s=a.stage==='trial'?40:a.stage==='prospect'?25:a.stage==='partner'?18:12;var x=t+s;if(a.urgent)x+=50;if(a.replyOwed==='you')x+=40;var d=a.lastTouch?Math.floor((Date.now()-new Date(a.lastTouch))/86400000):null;if(d==null)x+=25;else{var o=d-(+a.cadence||14);if(o>0)x+=Math.min(o,30)*3;}return x;}
     var top=A.slice().sort(function(a,b){return score(b)-score(a);}).slice(0,3);
     var owe=A.filter(function(a){return a.replyOwed==='you';}).length;
     var haveBriefs=A.filter(function(a){return a.brief;}).length;
-    var g='Hi JP — I’m **Hal**, your sales partner. ';
-    g+=haveBriefs?('I’ve read '+haveBriefs+' of your '+A.length+' accounts. '):('I have '+A.length+' accounts on file — hit **🧠 Have Hal read threads** on the Accounts tab and I can get specific about each one. ');
+    var g='Hi JP — I’m **John**, your sales partner. ';
+    g+=haveBriefs?('I’ve read '+haveBriefs+' of your '+A.length+' accounts. '):('I have '+A.length+' accounts on file — hit **🧠 Have John read threads** on the Accounts tab and I can get specific about each one. ');
     if(owe)g+='**'+owe+'** '+(owe===1?'account is':'accounts are')+' waiting on a reply from you. ';
     g+='\n\nIf I were you, today I’d start here:\n';
     top.forEach(function(a){
@@ -2043,7 +2080,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var el=document.getElementById('hal-setup');if(!el)return;
     if(!akey()){el.textContent=keyMsg();return;}
     var A=loadAccts(),nb=A.filter(function(a){return a.brief;}).length;
-    if(!(window.gConnected&&window.gConnected())&&!nb){el.textContent='Connect Google (Follow-ups tab) and let Hal read threads on Accounts for account-specific answers.';return;}
+    if(!(window.gConnected&&window.gConnected())&&!nb){el.textContent='Connect Google (Follow-ups tab) and let John read threads on Accounts for account-specific answers.';return;}
     el.textContent='';
   }
   var busy=false;
@@ -2053,7 +2090,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var lu=q.match(/^(?:look ?up|lookup|what do we have on|what'?s the latest on|search(?: for)?)\b[:\s]+(.+)/i);
     if(lu){
       // The entity is the head; anything after a dash/comma/"tell me…" is JP's
-      // actual question, which we pass through so Hal answers it specifically.
+      // actual question, which we pass through so John answers it specifically.
       var rest=lu[1].replace(/[?.!]+$/,'').trim();
       var term=rest.split(/\s+[-–—]\s+|,\s+|\s+(?=tell me\b|who\b|what\b|and who\b)/i)[0].trim();
       if(term)return halLookup(term,q);
@@ -2062,7 +2099,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(halCsv&&/\b(who (should|do|can|would)|add|include|suggest|who else|more (people|partners|contacts|names|prospects)|missing|expand|from my (contacts|network|connections))\b/i.test(q))return suggestAdditions(q);
     busy=true;
     thinkMsg=thinkLineFor(q);
-    hist.push({role:'user',content:q});saveHist();thinking=true;paint();speak(thinkMsg); // Hal says the filler aloud (if Speak is on) so the thinking gap isn't silent
+    hist.push({role:'user',content:q});saveHist();thinking=true;paint();speak(thinkMsg); // John says the filler aloud (if Speak is on) so the thinking gap isn't silent
     try{
       var extra='';try{extra=await autoLookupContext(q);}catch(e){} // auto-pull email for an untracked org/person JP mentions
       var msgs=hist.slice(-20).map(function(t){return {role:t.role,content:t.content};});
@@ -2073,7 +2110,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     }catch(e){
       var em=String(e&&e.message?e.message:e);
       var msg=em.indexOf('NOKEY')>=0?('I’m not connected to an engine yet — '+keyMsg())
-        :/failed to fetch|networkerror|load failed|network request failed/i.test(em)?('The connection dropped mid-request — this can happen while “Have Hal read threads” is running in the background. Give it a moment and send again.')
+        :/failed to fetch|networkerror|load failed|network request failed/i.test(em)?('The connection dropped mid-request — this can happen while “Have John read threads” is running in the background. Give it a moment and send again.')
         :('Sorry — I hit an error: '+em);
       hist.push({role:'assistant',content:msg});
     }
@@ -2086,7 +2123,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // ONLY exclude off-limits DOMAINS/EMAILS from the Gmail query (precise). Bare
     // keyword off-limits (e.g. "family", "personal") are NOT used as -"kw" search
     // exclusions — common words like those appear in tons of legit emails and
-    // would wipe out results. Keyword off-limits still apply as Hal's guardrails.
+    // would wipe out results. Keyword off-limits still apply as John's guardrails.
     var ol=(window.halOffLimits&&window.halOffLimits())||[];
     return ol.filter(function(e){return /@|\./.test(e);}).map(function(e){e=e.replace(/^@/,'');return '-from:'+e+' -to:'+e;}).join(' ');
   }
@@ -2133,7 +2170,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var lastEmailErr='';
   // A code-rendered "Recent email" markdown block for the most recent lookup. The
   // model kept dropping email from its narrative, so we render the factual thread
-  // list ourselves and append it to Hal's reply — it can't be omitted this way.
+  // list ourselves and append it to John's reply — it can't be omitted this way.
   var lastEmailBlock='';
   // Structured threads from the most recent lookup ({date,from,to,cc,subject,snippet,reasons}).
   var lastEmailMsgs=[];
@@ -2353,7 +2390,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
       // especially big email dumps — are noise for entity extraction, so truncate them
       // hard) and put the CURRENT question front-and-center, so a freshly-named org
       // (e.g. "Mozilla") isn't swamped by the previous topic's email block (e.g. Rutgers).
-      var prior=(typeof hist!=='undefined'&&hist.length>1)?hist.slice(-5,-1).map(function(t){return (t.role==='assistant'?'Hal':'JP')+': '+String(t.content||'').replace(/\s+/g,' ').slice(0,(t.role==='assistant'?110:200));}).join('\n'):'';
+      var prior=(typeof hist!=='undefined'&&hist.length>1)?hist.slice(-5,-1).map(function(t){return (t.role==='assistant'?'John':'JP')+': '+String(t.content||'').replace(/\s+/g,' ').slice(0,(t.role==='assistant'?110:200));}).join('\n'):'';
       var clsInput='PRIOR CONTEXT (use ONLY to resolve a follow-up that has no name in the current question — otherwise ignore it):\n'+(prior||'(none)')+'\n\nCURRENT QUESTION from JP (extract the org/person from THIS line):\n"'+String(q||'').replace(/\s+/g,' ').slice(0,400)+'"';
       // Output TWO lines: (1) the ONE org/person; (2) its primary email DOMAIN when
       // known/mentioned (e.g. asu.edu) so address matches like mary@asu.edu are found.
@@ -2377,7 +2414,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // Search email for the name AND the domain (if any), merging both result sets so
     // both "Arizona State University" mentions and asu.edu addresses surface.
     // If JP is only asking for someone's contact ADDRESS (not their email history),
-    // skip the Gmail threads search + block entirely — just let Hal answer.
+    // skip the Gmail threads search + block entirely — just let John answer.
     var qLow=String(q||'').toLowerCase();
     var asksAddress=/\b(e-?mail (address|addy|for)|address for|e-?mail of|(his|her|their) e-?mail|contact (info|details)|phone(?: number)?)\b/.test(qLow);
     var data='';
@@ -2400,12 +2437,12 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     // Email threads (when pulled) are rendered deterministically by emailFooter; the
     // model only gets them as CONTEXT below and must not re-list them.
     if(data)out+='\n\n[EMAIL CONTEXT — Gmail threads matching “'+ent+'” (whole mailbox). Use these to inform your "Best next steps" (who to follow up with, what to reference). Do NOT print a "Recent email" section or re-list these threads — the app displays the full list automatically beneath your reply, so listing them again would duplicate. Also do NOT add these email senders to the LinkedIn connections list]:\n'+data;
-    // Calendar context so Hal knows which meetings/visits already happened (best-effort).
+    // Calendar context so John knows which meetings/visits already happened (best-effort).
     try{var cal=await entCalLines(ent,dom);if(cal)out+=cal;}catch(e){}
     return out;
   }
   function clearChat(){hist=[];saveHist();try{elStop();}catch(e){}paint();}
-  /* ---- Voice: talk to Hal + hear replies (Web Speech API, no external service) ---- */
+  /* ---- Voice: talk to John + hear replies (Web Speech API, no external service) ---- */
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   var rec=null,listening=false,voiceInput=null;
   function speakOn(){try{var v=localStorage.getItem('hal:speak');return v===null?true:v==='1';}catch(e){return true;}}
@@ -2484,7 +2521,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     return j; // {ok, name}
   };
   window.halSpeakSample=async function(cfg){
-    var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:cfg.key,voiceId:cfg.voiceId,model:cfg.model||'eleven_turbo_v2_5',text:'Hi JP — this is Hal, speaking in your ElevenLabs voice.'})});
+    var r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:cfg.key,voiceId:cfg.voiceId,model:cfg.model||'eleven_turbo_v2_5',text:'Hi JP — this is John, speaking in your ElevenLabs voice.'})});
     if(!r.ok){var t='';try{t=(await r.json()).error;}catch(e){}throw new Error(t||('tts '+r.status));}
     var arr=await r.arrayBuffer();var AC=window.AudioContext||window.webkitAudioContext;var ctx=new AC();if(ctx.state==='suspended'){try{await ctx.resume();}catch(e){}}
     var audio=await ctx.decodeAudioData(arr);var src=ctx.createBufferSource();src.buffer=audio;src.connect(ctx.destination);src.start();return true;
@@ -2494,13 +2531,13 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     if(!force&&!speakOn())return; // force: used in hands-free conversation mode, where voice is always on
     var s=stripForSpeech(t);if(!s)return;
     speechGen++; // latest utterance wins — aborts any in-flight filler so it can't overlap the reply
-    if(elOn()){elSpeak(s.slice(0,2000),{}).catch(function(err){ // surface the reason once, then fall back to the browser voice so Hal never goes silent
+    if(elOn()){elSpeak(s.slice(0,2000),{}).catch(function(err){ // surface the reason once, then fall back to the browser voice so John never goes silent
       if(!elWarned){elWarned=true;if(window.toast)window.toast('ElevenLabs voice failed ('+(err&&err.message?err.message:err)+') — using the browser voice. Check the key/voice on Lead Router.');}
       try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u);u.onend=function(){setStopUI(false);};u.onerror=function(){setStopUI(false);};window.speechSynthesis.speak(u);setStopUI(true);}}catch(e){}
     });return;}
     if(!window.speechSynthesis)return;try{window.speechSynthesis.cancel();var u2=new SpeechSynthesisUtterance(s.slice(0,1400));applyVoice(u2);u2.onend=function(){setStopUI(false);};u2.onerror=function(){setStopUI(false);};window.speechSynthesis.speak(u2);setStopUI(true);}catch(e){}
   }
-  function setMicUI(on){document.querySelectorAll('.hal-mic').forEach(function(m){m.classList.toggle('listening',on);m.title=on?'Listening… tap to stop':'Talk to Hal';});}
+  function setMicUI(on){document.querySelectorAll('.hal-mic').forEach(function(m){m.classList.toggle('listening',on);m.title=on?'Listening… tap to stop':'Talk to John';});}
   function stopVoice(){if(rec){try{rec.stop();}catch(e){}}}
   function startVoice(inputEl){
     if(!SR){if(window.toast)window.toast('Voice input needs Chrome (or another browser with speech recognition).');return;}
@@ -2512,7 +2549,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
     listening=true;setMicUI(true);try{rec.start();}catch(e){listening=false;setMicUI(false);}
   }
-  function updateSpeakUI(){var on=speakOn();document.querySelectorAll('.hal-speak').forEach(function(b){b.classList.toggle('on',on);if(b.textContent.indexOf('Speak')>=0)b.textContent='🔊 Speak: '+(on?'on':'off');b.title=on?'Stop reading Hal’s replies aloud':'Read Hal’s replies aloud';});}
+  function updateSpeakUI(){var on=speakOn();document.querySelectorAll('.hal-speak').forEach(function(b){b.classList.toggle('on',on);if(b.textContent.indexOf('Speak')>=0)b.textContent='🔊 Speak: '+(on?'on':'off');b.title=on?'Stop reading John’s replies aloud':'Read John’s replies aloud';});}
   function toggleSpeak(){var on=!speakOn();try{localStorage.setItem('hal:speak',on?'1':'0');}catch(e){}if(!on){try{elStop();}catch(e){}}updateSpeakUI();}
   function wireVoice(root){
     (root||document).querySelectorAll('.hal-mic').forEach(function(m){if(m._wired)return;m._wired=1;if(!SR){m.style.display='none';return;}m.onclick=function(){var bar=m.closest('.hal-bar,.hal-pop-bar');startVoice(bar&&bar.querySelector('textarea'));};});
@@ -2522,9 +2559,9 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     updateSpeakUI();
   }
   /* ===== Conversation mode — hands-free voice with an amplitude-reactive orb =====
-     Turn-taking loop: listen → Hal thinks → Hal speaks → listen again. The Latimer
+     Turn-taking loop: listen → John thinks → John speaks → listen again. The Latimer
      star spins (speed scales with amplitude) and a glow pulses; while you speak the
-     amplitude is real (mic), while Hal speaks it's a synthetic envelope (browser TTS
+     amplitude is real (mic), while John speaks it's a synthetic envelope (browser TTS
      doesn't expose an audio stream). Reuses hist/halSend so the transcript persists. */
   var convo={open:false,ac:null,analyser:null,stream:null,raf:null,rec:null,state:'idle',amp:0,ang:0};
   function convoBuild(){
@@ -2533,7 +2570,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     o.innerHTML='<div class="orbwrap"><div class="orbglow" id="hal-orbglow"></div><img class="orbimg" id="hal-orbimg" src="/assets/Latimer-Star-2026.png" alt="Latimer"></div>'
       +'<div class="hal-convo-status" id="hal-convo-status">Starting…</div>'
       +'<div class="hal-convo-cap" id="hal-convo-cap"></div>'
-      +'<div class="hal-convo-ctrls"><select class="hal-voice" title="Hal’s voice"></select><button type="button" class="btn" id="hal-convo-end">End conversation</button></div>';
+      +'<div class="hal-convo-ctrls"><select class="hal-voice" title="John’s voice"></select><button type="button" class="btn" id="hal-convo-end">End conversation</button></div>';
     document.body.appendChild(o);
     o.querySelector('#hal-convo-end').onclick=convoStop;
     populateVoices();
@@ -2545,7 +2582,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     var amp=0;
     if(convo.state==='listening'&&convo.analyser){var buf=new Uint8Array(convo.analyser.fftSize);convo.analyser.getByteTimeDomainData(buf);var s=0;for(var i=0;i<buf.length;i++){var v=(buf[i]-128)/128;s+=v*v;}amp=Math.min(1,Math.sqrt(s/buf.length)*3.4);}
     else if(convo.state==='speaking'){
-      if(convo.elAnalyser){var b2=new Uint8Array(convo.elAnalyser.fftSize);convo.elAnalyser.getByteTimeDomainData(b2);var s2=0;for(var k=0;k<b2.length;k++){var v2=(b2[k]-128)/128;s2+=v2*v2;}amp=Math.min(1,Math.sqrt(s2/b2.length)*3.6);} // real amplitude from Hal's ElevenLabs voice
+      if(convo.elAnalyser){var b2=new Uint8Array(convo.elAnalyser.fftSize);convo.elAnalyser.getByteTimeDomainData(b2);var s2=0;for(var k=0;k<b2.length;k++){var v2=(b2[k]-128)/128;s2+=v2*v2;}amp=Math.min(1,Math.sqrt(s2/b2.length)*3.6);} // real amplitude from John's ElevenLabs voice
       else amp=0.4+0.35*Math.abs(Math.sin(Date.now()/130)); // synthetic pulse for browser TTS
     }
     else if(convo.state==='thinking')amp=0.14+0.07*Math.abs(Math.sin(Date.now()/320));
@@ -2559,7 +2596,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   // Auto-end conversation mode after this many ms with no speech (mic idle),
   // so we're not holding the mic / recognizer open when JP has walked away.
   var CONVO_SILENCE_MS=60000;
-  function convoBump(){convo.lastAct=Date.now();} // called on any user/Hal speech
+  function convoBump(){convo.lastAct=Date.now();} // called on any user/John speech
   function convoIdleCheck(){
     if(!convo.open){if(convo.idle){clearInterval(convo.idle);convo.idle=null;}return;}
     // Only count silence while we're waiting for JP to speak.
@@ -2594,7 +2631,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     try{convo.rec.start();}catch(e){}
   }
   async function convoTurn(userText){
-    convoBump();convo.state='thinking';convoStatus('Hal is thinking…');convoCap('You: '+userText);
+    convoBump();convo.state='thinking';convoStatus('John is thinking…');convoCap('You: '+userText);
     try{speak(thinkLineFor(userText),true);}catch(e){} // say a thinking statement aloud before the reply so there's no silent gap
     hist.push({role:'user',content:userText});saveHist();paint();
     var reply='';
@@ -2608,7 +2645,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   // the SPOKEN text is the flattened version. They're separate so the caption
   // reads well while speech stays smooth.
   function captionText(t){
-    t=(t||'').replace(/```email[\s\S]*?```/gi,'\n[Hal drafted an email — see the chat.]\n').replace(/```[\s\S]*?```/g,' ');
+    t=(t||'').replace(/```email[\s\S]*?```/gi,'\n[John drafted an email — see the chat.]\n').replace(/```[\s\S]*?```/g,' ');
     t=t.replace(/[*_#`>]/g,'').replace(/\r/g,'');
     return t.replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
   }
@@ -2632,7 +2669,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   function convoSay(text){
     if(!convo.open)return;
     speechGen++; // supersede the spoken thinking filler so the reply wins cleanly
-    convoBump();convo.state='speaking';convoStatus('Hal is speaking…');
+    convoBump();convo.state='speaking';convoStatus('John is speaking…');
     var spoken=stripForSpeech(text).slice(0,4000);
     var capFull=captionText(text);
     var cap=document.getElementById('hal-convo-cap');if(cap)cap.textContent='';
@@ -2688,24 +2725,24 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     }
     if(btn&&!btn._wired){btn._wired=1;btn.onclick=function(){var v=q.value;q.value='';if(q)q.style.height='auto';send(v);};}
     var cc=document.getElementById('hal-clear');if(cc&&!cc._wired){cc._wired=1;cc.onclick=clearChat;}
-    var lu=document.getElementById('hal-lookup');if(lu&&!lu._wired){lu._wired=1;lu.onclick=function(){var t=prompt('Ask Hal about any org or person (searches Gmail + LinkedIn). You can add a question, e.g. “Harvard — who should I follow up with?”');if(t&&t.trim())halLookup(t.trim());};}
+    var lu=document.getElementById('hal-lookup');if(lu&&!lu._wired){lu._wired=1;lu.onclick=function(){var t=prompt('Ask John about any org or person (searches Gmail + LinkedIn). You can add a question, e.g. “Harvard — who should I follow up with?”');if(t&&t.trim())halLookup(t.trim());};}
     var at=document.getElementById('hal-attach'),fi=document.getElementById('hal-file');
     if(at&&!at._wired){at._wired=1;at.onclick=function(){if(fi)fi.click();};}
     if(fi&&!fi._wired){fi._wired=1;fi.onchange=function(){var f=fi.files&&fi.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){setHalCsv(f.name,String(rd.result||''));};rd.readAsText(f);fi.value='';};}
     updateCsvChip();
     wireVoice(document.getElementById('panel-hal'));
   };
-  /* ---- Pop-up "Ask Hal" launcher — same Hal, available on every tab ---- */
+  /* ---- Pop-up "Ask John" launcher — same John, available on every tab ---- */
   function buildPopup(){
     if(document.getElementById('hal-pop'))return;
     var fab=document.createElement('button');
-    fab.id='hal-fab';fab.className='hal-fab';fab.type='button';fab.title='Ask Hal';
-    fab.innerHTML='<span>Hal</span>';
+    fab.id='hal-fab';fab.className='hal-fab';fab.type='button';fab.title='Ask John';
+    fab.innerHTML='<span>John</span>';
     document.body.appendChild(fab);
     var w=document.createElement('div');w.id='hal-pop';w.className='hal-pop';w.hidden=true;
-    w.innerHTML='<div class="hal-pop-head"><span>Hal · your sales partner</span><span class="hal-pop-actions"><button class="hal-speak" type="button" title="Read Hal’s replies aloud">🔊</button><button id="hal-pop-clear" type="button" title="Clear this conversation">Clear</button><button id="hal-pop-x" type="button" title="Close">×</button></span></div>'
+    w.innerHTML='<div class="hal-pop-head"><span>John · your sales partner</span><span class="hal-pop-actions"><button class="hal-speak" type="button" title="Read John’s replies aloud">🔊</button><button id="hal-pop-clear" type="button" title="Clear this conversation">Clear</button><button id="hal-pop-x" type="button" title="Close">×</button></span></div>'
       +'<div id="hal-pop-log" class="hal-log hal-pop-log"></div>'
-      +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct Hal…"></textarea><button type="button" class="hal-mic" title="Dictate">🎤</button><button type="button" class="hal-talk" title="Hands-free conversation">🎙</button><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
+      +'<div class="hal-pop-bar"><textarea id="hal-pop-q" rows="1" placeholder="Ask or correct John…"></textarea><button type="button" class="hal-mic" title="Dictate">🎤</button><button type="button" class="hal-talk" title="Hands-free conversation">🎙</button><button class="btn primary sm" id="hal-pop-send" type="button">Send</button></div>';
     document.body.appendChild(w);
     fab.onclick=function(){toggle();};
     w.querySelector('#hal-pop-x').onclick=function(){toggle(false);};
@@ -2728,7 +2765,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     w.hidden=!show;
     if(show){loadHist();paint();setTimeout(function(){var q=document.getElementById('hal-pop-q');if(q)q.focus();},40);}
   }
-  // Render on first load (Hal is the default tab).
+  // Render on first load (John is the default tab).
   if(document.getElementById('hal-log')){window.renderHal();buildPopup();}
 })();
 
@@ -2775,8 +2812,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     try{
       var data=await gather(status);
       if(!data.length){status('No prospect email activity found in '+periodLabel()+'.');return;}
-      status('Hal is writing the recap…');
-      var sys='You are Hal, sales partner at Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' Write a clear, skimmable recap EMAIL BODY for JP covering '+periodLabel()+'. The ONLY markdown allowed is ** around an institution name to bold it — no other markdown (no #, no *bullets*). Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: one entry per account with activity. Start each entry with the institution name in bold, then the specific person (or people) JP is corresponding with there, then what happened and where it stands. Format the lead line as: **<Institution>** — <Contact name(s)>: <what happened / status>. Identify the contact from the From/To names in the data; if no individual is identifiable, write "(contact unclear)".\nSection 2: list ONLY threads whose messages are tagged {scott}, grouped by account (bold the institution). IF AND ONLY IF there are zero such threads, write exactly this one line and nothing else in the section: "No threads involved Scott in this period." If you list any threads, do NOT include that sentence.\nSection 3: same rule for threads tagged {barika}, using "No threads involved Barika in this period." only when there are none.\nNever both list threads and say there were none. Keep sections 2 and 3 self-contained so JP can copy each to that person. Do not invent anything not in the data.'+(window.halGuardrails?window.halGuardrails():'');
+      status('John is writing the recap…');
+      var sys='You are John, sales partner at Latimer.AI. '+(window.halCompanyContext?window.halCompanyContext():'')+' Write a clear, skimmable recap EMAIL BODY for JP covering '+periodLabel()+'. The ONLY markdown allowed is ** around an institution name to bold it — no other markdown (no #, no *bullets*). Use EXACTLY these three sections with these headers on their own lines:\n\n1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\nSection 1: one entry per account with activity. Start each entry with the institution name in bold, then the specific person (or people) JP is corresponding with there, then what happened and where it stands. Format the lead line as: **<Institution>** — <Contact name(s)>: <what happened / status>. Identify the contact from the From/To names in the data; if no individual is identifiable, write "(contact unclear)".\nSection 2: list ONLY threads whose messages are tagged {scott}, grouped by account (bold the institution). IF AND ONLY IF there are zero such threads, write exactly this one line and nothing else in the section: "No threads involved Scott in this period." If you list any threads, do NOT include that sentence.\nSection 3: same rule for threads tagged {barika}, using "No threads involved Barika in this period." only when there are none.\nNever both list threads and say there were none. Keep sections 2 and 3 self-contained so JP can copy each to that person. Do not invent anything not in the data.'+(window.halGuardrails?window.halGuardrails():'');
       var user='Here is the email activity with prospect accounts over '+periodLabel()+' (metadata + snippets; {scott}/{barika} mark who was on the thread):\n\n'+fmtData(data);
       var body=await window.halLLM(sys,[{role:'user',content:user}],3000);
       // Email/copy version: strip the ** bold markers so it pastes clean.
@@ -2819,7 +2856,7 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
         if(btn)btn.textContent='Reconnect Google';
       }else{
         set('not connected','#fef7e0','#8a6d00');
-        if(info)info.textContent='One-time consent — then Hal handles it automatically.';
+        if(info)info.textContent='One-time consent — then John handles it automatically.';
       }
     }catch(e){ set('unavailable','#f1f1f1','#666'); if(info)info.textContent='Deploy the recap backend to enable this (see RECAP-SETUP.md).'; }
   }
@@ -2912,8 +2949,8 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   window.gMyEmail=function(){return myEmail;};
   window.gAuthFetch=function(url){return authFetch(url);};
   window.gConnect=function(){try{connect(false);}catch(e){}};
-  /* Read a whole thread's cleaned message text for another tab (e.g. Hal / Accounts).
-     Bodies are returned to the caller in memory only — Hal summarizes them and stores
+  /* Read a whole thread's cleaned message text for another tab (e.g. John / Accounts).
+     Bodies are returned to the caller in memory only — John summarizes them and stores
      the summary; raw bodies are never persisted. */
   window.gFetchThread=async function(q,maxMsgs){
     if(!token)return {connected:false,messages:[]};
@@ -3407,6 +3444,132 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
   var reset=$('decks-resettargets');if(reset)reset.onclick=function(){saveTargets(DEFAULT_TARGETS.slice());syncTargetsUI();toast('Restored default list');};
   var filt=$('decks-filter');if(filt)filt.oninput=function(){filterText=filt.value;render();};
   var filtClr=$('decks-filter-clear');if(filtClr)filtClr.onclick=function(){filterText='';if(filt){filt.value='';filt.focus();}render();};
+})();
+
+/* =================== NOTES — texts & reminders (Twilio → /api/sms/*) =================== */
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  function esc(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var rows=[],filter='all',cfg=null;
+  function when(iso){if(!iso)return '';var d=new Date(iso);return isNaN(d)?'':d.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+  function status(t){var e=$('nt-status');if(e)e.textContent=t||'';}
+  function render(){
+    var host=$('nt-list');if(!host)return;
+    var list=rows.filter(function(r){return filter==='all'||r.kind===filter;});
+    if(!list.length){
+      var empty=rows.length?'Nothing in this view.':
+        (cfg&&!cfg.twilio)?'Texting isn’t set up yet — add your Twilio details in <a href="#settings" onclick="activateTab(\'settings\');return false">Settings</a>.':
+        (cfg&&!cfg.registered)?'Add your cell in <a href="#settings" onclick="activateTab(\'settings\');return false">Settings</a>, then text '+esc(cfg.number||'your Twilio number')+'.':
+        'No texts yet. Text anything to '+esc((cfg&&cfg.number)||'your Twilio number')+' from your cell.';
+      host.innerHTML='<p class="note">'+empty+'</p>';
+      return;
+    }
+    host.innerHTML=list.map(function(r){
+      var isRem=r.kind==='reminder';
+      var main=isRem?(r.remind_text||r.body):r.body;
+      var meta='#'+r.id+' · texted '+when(r.created_at);
+      if(isRem)meta+=' · '+(r.status==='sent'?'sent '+when(r.sent_at):'for '+when(r.remind_at));
+      if(r.detail&&r.status!=='sent')meta+=' · '+r.detail;
+      var pill=isRem?'<span class="nt-pill '+esc(r.status)+'">'+esc(r.status)+'</span>':'';
+      var acts=(isRem&&r.status==='pending'?'<button class="btn sm" data-act="cancel" data-id="'+r.id+'">Cancel</button>':'')+
+        '<button class="btn sm ghost" data-act="delete" data-id="'+r.id+'" title="Delete">✕</button>';
+      return '<div class="nt-row"><div class="nt-ico">'+(isRem?'⏰':'📝')+'</div><div class="nt-main"><div class="nt-body">'+esc(main)+pill+'</div>'+
+        (isRem&&r.remind_text&&r.remind_text!==r.body?'<div class="nt-meta">“'+esc(r.body)+'”</div>':'')+
+        '<div class="nt-meta">'+esc(meta)+'</div></div><div class="nt-acts">'+acts+'</div></div>';
+    }).join('');
+  }
+  async function load(){
+    status('Loading…');
+    try{
+      var r=await fetch('/api/sms/notes',{credentials:'same-origin'});
+      var j=await r.json();
+      if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+      rows=j.notes||[];cfg=j.configured||null;
+      var ph=cfg&&cfg.phones&&cfg.phones.length?'From '+cfg.phones.join(', ')+(cfg.code?' · code '+cfg.code:''):'';
+      status(rows.length+' item'+(rows.length===1?'':'s')+(ph?' · '+ph:''));
+    }catch(e){status('Couldn’t load: '+(e&&e.message?e.message:e));}
+    render();
+  }
+  async function act(action,id){
+    if(action==='delete'&&!confirm('Delete #'+id+'?'))return;
+    try{
+      var r=await fetch('/api/sms/notes',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action,id:id})});
+      if(!r.ok){var j=await r.json().catch(function(){return {};});throw new Error(j.error||('HTTP '+r.status));}
+    }catch(e){status('Failed: '+(e&&e.message?e.message:e));return;}
+    load();
+  }
+  window.renderNotes=load;
+  document.querySelectorAll('#panel-notes [data-nf]').forEach(function(b){b.onclick=function(){filter=b.getAttribute('data-nf');document.querySelectorAll('#panel-notes [data-nf]').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
+  var rb=$('nt-refresh');if(rb)rb.onclick=load;
+  var host=$('nt-list');if(host)host.addEventListener('click',function(e){var b=e.target.closest('[data-act]');if(b)act(b.getAttribute('data-act'),+b.getAttribute('data-id'));});
+  // Deep link (/#notes) activates the tab before this script runs — catch up.
+  var pn=$('panel-notes');if(pn&&pn.classList.contains('active'))load();
+})();
+
+/* =================== SETTINGS — Texting (Twilio) → /api/sms/settings =================== */
+(function(){
+  var DEFAULT_NUMBER='+13393005973';
+  var host=document.getElementById('set-sms');if(!host)return;
+  function esc(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var st=null;
+  function appRow(a){return '<div class="sms-app"><input data-k="code" placeholder="code" value="'+esc(a.code)+'"><input data-k="label" placeholder="what it is" value="'+esc(a.label)+'"><input data-k="forward_url" placeholder="https://other-app/webhook" value="'+esc(a.forward_url)+'"><button class="btn sm ghost" data-rm title="Remove">✕</button></div>';}
+  function render(){
+    var t=st.twilio||{},me=st.me||{code:'',phone:''};
+    var hook=location.origin+'/api/sms/inbound';
+    var tokenPh=t.hasAuthToken?'saved ✓ — leave blank to keep':(t.canStoreToken?'32-character token':'needs RECAP_ENC_KEY secret first');
+    host.innerHTML=
+      '<div class="sms-card"><h4>Twilio account</h4>'+
+        '<p class="note" style="margin:0">Shared by everyone on this console. The Auth Token is stored encrypted and never shown again.'+(t.fromEnv?' <b>Cloudflare environment variables are set and take priority over these fields.</b>':'')+(t.tokenError?' <b style="color:var(--accent)">'+esc(t.tokenError)+'</b>':'')+'</p>'+
+        '<div class="sms-grid">'+
+          '<div><label>Twilio number</label><input id="sms-from" placeholder="+1…" value="'+esc(t.fromNumber||DEFAULT_NUMBER)+'"></div>'+
+          '<div><label>Account SID</label><input id="sms-sid" placeholder="AC…" autocomplete="off" value="'+esc(t.accountSid)+'"></div>'+
+          '<div><label>Auth Token</label><input id="sms-token" type="password" autocomplete="new-password" placeholder="'+esc(tokenPh)+'"'+(t.canStoreToken?'':' disabled')+'></div>'+
+        '</div>'+
+        '<p class="note" style="margin:10px 0 0">In Twilio, set the number’s <i>A message comes in</i> webhook (HTTP POST) to <span class="sms-hook">'+esc(hook)+'</span></p>'+
+      '</div>'+
+      '<div class="sms-card"><h4>Your phone</h4>'+
+        '<p class="note" style="margin:0">Texts from this number are yours — notes land on your Notes tab and reminders come back here. A code is optional: start a text with it to reach you from any other phone.</p>'+
+        '<div class="sms-grid">'+
+          '<div><label>Your cell</label><input id="sms-phone" placeholder="+1…" value="'+esc(me.phone)+'"></div>'+
+          '<div><label>Code (optional)</label><input id="sms-code" placeholder="e.g. jp7" maxlength="12" value="'+esc(me.code)+'"></div>'+
+        '</div>'+
+        '<p class="note" style="margin:10px 0 0" id="sms-example"></p>'+
+      '</div>'+
+      '<div class="sms-card"><h4>Other apps on this number</h4>'+
+        '<p class="note" style="margin:0">Give each app a code. Texts starting with it are passed to that app’s webhook (code removed, re-signed so its Twilio check still passes), and its reply goes back to the sender.</p>'+
+        '<div id="sms-apps">'+(st.apps||[]).map(appRow).join('')+'</div>'+
+        '<button class="btn sm" id="sms-addapp" style="margin-top:8px">+ Add app</button>'+
+        '<div class="sms-grid"><div style="grid-column:1/-1"><label>Texts from unregistered phones go to (optional webhook)</label><input id="sms-fallback" placeholder="https://… — leave blank to ignore them" value="'+esc(t.fallbackUrl)+'"></div></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;align-items:center"><button class="btn primary sm" id="sms-save">Save texting settings</button><span id="sms-msg" style="font-size:12.5px;color:var(--ink-soft)"></span></div>';
+    var codeEl=document.getElementById('sms-code');
+    function example(){var c=(codeEl.value||'').trim().toLowerCase();var n=esc((t.fromNumber||DEFAULT_NUMBER));document.getElementById('sms-example').innerHTML='From your cell, text '+n+': <b>remind me tomorrow 9am to call Scott</b> · <b>list</b> · <b>cancel 12</b>'+(c?' — from another phone, start with <b>'+esc(c)+'</b>':'');}
+    codeEl.oninput=example;example();
+    document.getElementById('sms-addapp').onclick=function(){document.getElementById('sms-apps').insertAdjacentHTML('beforeend',appRow({code:'',label:'',forward_url:''}));};
+    document.getElementById('sms-apps').onclick=function(e){var b=e.target.closest('[data-rm]');if(b)b.parentNode.remove();};
+    document.getElementById('sms-save').onclick=save;
+  }
+  function msg(t,bad){var e=document.getElementById('sms-msg');if(e){e.textContent=t||'';e.style.color=bad?'var(--accent)':'var(--ink-soft)';}}
+  async function call(method,body){
+    var r=await fetch('/api/sms/settings',{method:method,credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+    var j=await r.json().catch(function(){return {};});
+    if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+    return j;
+  }
+  async function save(){
+    var v=function(id){var e=document.getElementById(id);return e?e.value.trim():'';};
+    var apps=[].map.call(document.querySelectorAll('#sms-apps .sms-app'),function(row){var o={};row.querySelectorAll('input').forEach(function(i){o[i.getAttribute('data-k')]=i.value.trim();});return o;});
+    var body={twilio:{accountSid:v('sms-sid'),fromNumber:v('sms-from'),fallbackUrl:v('sms-fallback')},me:{code:v('sms-code'),phone:v('sms-phone')},apps:apps};
+    var tok=v('sms-token');if(tok)body.twilio.authToken=tok;
+    msg('Saving…');
+    try{st=await call('PUT',body);render();msg('Saved ✓');if(window.toast)toast('Texting settings saved');}
+    catch(e){msg(e.message,true);}
+  }
+  async function load(){
+    try{st=await call('GET');render();}
+    catch(e){host.innerHTML='<p class="note">Couldn’t load texting settings: '+esc(e.message)+'</p>';}
+  }
+  load();
 })();
 </script>
 </body>

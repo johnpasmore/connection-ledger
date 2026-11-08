@@ -1,5 +1,5 @@
 // GET /api/gmail/search?q=<term>&limit=25
-// Relevance-aware Gmail search for Hal, using the offline token JP already granted
+// Relevance-aware Gmail search for John, using the offline token JP already granted
 // for the weekly recap (recap_auth). Reliable regardless of the in-browser Google
 // connection (which expires ~hourly and clears on reload).
 //

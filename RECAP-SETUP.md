@@ -1,7 +1,7 @@
 # Automatic weekly recap — setup (one time, ~15 min)
 
 This wires up the **Monday 7:00am ET** recap email to `john@latimer.ai` that
-Hal sends **even when your browser is closed**. It reuses your existing D1
+John sends **even when your browser is closed**. It reuses your existing D1
 database and mirrors the on-demand recap on the **Recap** tab (same accounts,
 same Gmail queries, same three sections: all activity · Scott · Barika).
 
@@ -110,7 +110,7 @@ also test the "already sent this week" guard.
 - The Worker reads Gmail **metadata + snippets** to build the recap, exactly like
   the on-demand version — **no raw bodies are stored**. `recap_log` keeps only
   status + a short detail line per week.
-- Hal's scope guardrails still apply (the send is to you only; sections 2/3 are
+- John's scope guardrails still apply (the send is to you only; sections 2/3 are
   the Scott/Barika threads you already see on the Recap tab).
 
 ## Turn it off

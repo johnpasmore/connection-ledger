@@ -1,5 +1,5 @@
 // Cloudflare Pages Function — /api/latimer
-// Same-origin proxy to the Latimer completion API. Hal calls this from the
+// Same-origin proxy to the Latimer completion API. John calls this from the
 // browser (same origin → no CORS); the function forwards to Latimer server-side,
 // where CORS doesn't apply. The key comes from the request body (the user's key,
 // entered in the app) or, if absent, from a LATIMER_API_KEY environment secret.

@@ -1,5 +1,5 @@
 // Cloudflare Pages Function — /api/tts
-// Same-origin proxy to ElevenLabs text-to-speech, so Hal can speak in a custom
+// Same-origin proxy to ElevenLabs text-to-speech, so John can speak in a custom
 // (cloned) voice from the browser without CORS and without exposing the key in
 // page HTML. The browser POSTs { key, voiceId, model, text }; the function calls
 // ElevenLabs server-side and streams the audio (audio/mpeg) straight back.
@@ -10,7 +10,7 @@ export async function onRequest(context) {
   const { request, env } = context;
 
   // GET /api/tts — capability probe so the browser knows JP's voice is configured
-  // server-side (ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID secrets). This lets Hal
+  // server-side (ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID secrets). This lets John
   // use JP's voice with no in-browser key — so it works on iPhone and survives a
   // hard reset that wipes localStorage.
   if (request.method === "GET") {
