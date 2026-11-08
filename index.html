@@ -1283,7 +1283,11 @@ Respond with ONLY a JSON object, no markdown, no backticks, no preamble:
     const ready=prov==='latimer'?lat:anth;
     g('lr-connstatus').textContent=(anth?'Anthropic API connected ✓':'No Anthropic key yet.')+' · John engine: '+engine+(ready?' ✓':' — add its key');
     g('lr-toggle').textContent=(anth||lat)?'Edit API':'Add API';
-    g('lr-keybar').style.display=(anth||lat)?'none':'flex';
+    // On Lead Router the key form folds away behind "Edit API" once keys exist.
+    // In Settings (renderSettings moves it there and hides that toggle) it must
+    // stay open, or saving would hide it with no way back.
+    const kb=g('lr-keybar');
+    kb.style.display=(kb.closest('#set-ai')||!(anth||lat))?'flex':'none';
   }
   g('lr-toggle').onclick=()=>{const kb=g('lr-keybar');kb.style.display=(kb.style.display==='none')?'flex':'none';};
   g('lr-savekey').onclick=()=>{
