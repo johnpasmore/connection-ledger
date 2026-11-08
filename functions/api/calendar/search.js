@@ -1,6 +1,6 @@
 // GET /api/calendar/search?q=<term>&back=150&ahead=60
 // Server-side read of JP's Google Calendar for events related to an account, using
-// the offline recap token — so Hal's briefs know about meetings that already
+// the offline recap token — so John's briefs know about meetings that already
 // happened (e.g. a campus visit) and stop suggesting them. Best-effort: if the
 // stored Google grant doesn't include Calendar yet, returns 403 and callers simply
 // skip calendar (JP re-grants by reconnecting Google on the Recap tab).

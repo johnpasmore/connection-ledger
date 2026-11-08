@@ -23,7 +23,7 @@
 //   RECAP_ENC_KEY    needed (Pages AND Worker) to store/read the token from Settings
 //   SMS_TZ           IANA zone for "tomorrow 9am" (default America/New_York)
 //   SMS_WEBHOOK_URL  optional exact public URL Twilio calls (signature check)
-//   ANTHROPIC_API_KEY  optional — lets Hal read free-form times ("next Tues after lunch")
+//   ANTHROPIC_API_KEY  optional — lets John read free-form times ("next Tues after lunch")
 
 import { encryptToken, decryptToken } from "../recap/_lib.js";
 
@@ -446,7 +446,7 @@ export async function sendDueReminders(env, now = new Date()) {
       .run();
     if (!claim.meta || !claim.meta.changes) continue;
     try {
-      await sendSms(cfg, row.phone, "⏰ Hal reminder: " + (row.remind_text || row.body));
+      await sendSms(cfg, row.phone, "⏰ John reminder: " + (row.remind_text || row.body));
       await env.DB
         .prepare("UPDATE sms_notes SET status = 'sent', sent_at = ?, attempts = attempts + 1, detail = NULL WHERE id = ?")
         .bind(new Date().toISOString(), row.id)

@@ -1,7 +1,7 @@
 // GET /api/gmail/thread?gq=<gmail query>&max=6&full=0|1
 // Server-side read of an account's recent email using the offline recap token —
-// the SAME mailbox Hal's chat search uses (john@latimer.ai). This makes the
-// Accounts tab (last-touch, who-owes-a-reply, Hal's brief) see exactly the email
+// the SAME mailbox John's chat search uses (john@latimer.ai). This makes the
+// Accounts tab (last-touch, who-owes-a-reply, John's brief) see exactly the email
 // the chat sees, regardless of which Google account is connected in the browser,
 // and without triggering in-browser sign-in popups. Messages are newest-first.
 // Returns { ok, latestId, myEmail, messages:[{id,dateISO,from,to,subject,body,fromMe}] }.

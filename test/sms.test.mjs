@@ -271,7 +271,7 @@ test("sendDueReminders sends once, retries failures, gives up after 3", async ()
   };
   try {
     assert.deepEqual(await sendDueReminders(env, NOW), [{ id: 1, sent: true }]);
-    assert.deepEqual(sent, [{ To: "+15551234567", Body: "⏰ Hal reminder: call Scott", From: "+18005550000" }]);
+    assert.deepEqual(sent, [{ To: "+15551234567", Body: "⏰ John reminder: call Scott", From: "+18005550000" }]);
     assert.deepEqual(await sendDueReminders(env, NOW), [], "already sent → not resent");
 
     fail = true;

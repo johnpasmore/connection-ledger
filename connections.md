@@ -1,6 +1,6 @@
 # Connections — Latimer.AI Sales Console ("Pipeline Workspace")
 
-A single-file, browser-based sales console with an AI sales partner named **Hal**.
+A single-file, browser-based sales console with an AI sales partner named **John**.
 It turns a passive contact ledger into an active workspace: it tracks your
 institutional accounts, reads your email to keep them current, briefs you on each
 one, and lets you talk things through and co-draft the next email — by text or
@@ -15,7 +15,7 @@ Live app: `connection-ledger.pages.dev` · Repo: `johnpasmore/connection-ledger`
 
 ## What it does
 
-- **Hal** — an AI sales partner. Reads each key account's recent email, writes a
+- **John** — an AI sales partner. Reads each key account's recent email, writes a
   short brief (where it stands, who owes a reply, best next move), remembers what
   he's read, chats about the pipeline, co-drafts emails, and can talk out loud.
 - **Connections** — a permanent ledger of everyone you've reached out to
@@ -29,7 +29,7 @@ Live app: `connection-ledger.pages.dev` · Repo: `johnpasmore/connection-ledger`
 ## Navigation
 
 Four grouped menus:
-- **Hal** ▾ — Chat with Hal · Accounts
+- **John** ▾ — Chat with John · Accounts
 - **Connections** ▾ — Connection Ledger · Decks
 - **Conversations** ▾ — Lead Router · Follow-ups · Priority · Recap email
 - **Analytics** — Dashboard
@@ -53,28 +53,28 @@ Deliberately simple and cheap to run:
   reconciliation (falls back to local-only if offline). Large blobs are
   gzip-compressed (`CompressionStream`) to stay under the ~5 MB quota.
 
-## Hal, in detail
+## John, in detail
 
-- **Briefs (the "index").** Per account (matched to Gmail by email domains), Hal
+- **Briefs (the "index").** Per account (matched to Gmail by email domains), John
   summarizes the recent thread into a compact brief and stores the newest message
   id (`lastMsgId`) as a watermark, so a refresh only re-summarizes accounts whose
   latest email changed. **Only summaries/signals are stored — never raw bodies.**
-- **Auto-sync.** While the app is open, Hal refreshes last-touch + briefs on a
+- **Auto-sync.** While the app is open, John refreshes last-touch + briefs on a
   cadence (default 8h) so the pipeline stays current without manual clicks.
 - **Corrections.** Per account you can record ground-truth facts that override the
   email in every future brief and chat, and survive re-reads.
-- **Chat + co-drafting.** Hal reasons from the briefs on file. Email drafts render
+- **Chat + co-drafting.** John reasons from the briefs on file. Email drafts render
   as a card with "Open in email" (prefills your mail app) and "Copy". A floating
-  "Ask Hal" widget is available on every tab; "Clear chat" wipes the conversation.
+  "Ask John" widget is available on every tab; "Clear chat" wipes the conversation.
 - **Voice.** A voice selector next to the chat lists your browser voices and, when
   configured, **🎙 My ElevenLabs voice** (a custom/cloned voice). 🔊 Speak reads
   replies aloud; **🎙 Talk** is a hands-free conversation mode with an
   amplitude-reactive orb (the Latimer star). With ElevenLabs the orb modulates to
-  Hal's real voice; captions type out as he speaks.
+  John's real voice; captions type out as he speaks.
 
 ### Swappable model engine
 
-Every Hal model call routes through a single `window.halLLM(system, messages,
+Every John model call routes through a single `window.halLLM(system, messages,
 maxTokens)` adapter, so the engine is swappable without touching briefs or chat:
 
 - **Claude (Anthropic):** `POST https://api.anthropic.com/v1/messages`, browser-direct with the user's key.
@@ -82,7 +82,7 @@ maxTokens)` adapter, so the engine is swappable without touching briefs or chat:
   proxy. System → `additionalInstructions`, current turn → `message`, history →
   `additionalMessages`. Model is one of Latimer's supported GPT models.
 
-Switching engines never loses anything Hal remembers — briefs, corrections, and
+Switching engines never loses anything John remembers — briefs, corrections, and
 chat live in your data, not the model.
 
 ## Recap email (Conversations → Recap email)
@@ -94,7 +94,7 @@ On-demand recap of email activity with prospect accounts over a period
 3. **Threads involving barika@latimer.ai**,
 
 so sections 2 and 3 can be copied to those people. It scans Gmail per account by
-domain, detects who's on each thread (From/To/Cc), has Hal write the sections, and
+domain, detects who's on each thread (From/To/Cc), has John write the sections, and
 opens a prefilled email to john@latimer.ai (plus "Copy all").
 
 **Automatic send (browser closed).** The same recap can go out on its own every
@@ -142,5 +142,5 @@ steps in `RECAP-SETUP.md`. OAuth lives in `functions/api/recap/` (`connect`,
 
 ---
 
-_This is a working template. Adapt the account list, cadence rules, and Hal's
+_This is a working template. Adapt the account list, cadence rules, and John's
 prompts to your own sales motion._

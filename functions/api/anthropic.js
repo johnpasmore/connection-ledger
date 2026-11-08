@@ -1,6 +1,6 @@
 // Cloudflare Pages Function — /api/anthropic
 // Same-origin proxy to the Anthropic Messages API so any signed-in device (e.g. an
-// iPhone) can use Hal WITHOUT entering an API key in the browser. The key comes from
+// iPhone) can use John WITHOUT entering an API key in the browser. The key comes from
 // the ANTHROPIC_API_KEY Cloudflare secret (or a body.key if the browser has one).
 // Access-gated same-origin, so only signed-in @latimer.ai users reach it. The key is
 // used to sign the upstream call and is never stored or logged.

@@ -95,7 +95,7 @@ export async function onRequestGet(context) {
       "<title>Recap connected</title>" +
       "<div style=\"font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:12vh auto;padding:0 20px;color:#111\">" +
       "<h2>✓ Weekly recap connected</h2>" +
-      "<p>Connected as <b>" + escapeHtml(googleEmail || "your Google account") + "</b>. Hal will email your prospect recap to <b>john@latimer.ai</b> every Monday at 7am (America/New_York), even with the browser closed.</p>" +
+      "<p>Connected as <b>" + escapeHtml(googleEmail || "your Google account") + "</b>. John will email your prospect recap to <b>john@latimer.ai</b> every Monday at 7am (America/New_York), even with the browser closed.</p>" +
       "<p><a href='/#recap'>← Back to the app</a></p>" +
       "</div>",
     { status: 200, headers }

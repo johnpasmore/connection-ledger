@@ -1,13 +1,13 @@
 # Notes & reminders by text (Twilio) — setup (one time, ~15 min)
 
 Text the Twilio number — **+1 (339) 300-5973** — starting with your code, and it
-lands in the console's **Notes** tab. Ask for a reminder and Hal texts you back at
+lands in the console's **Notes** tab. Ask for a reminder and John texts you back at
 that time — browser closed or not.
 
 | You text (code `jp7`) | What happens |
 |---|---|
 | `jp7 Howard wants a pilot in Jan` | Saved as a note → "📝 Saved note #14." |
-| `jp7 remind me tomorrow 9am to call Scott` | Reminder → "⏰ Got it — I'll text you Thu, Nov 12, 9:00 AM: call Scott (#15…)" and at 9:00 ET: "⏰ Hal reminder: call Scott" |
+| `jp7 remind me tomorrow 9am to call Scott` | Reminder → "⏰ Got it — I'll text you Thu, Nov 12, 9:00 AM: call Scott (#15…)" and at 9:00 ET: "⏰ John reminder: call Scott" |
 | `jp7 remind me in 20 min to send the deck` | Same, 20 minutes from now |
 | `jp7 list` | Pending reminders + latest notes |
 | `jp7 cancel 15` | Cancels reminder #15 |
@@ -24,7 +24,7 @@ nudge).
 
 Times understood without a model key: *in 20 min / 2 hours / 3 days*, *today*,
 *tonight*, *tomorrow*, a weekday (*friday*), a date (*12/1*), *at 3pm*, *at 15:30*,
-*noon*. With `ANTHROPIC_API_KEY` set, Hal also reads free-form times
+*noon*. With `ANTHROPIC_API_KEY` set, John also reads free-form times
 ("next Tuesday after lunch"). Times are Eastern unless `SMS_TZ` says otherwise.
 
 **How it works.** Twilio posts each text to `/api/sms/inbound` (a Pages
@@ -86,7 +86,7 @@ npx wrangler deploy
 ## Test it
 
 1. Text just your code (`jp7`) — you should get the command list back.
-2. Text `jp7 remind me in 2 min to test Hal`. Within ~3 minutes you get the reminder.
+2. Text `jp7 remind me in 2 min to test John`. Within ~3 minutes you get the reminder.
 3. To send due reminders immediately:
    `https://connection-ledger-recap.<subdomain>.workers.dev/reminders?key=<RECAP_RUN_KEY>`
 

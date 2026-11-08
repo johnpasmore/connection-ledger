@@ -20,7 +20,7 @@
 //   GOOGLE_CLIENT_ID     GOOGLE_CLIENT_SECRET
 //   ANTHROPIC_API_KEY  (or)  LATIMER_API_KEY [+ LATIMER_MODEL]
 //   RECAP_RUN_KEY        RECAP_RECIPIENT (default john@latimer.ai)
-//   HAL_COMPANY_CONTEXT (optional, mirrors "Hal's context")
+//   HAL_COMPANY_CONTEXT (optional, mirrors "John's context")
 //
 // SMS reminders (see SMS-SETUP.md): the every-minute cron "* * * * *" sends any
 // reminder set by text whose time has come, using the Twilio details saved on
@@ -275,7 +275,7 @@ async function writeRecap(env, data) {
   const company = env.HAL_COMPANY_CONTEXT ||
     "Latimer.AI sells to schools. The motion is a free trial converting to a paid account at $3 per student per month.";
   const sys =
-    "You are Hal, sales partner at Latimer.AI. " + company +
+    "You are John, sales partner at Latimer.AI. " + company +
     " Write a clear, skimmable recap EMAIL BODY (plain text, no markdown symbols like * or #) for JP covering the last week. " +
     "Use EXACTLY these three sections with these headers on their own lines:\n\n" +
     "1) ALL ACTIVITY\n2) THREADS INVOLVING SCOTT (scott@latimer.ai)\n3) THREADS INVOLVING BARIKA (barika@latimer.ai)\n\n" +
