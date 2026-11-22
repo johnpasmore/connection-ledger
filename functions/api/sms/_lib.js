@@ -334,23 +334,27 @@ export async function interpretWithModel(env, body, now, tz) {
   const sys =
     "You turn a text message into a reminder. Current local time is " + localNow + " in " + tz + ". " +
     'Reply with ONLY a JSON object: {"text": "<what to remind about, short, imperative>", "local": "YYYY-MM-DDTHH:MM" or null}. ' +
-    "local is the reminder time in that zone. Mornings without a time mean 09:00. If no time or day is given, local is null.";
+    "local is the reminder time in that zone. With a day but no time: morning or no time = 09:00, after lunch = 13:00, " +
+    "afternoon = 14:00, end of day = 17:00, evening = 18:00, tonight = 20:00. If no time or day is given, local is null.";
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
+    const model = env.SMS_MODEL || "claude-haiku-5-5";
+    const req = { model, max_tokens: 512, system: sys, messages: [{ role: "user", content: String(body) }] };
+    // Claude Haiku 5.5 thinks by default, and thinking spends the max_tokens the
+    // answer needs. This is a one-line extraction, so turn it off (allowed on
+    // Haiku 5.5 at its default effort). Other models set via SMS_MODEL keep their
+    // own default, since some reject disabling thinking.
+    if (/^claude-haiku-5/.test(model)) req.thinking = { type: "disabled" };
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       signal: ctrl.signal,
       headers: { "Content-Type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: env.SMS_MODEL || "claude-haiku-5-5",
-        max_tokens: 200,
-        system: sys,
-        messages: [{ role: "user", content: String(body) }],
-      }),
+      body: JSON.stringify(req),
     });
     if (!r.ok) return null;
     const j = await r.json();
+    if (j.stop_reason === "refusal") return null;
     const raw = ((j.content || []).find((c) => c.type === "text") || {}).text || "";
     const m = raw.match(/\{[\s\S]*\}/);
     if (!m) return null;

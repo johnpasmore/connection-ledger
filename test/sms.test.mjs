@@ -9,7 +9,7 @@ import { createHmac } from "node:crypto";
 
 import {
   normalizePhone, splitCode, codeProblem, twilioConfig, twilioSignature, validTwilioRequest, zonedToUtc, zonedParts,
-  classify, parseWhen, reminderText, sendDueReminders,
+  classify, parseWhen, reminderText, sendDueReminders, interpretWithModel,
 } from "../functions/api/sms/_lib.js";
 import { handle, onRequestPost } from "../functions/api/sms/inbound.js";
 
@@ -307,6 +307,45 @@ test("sendDueReminders sends once, retries failures, gives up after 3", async ()
     assert.equal(row.status, "error");
     assert.equal(row.attempts, 3);
     assert.match(row.detail, /twilio 400 nope/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("interpretWithModel: Haiku 5.5 request shape, ET conversion, and fallbacks", async () => {
+  const realFetch = globalThis.fetch;
+  let sent = null, reply = null;
+  globalThis.fetch = async (url, init) => {
+    sent = { url, headers: init.headers, body: JSON.parse(init.body) };
+    return new Response(JSON.stringify(reply), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    assert.equal(await interpretWithModel({}, "remind me monday afternoon", NOW, TZ), null, "no key → rules only");
+    assert.equal(sent, null);
+
+    const env = { ANTHROPIC_API_KEY: "sk-test" };
+    reply = { stop_reason: "end_turn", content: [{ type: "text", text: '{"text":"call Scott","local":"2026-11-16T14:00"}' }] };
+    const m = await interpretWithModel(env, "remind me monday afternoon to call Scott", NOW, TZ);
+    assert.equal(sent.url, "https://api.anthropic.com/v1/messages");
+    assert.equal(sent.headers["x-api-key"], "sk-test");
+    assert.equal(sent.body.model, "claude-haiku-5-5");
+    assert.deepEqual(sent.body.thinking, { type: "disabled" });
+    assert.ok(sent.body.max_tokens >= 512);
+    assert.match(sent.body.system, /afternoon = 14:00/);
+    assert.equal(m.text, "call Scott");
+    assert.equal(m.at.toISOString(), "2026-11-16T19:00:00.000Z", "Mon 2pm EST");
+
+    // Another model via SMS_MODEL keeps its own thinking default.
+    await interpretWithModel({ ...env, SMS_MODEL: "claude-sonnet-5-5" }, "remind me friday", NOW, TZ);
+    assert.equal(sent.body.thinking, undefined);
+
+    // Refusals, junk and past times fall back to the rule parser (null / no time).
+    reply = { stop_reason: "refusal", content: [] };
+    assert.equal(await interpretWithModel(env, "x", NOW, TZ), null);
+    reply = { stop_reason: "end_turn", content: [{ type: "text", text: "sorry" }] };
+    assert.equal(await interpretWithModel(env, "x", NOW, TZ), null);
+    reply = { stop_reason: "end_turn", content: [{ type: "text", text: '{"text":"old","local":"2026-11-01T09:00"}' }] };
+    assert.equal((await interpretWithModel(env, "remind me to old", NOW, TZ)).at, null);
   } finally {
     globalThis.fetch = realFetch;
   }
